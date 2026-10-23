@@ -45,7 +45,7 @@ Application license: GPL-3.0-or-later (root LICENSE)
 - Local validation installer: `ZomboidSorter-0.1.3-windows-setup.exe`; SHA-256 `f2d68bddbe9da1092de26b02beedebdd3ecb00c4b9537a4e340b9b32e108fd60`; 120,145,953 bytes. It compiled on Windows 11 with CPython 3.14.7, PyInstaller 6.22.3, and Inno Setup 6.7.3. The full component manifest is embedded at `licenses/BUILD_COMPONENTS.txt`.
 - Validation: 93 tests ran; all passed except one environment-only symlink skip. Ruff check, Ruff format check, compileall, and `git diff --check` passed.
 - An isolated direct-installer upgrade from the local v0.1.2 installer to v0.1.3 in a temporary install directory succeeded; the registered version changed to 0.1.3 and the executable hash changed. Silent uninstall removed the temporary executable. The actual app settings registry export and both app-owned profile file hashes were unchanged across upgrade and uninstall. The v0.1.3 app was not launched, the Workshop page was not checked, and the updater-launched installer path was not exercised.
-- Hosted tagged workflow and publication have not yet been verified.
+- GitHub Actions run [39904471238](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/39904471238) completed successfully, including hosted tests, lint/format, the Windows installer build, and release publication. Published installer: `ZomboidSorter-0.1.3-windows-setup.exe`; SHA-256 `6b62055b244b7503c1bb25e308ee5310d46a3f61bd076466e96f44b031d2ddf0`; 120,150,804 bytes. Its `.sha256` asset was fetched and matched GitHub's installer asset digest; both release assets returned HTTP 200. Release page: https://github.com/LookImEcho-Rick/ZomboidSorter/releases/tag/v0.1.3.
 
 ## Evidence shipped with the installer
 

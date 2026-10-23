@@ -5,6 +5,7 @@
 - Added exact Build 42 metadata selection using the user-entered game version. The selected candidate drives mod names/details, active-list labels, dependency diagnostics, and sort proposals. Selection does not prove mod content compatibility or reproduce every game loader rule.
 - Local Windows 11 installer: `ZomboidSorter-0.1.3-windows-setup.exe`, 120,145,953 bytes, SHA-256 `f2d68bddbe9da1092de26b02beedebdd3ecb00c4b9537a4e340b9b32e108fd60`; built with CPython 3.14.7, PyInstaller 6.22.3, and Inno Setup 6.7.3. No runtime dependencies, Qt modules, bundled assets, or license-delivery changes were made.
 - Validation: 93 tests ran with one environment-only symlink skip; Ruff check/format, compileall, and `git diff --check` passed. An isolated direct installer upgrade from v0.1.2 to v0.1.3 and silent uninstall succeeded in a temporary directory. The actual app settings export and profile hashes stayed identical. The v0.1.3 app was not launched; Workshop loading and the updater-launched installer path remain unverified.
+- GitHub Actions run [39904471238](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/39904471238) passed and published `ZomboidSorter-0.1.3-windows-setup.exe` (120,150,804 bytes, SHA-256 `6b62055b244b7503c1bb25e308ee5310d46a3f61bd076466e96f44b031d2ddf0`) and its checksum asset. The checksum matched GitHub's reported installer digest, and both assets returned HTTP 200. [Release page](https://github.com/LookImEcho-Rick/ZomboidSorter/releases/tag/v0.1.3).
 
 ## Build-aware metadata selection (2026-10-22)
 
