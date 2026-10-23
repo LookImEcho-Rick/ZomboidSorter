@@ -187,3 +187,11 @@ jobs:
             -PreviousInstallerPath '${{ steps.previous-installer.outputs.path }}' `
             -ExpectedVersion '${{ steps.update-assets.outputs.version }}' `
             -ExpectedBuildId $env:GITHUB_SHA
+      - name: Preserve rolling updater smoke diagnostics
+        if: failure() && steps.publish.outputs.published == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rolling-updater-smoke-diagnostics-${{ github.run_id }}
+          path: ${{ runner.temp }}/ZomboidSorter-update-smoke-*/smoke-diagnostics.txt
+          if-no-files-found: warn
+          retention-days: 7

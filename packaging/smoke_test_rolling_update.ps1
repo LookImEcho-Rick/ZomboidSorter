@@ -46,6 +46,7 @@ $AppDataRoot = Join-Path $RunRootFull 'local app data'
 $TemporaryDirectory = Join-Path $RunRootFull 'temp'
 $OwnedProcessIds = [System.Collections.Generic.HashSet[int]]::new()
 $Completed = $false
+$UpdateHandoffTime = $null
 
 New-Item -ItemType Directory -Path $RunRootFull, $AppDataRoot, $TemporaryDirectory | Out-Null
 $env:LOCALAPPDATA = $AppDataRoot
@@ -185,14 +186,107 @@ function Get-InstalledAppProcess {
     $ExpectedExecutable = [System.IO.Path]::GetFullPath(
         (Join-Path $InstallDirectory 'ZomboidSorter.exe')
     )
-    foreach ($Candidate in (Get-CimInstance Win32_Process -Filter "Name = 'ZomboidSorter.exe'")) {
-        if ($Candidate.ProcessId -eq $ExcludeProcessId -or
-            $Candidate.ExecutablePath -ine $ExpectedExecutable) {
+    $ExpectedExecutable = $ExpectedExecutable.TrimEnd('\')
+    $Candidates = @{}
+    try {
+        foreach ($Candidate in (Get-CimInstance Win32_Process `
+                -Filter "Name = 'ZomboidSorter.exe'" -ErrorAction Stop)) {
+            $Candidates[[int]$Candidate.ProcessId] = [string]$Candidate.ExecutablePath
+        }
+    } catch {
+        Write-Verbose "CIM process lookup failed: $($_.Exception.Message)"
+    }
+    foreach ($Process in (Get-Process -Name 'ZomboidSorter' -ErrorAction SilentlyContinue)) {
+        if (-not $Candidates.ContainsKey($Process.Id)) {
+            $Candidates[$Process.Id] = ''
+        }
+    }
+    foreach ($CandidateId in @($Candidates.Keys)) {
+        if ([int]$CandidateId -eq $ExcludeProcessId) {
             continue
         }
-        return Get-Process -Id $Candidate.ProcessId
+        $CandidatePath = [string]$Candidates[$CandidateId]
+        $Process = Get-Process -Id ([int]$CandidateId) -ErrorAction SilentlyContinue
+        if ($null -eq $Process) { continue }
+        if (-not $CandidatePath) {
+            try { $CandidatePath = [string]$Process.MainModule.FileName } catch {}
+        }
+        if ($CandidatePath) {
+            try {
+                if ($CandidatePath.StartsWith('\\?\', [StringComparison]::Ordinal) -or
+                    $CandidatePath.StartsWith('\??\', [StringComparison]::Ordinal)) {
+                    $CandidatePath = $CandidatePath.Substring(4)
+                }
+                $CandidatePath = [System.IO.Path]::GetFullPath($CandidatePath).TrimEnd('\')
+            } catch {
+                continue
+            }
+            if ($CandidatePath -ieq $ExpectedExecutable -or
+                $CandidatePath -match ([regex]::Escape($RunId) + '\\ZomboidSorter\.exe$')) {
+                return $Process
+            }
+            continue
+        }
+        # A fresh hosted runner has no other app instance. If Windows denies
+        # access to the image path, accept only a process started at handoff.
+        if ($null -ne $UpdateHandoffTime) {
+            try {
+                $Process.Refresh()
+                if ($Process.StartTime.ToUniversalTime() -ge $UpdateHandoffTime.AddSeconds(-2)) {
+                    return $Process
+                }
+            } catch {}
+        }
     }
     return $null
+}
+
+function Save-SmokeDiagnostics {
+    $Lines = [System.Collections.Generic.List[string]]::new()
+    $Lines.Add("Failure time (UTC): $([DateTime]::UtcNow.ToString('o'))")
+    $Lines.Add("Install directory: $InstallDirectory")
+    $Lines.Add("Expected build ID: $ExpectedBuildId")
+    $BuildIdPath = Join-Path $InstallDirectory 'BUILD_ID'
+    if (Test-Path -LiteralPath $BuildIdPath -PathType Leaf) {
+        $Lines.Add("Installed build ID: $([System.IO.File]::ReadAllText($BuildIdPath).Trim())")
+    } else {
+        $Lines.Add('Installed build ID: missing')
+    }
+
+    $ReceiptPath = Join-Path $AppDataRoot 'ZomboidSorter\update-result.json'
+    if (Test-Path -LiteralPath $ReceiptPath -PathType Leaf) {
+        $Lines.Add("Update receipt: $([System.IO.File]::ReadAllText($ReceiptPath))")
+    } else {
+        $Lines.Add('Update receipt: missing or already consumed')
+    }
+    $HelperLogPath = Join-Path $TemporaryDirectory 'ZomboidSorter-update-error.txt'
+    if (Test-Path -LiteralPath $HelperLogPath -PathType Leaf) {
+        $Lines.Add("Updater helper log: $([System.IO.File]::ReadAllText($HelperLogPath))")
+    } else {
+        $Lines.Add('Updater helper log: missing')
+    }
+
+    $Lines.Add('ZomboidSorter process candidates:')
+    try {
+        foreach ($Candidate in (Get-CimInstance Win32_Process `
+                -Filter "Name = 'ZomboidSorter.exe'" -ErrorAction Stop)) {
+            $Lines.Add("  PID=$($Candidate.ProcessId) image=$($Candidate.ExecutablePath) command=$($Candidate.CommandLine)")
+        }
+    } catch {
+        $Lines.Add("  CIM process query failed: $($_.Exception.Message)")
+    }
+    foreach ($Process in (Get-Process -Name 'ZomboidSorter' -ErrorAction SilentlyContinue)) {
+        $Title = ''
+        try { $Title = $Process.MainWindowTitle } catch {}
+        $Lines.Add("  PID=$($Process.Id) start=$($Process.StartTime.ToString('o')) title=$Title")
+        foreach ($Window in (Get-ProcessWindows -ProcessId $Process.Id)) {
+            try { $Lines.Add("    UIA window: $($Window.Current.Name)") } catch {}
+        }
+    }
+    $DiagnosticPath = Join-Path $RunRootFull 'smoke-diagnostics.txt'
+    [System.IO.File]::WriteAllLines($DiagnosticPath, $Lines, [System.Text.UTF8Encoding]::new($false))
+    Write-Host "Updater smoke diagnostics: $DiagnosticPath"
+    Get-Content -LiteralPath $DiagnosticPath
 }
 
 try {
@@ -258,6 +352,8 @@ try {
     if ($OldProcess.ExitCode -ne 0) {
         throw "The old app exited with code $($OldProcess.ExitCode) during update handoff."
     }
+    $UpdateHandoffTime = [DateTime]::UtcNow
+    Write-Host "Previous app exited at $($UpdateHandoffTime.ToString('o')); waiting for the updated process."
 
     $Deadline = [DateTime]::UtcNow.AddMinutes(8)
     $NewProcess = $null
@@ -323,6 +419,12 @@ try {
 
     $Completed = $true
     Write-Host "Rolling updater smoke test passed: v$ExpectedVersion ($ExpectedBuildId), old app button handoff, verified relaunch, and portable data preservation."
+} catch {
+    Write-Host "Rolling updater smoke test failed: $($_.Exception.Message)"
+    try { Save-SmokeDiagnostics } catch {
+        Write-Host "Could not save updater smoke diagnostics: $($_.Exception.Message)"
+    }
+    throw
 } finally {
     foreach ($ProcessId in $OwnedProcessIds) {
         $Process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
