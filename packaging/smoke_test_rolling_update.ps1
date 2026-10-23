@@ -438,9 +438,16 @@ try {
     if (-not $NewProcess.WaitForExit(30000)) {
         throw 'The updated app did not close cleanly after the success dialog was dismissed.'
     }
-    if ($NewProcess.ExitCode -ne 0) {
-        throw "The updated app exited with code $($NewProcess.ExitCode)."
+    $NewProcess.Refresh()
+    if (-not $NewProcess.HasExited) {
+        throw 'The updated app did not finish exiting after the close request.'
     }
+    $UpdatedAppExitCode = $null
+    try { $UpdatedAppExitCode = $NewProcess.ExitCode } catch {}
+    if ($null -ne $UpdatedAppExitCode -and $UpdatedAppExitCode -ne 0) {
+        throw "The updated app exited with code $UpdatedAppExitCode."
+    }
+    Write-Host "Updated app closed; reported process exit code: $UpdatedAppExitCode."
 
     $Uninstaller = Join-Path $InstallDirectory 'unins000.exe'
     Invoke-SilentInstaller -Executable $Uninstaller -Arguments @(
