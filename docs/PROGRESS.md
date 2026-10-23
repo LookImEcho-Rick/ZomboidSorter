@@ -1,5 +1,13 @@
 # Progress
 
+## Update results, global backup restore, and save-list import (2026-10-23)
+
+- The update helper now checks that the installed executable and `BUILD_ID` match the downloaded package, records a one-time result, and relaunches the app. On startup, the app reports verified success or failure and shows the temporary error-log path when available.
+- Added **Restore Backup…** for the supported global list. It previews ordered Mod ID/map changes and staged edits, requires a default-No confirmation, restores through the guarded atomic writer, and creates a fresh backup of the current file first.
+- Added **Mod Packs → From Save…**. Discovery reads only immediate per-save `mods.txt` files under the selected Saves root. It shows each list's Mod IDs and maps, notes saves that inherit the global list, and copies ordered Mod IDs into an app-owned pack. Maps are preview-only under the existing Mod Pack schema; applying or importing never writes to a save.
+- Validation: all 121 unit tests passed with two environment-only symlink skips; Ruff check/format, compileall, and `git diff --check` passed. Focused coverage includes success/failure update receipts and dialogs, backup restore, save-list discovery, and UI flows. A read-only inspection of one local save `mods.txt` found version 1 with 11 Mod IDs and no maps; it does not establish compatibility across all game builds.
+- The new PowerShell helper was exercised end-to-end with a fresh local installer and isolated temporary portable install. It applied the installer, checked `BUILD_ID`, relaunched the packaged app, showed the success dialog, consumed the receipt, and preserved seeded portable settings and a Mod Pack. This reapplied the same build; it did not test a newer published rolling package. A real published update for this revision still needs a pushed build. Windows 10 and another-PC behavior remain unverified. No game configuration or save files were written during this work.
+
 ## Rolling updater and versionless v0.1.5 release (2026-10-23)
 
 - The app now displays v0.1.5 in its window title and header; the installer also carries version 0.1.5 in its metadata. Installer output and stable/rolling GitHub assets use the versionless name `ZomboidSorter-windows-setup.exe`.

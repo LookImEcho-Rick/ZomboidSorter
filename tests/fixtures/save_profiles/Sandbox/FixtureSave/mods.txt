@@ -1,0 +1,12 @@
+VERSION = 1,
+
+mods
+{
+    mod = SaveModFirst,
+    mod = SaveModSecond,
+}
+
+maps
+{
+    map = SaveMap,
+}

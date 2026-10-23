@@ -62,7 +62,9 @@ class ProfileActionsMixin:
         )
 
     def _open_mod_packs(self) -> None:
-        dialog = ModPacksDialog(self._profile_store, self)
+        dialog = ModPacksDialog(
+            self._profile_store, self, scan_result=self._last_result
+        )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         if dialog.selected_pack is not None:

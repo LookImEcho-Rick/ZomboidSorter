@@ -85,7 +85,9 @@ class UpdateActionsMixin:
         worker = UpdateDownloadWorker(release)
         self._update_download_worker = worker
         worker.progress.connect(self._update_download_progress)
-        worker.installer_ready.connect(self._launch_update_installer)
+        worker.installer_ready.connect(
+            lambda path, release=release: self._launch_update_installer(path, release)
+        )
         worker.failed.connect(self._update_download_failed)
         worker.cancelled.connect(self._update_download_cancelled)
         worker.finished.connect(self._update_download_worker_finished)
@@ -119,7 +121,9 @@ class UpdateActionsMixin:
         ):
             self._update_download_worker = None
 
-    def _launch_update_installer(self, installer_path: str) -> None:
+    def _launch_update_installer(
+        self, installer_path: str, release: UpdateRelease
+    ) -> None:
         installer = Path(installer_path)
         if self._shutdown_requested:
             try:
@@ -128,7 +132,11 @@ class UpdateActionsMixin:
                 pass
             return
         try:
-            launch_update_helper(installer)
+            launch_update_helper(
+                installer,
+                expected_version=release.version,
+                expected_build_id=release.build_id,
+            )
         except (OSError, UpdateError) as exc:
             self.update_button.setEnabled(True)
             self.update_button.setText("Check for Updates")

@@ -3,10 +3,40 @@
 import sys
 from pathlib import Path
 
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QIcon, QPalette
-from PySide6.QtWidgets import QApplication, QStyleFactory
+from PySide6.QtWidgets import QApplication, QMessageBox, QStyleFactory
 
+from zomboid_mod_manager.portable import application_directory
 from zomboid_mod_manager.ui.main_window import MainWindow
+from zomboid_mod_manager.updates import UpdateOutcome, consume_update_outcome
+
+
+def _show_update_outcome(window: MainWindow, outcome: UpdateOutcome) -> None:
+    box = QMessageBox(window)
+    box.setTextFormat(Qt.TextFormat.PlainText)
+    if outcome.status == "success":
+        window.status.setText(
+            f"Update to {outcome.version} installed and verified · "
+            f"build {outcome.installed_build_id[:8]}"
+        )
+        box.setWindowTitle("Update Complete")
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setText(f"ZomboidSorter {outcome.version} is installed.")
+        box.setInformativeText(
+            f"Verified build {outcome.installed_build_id[:8]} against the update package."
+        )
+    else:
+        window.status.setText("The update could not be verified. See the update log.")
+        box.setWindowTitle("Update Needs Attention")
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setText("ZomboidSorter could not verify the update installation.")
+        details = outcome.message or "The installer did not provide an error message."
+        if outcome.log_path:
+            details += f"\n\nUpdate log: {outcome.log_path}"
+        box.setInformativeText(details)
+    box.setStandardButtons(QMessageBox.StandardButton.Ok)
+    box.exec()
 
 
 def main() -> int:
@@ -44,6 +74,9 @@ def main() -> int:
     app.setPalette(palette)
     window = MainWindow()
     window.show()
+    outcome = consume_update_outcome(application_directory())
+    if outcome is not None:
+        QTimer.singleShot(0, lambda: _show_update_outcome(window, outcome))
     return app.exec()
 
 

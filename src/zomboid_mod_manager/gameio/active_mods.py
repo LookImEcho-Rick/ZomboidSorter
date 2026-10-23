@@ -235,27 +235,31 @@ def _require_global_default_target(path: Path) -> None:
         raise ActiveModConfigError("Save data is protected and cannot be modified.")
 
 
-def write_active_mods(snapshot: ActiveModSnapshot, mod_ids: tuple[str, ...]) -> Path:
+def write_active_configuration(
+    snapshot: ActiveModSnapshot, config: ActiveModConfig
+) -> Path:
     """Back up, atomically replace, and verify a previously-read default list."""
     _require_global_default_target(snapshot.path)
-    _validate_identifiers(mod_ids, "Mod IDs")
+    if config.version != snapshot.config.version:
+        raise ActiveModConfigError("Cannot restore a different config version.")
+    _validate_identifiers(config.mods, "Mod IDs")
+    _validate_identifiers(config.maps, "Map IDs")
     current_bytes = snapshot.path.read_bytes()
     current_fingerprint = hashlib.sha256(current_bytes).hexdigest()
     if current_fingerprint != snapshot.fingerprint:
         raise ConcurrentConfigChangeError(
             "The active-mod file changed since it was loaded; reload before applying."
         )
-    if mod_ids == snapshot.config.mods:
-        raise ActiveModConfigError("The active mod list has no changes to apply.")
+    if config == snapshot.config:
+        raise ActiveModConfigError("The global mod list has no changes to apply.")
 
-    new_config = replace(snapshot.config, mods=mod_ids)
-    output_text = render_active_mod_config(new_config)
+    output_text = render_active_mod_config(config)
     output_bytes = output_text.encode("utf-8")
-    if new_config.has_utf8_bom:
+    if config.has_utf8_bom:
         output_bytes = b"\xef\xbb\xbf" + output_bytes
     # Validate the exact bytes that will be written before creating a backup.
     verified = parse_active_mod_config(output_bytes.decode("utf-8-sig"))
-    if replace(verified, has_utf8_bom=new_config.has_utf8_bom) != new_config:
+    if replace(verified, has_utf8_bom=config.has_utf8_bom) != config:
         raise ActiveModConfigError(
             "Generated configuration did not round-trip; refusing to write."
         )
@@ -271,7 +275,7 @@ def write_active_mods(snapshot: ActiveModSnapshot, mod_ids: tuple[str, ...]) -> 
                 "The file changed immediately after the write."
             )
         result = read_active_mods(snapshot.path)
-        if result.config != new_config:
+        if result.config != config:
             raise ActiveModConfigError("Written configuration did not round-trip.")
     except Exception as exc:
         try:
@@ -292,3 +296,8 @@ def write_active_mods(snapshot: ActiveModSnapshot, mod_ids: tuple[str, ...]) -> 
             f"The file changed after replacement and was left untouched. Backup: {backup_path}"
         ) from exc
     return backup_path
+
+
+def write_active_mods(snapshot: ActiveModSnapshot, mod_ids: tuple[str, ...]) -> Path:
+    """Back up and replace the global Mod IDs while preserving the map list."""
+    return write_active_configuration(snapshot, replace(snapshot.config, mods=mod_ids))

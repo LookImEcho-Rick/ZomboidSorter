@@ -13,9 +13,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QModelIndex, QPoint, QSettings, Qt, QUrl
 from PySide6.QtGui import QColor, QImage
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
+from PySide6.QtWidgets import QApplication, QDialog, QLabel, QMessageBox, QWidget
 
 from zomboid_mod_manager import __version__
+from zomboid_mod_manager.__main__ import _show_update_outcome
 from zomboid_mod_manager.diagnostics.file_overlaps import (
     FileOverlap,
     FileOverlapPathGroup,
@@ -31,8 +32,10 @@ from zomboid_mod_manager.sorting.user_rules import (
 )
 from zomboid_mod_manager.ui.file_overlap_dialog import FileOverlapDialog
 from zomboid_mod_manager.ui.main_window import MainWindow
+from zomboid_mod_manager.ui.mod_packs_dialog import ModPacksDialog
+from zomboid_mod_manager.ui.save_mod_pack_dialog import SaveModPackDialog
 from zomboid_mod_manager.ui.workshop_browser import WorkshopBrowserPanel
-from zomboid_mod_manager.updates import UpdateRelease
+from zomboid_mod_manager.updates import UpdateOutcome, UpdateRelease
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -77,6 +80,43 @@ class MainWindowTests(unittest.TestCase):
         )
         self.addCleanup(window.close)
         return window, config_path
+
+    def test_update_outcome_dialog_reports_verified_success_and_failure(self) -> None:
+        window = QWidget()
+        window.status = QLabel(window)
+        self.addCleanup(window.close)
+        shown_dialogs: list[tuple[str, str, str]] = []
+
+        def capture_dialog(dialog: QMessageBox) -> int:
+            shown_dialogs.append(
+                (dialog.windowTitle(), dialog.text(), dialog.informativeText())
+            )
+            return 0
+
+        with patch("zomboid_mod_manager.__main__.QMessageBox.exec", capture_dialog):
+            _show_update_outcome(
+                window,
+                UpdateOutcome("success", "0.1.6", "a" * 40, "a" * 40, "verified", ""),
+            )
+            self.assertIn("installed and verified", window.status.text())
+            _show_update_outcome(
+                window,
+                UpdateOutcome(
+                    "failed",
+                    "0.1.6",
+                    "a" * 40,
+                    "",
+                    "installer failed",
+                    "C:/Temp/ZomboidSorter-update-error.txt",
+                ),
+            )
+
+        self.assertEqual(len(shown_dialogs), 2)
+        self.assertEqual(shown_dialogs[0][0], "Update Complete")
+        self.assertIn("Verified build aaaaaaaa", shown_dialogs[0][2])
+        self.assertEqual(shown_dialogs[1][0], "Update Needs Attention")
+        self.assertIn("installer failed", shown_dialogs[1][2])
+        self.assertIn("ZomboidSorter-update-error.txt", shown_dialogs[1][2])
 
     def test_portable_mode_writes_qsettings_beside_application(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -181,9 +221,24 @@ class MainWindowTests(unittest.TestCase):
                 "zomboid_mod_manager.ui.window_updates.QApplication.quit"
             ) as quit_app,
         ):
-            window._launch_update_installer(str(installer))
+            release = UpdateRelease(
+                version="0.1.6",
+                tag_name="rolling",
+                installer_name="ZomboidSorter-windows-setup.exe",
+                installer_url="https://github.com/LookImEcho-Rick/ZomboidSorter/releases/download/rolling/ZomboidSorter-windows-setup.exe",
+                installer_size=100,
+                checksum_name="ZomboidSorter-windows-setup.exe.sha256",
+                checksum_url="https://github.com/LookImEcho-Rick/ZomboidSorter/releases/download/rolling/ZomboidSorter-windows-setup.exe.sha256",
+                build_id="c" * 40,
+                expected_sha256="b" * 64,
+            )
+            window._launch_update_installer(str(installer), release)
 
-        helper.assert_called_once_with(installer)
+        helper.assert_called_once_with(
+            installer,
+            expected_version="0.1.6",
+            expected_build_id="c" * 40,
+        )
         quit_app.assert_called_once_with()
         self.assertIn("Applying update", window.status.text())
 
@@ -455,6 +510,60 @@ class MainWindowTests(unittest.TestCase):
         self.assertEqual(config_path.read_bytes(), original_config)
         self.assertEqual(config_path.read_bytes(), original_config)
         window.close()
+
+    def test_save_mod_pack_dialog_previews_and_returns_read_only_save_list(
+        self,
+    ) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        saves_root = Path(temporary.name) / "Zomboid" / "Saves"
+        save_directory = saves_root / "Sandbox" / "OneSave"
+        save_directory.mkdir(parents=True)
+        mods_path = save_directory / "mods.txt"
+        original_mods = (
+            "VERSION = 1,\n\nmods\n{\n    mod = FirstMod,\n    mod = SecondMod,\n}\n\n"
+            "maps\n{\n    map = OneMap,\n}\n"
+        )
+        mods_path.write_text(original_mods, encoding="utf-8")
+        unrelated_save_file = save_directory / "map_ver.bin"
+        unrelated_save_file.write_bytes(b"save-data-sentinel")
+
+        dialog = SaveModPackDialog(saves_root=saves_root)
+        self.addCleanup(dialog.close)
+
+        self.assertEqual(dialog.saves_list.count(), 1)
+        self.assertEqual(dialog.saves_list.currentRow(), 0)
+        self.assertEqual(dialog.pack_name.text(), "Sandbox - OneSave")
+        self.assertIn("FirstMod", dialog.details.toPlainText())
+        self.assertIn("SecondMod", dialog.details.toPlainText())
+        self.assertTrue(dialog.save_button.isEnabled())
+        dialog._accept_profile()
+
+        self.assertEqual(dialog.selected_profile.mod_ids, ("FirstMod", "SecondMod"))
+        self.assertEqual(dialog.selected_profile.workshop_ids, ())
+        self.assertEqual(mods_path.read_text(encoding="utf-8"), original_mods)
+        self.assertEqual(unrelated_save_file.read_bytes(), b"save-data-sentinel")
+
+    def test_mod_pack_manager_saves_imported_save_as_app_owned_pack(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        profile_store = ProfileStore(Path(temporary.name) / "profiles")
+        dialog = ModPacksDialog(profile_store)
+        self.addCleanup(dialog.close)
+        profile = ModProfile("Sandbox - OneSave", ("SaveMod",))
+
+        def return_save_profile(save_dialog) -> int:
+            save_dialog.selected_profile = profile
+            return QDialog.DialogCode.Accepted
+
+        with patch(
+            "zomboid_mod_manager.ui.mod_packs_dialog.SaveModPackDialog.exec",
+            new=return_save_profile,
+        ):
+            dialog._import_from_save()
+
+        self.assertEqual(profile_store.load(profile.name), profile)
+        self.assertIn("The save was not changed", dialog.status.text())
 
     def test_mod_pack_manager_selection_applies_pack_to_global_config(self) -> None:
         temporary = tempfile.TemporaryDirectory()
@@ -1338,6 +1447,58 @@ class MainWindowTests(unittest.TestCase):
         self.assertEqual(len(backups), 1)
         self.assertEqual(backups[0].read_bytes(), original)
         window.close()
+
+    def test_restore_backup_previews_and_restores_with_backup_of_current(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        config_path = root / "Zomboid" / "mods" / "default.txt"
+        config_path.parent.mkdir(parents=True)
+        current_text = (
+            "VERSION = 1,\n\nmods\n{\n    mod = CurrentMod,\n}\n\n"
+            "maps\n{\n    map = CurrentMap,\n}\n"
+        )
+        backup_text = (
+            "VERSION = 1,\n\nmods\n{\n    mod = PriorMod,\n}\n\n"
+            "maps\n{\n    map = PriorMap,\n}\n"
+        )
+        config_path.write_text(current_text, encoding="utf-8")
+        current_bytes = config_path.read_bytes()
+        backup_path = config_path.with_name("default.txt.bak-20261023T120000.000000Z")
+        backup_path.write_text(backup_text, encoding="utf-8")
+        detected = DetectedPaths((), (), (), (), FIXTURES / "local_mods")
+        window = MainWindow(
+            detected,
+            active_config_path=config_path,
+            profile_store=ProfileStore(root / "profiles"),
+        )
+        self.addCleanup(window.close)
+        self._wait_for_background_workers(window)
+
+        with (
+            patch(
+                "zomboid_mod_manager.ui.window_configuration.QFileDialog.getOpenFileName",
+                return_value=(str(backup_path), "Global mod list backups"),
+            ),
+            patch.object(
+                QMessageBox, "exec", return_value=QMessageBox.StandardButton.Yes
+            ),
+        ):
+            window._restore_active_configuration_backup()
+
+        self.assertEqual(window._active_config.config.mods, ("PriorMod",))
+        self.assertEqual(window._active_config.config.maps, ("PriorMap",))
+        self.assertEqual(config_path.read_text(encoding="utf-8"), backup_text)
+        current_backups = [
+            path
+            for path in config_path.parent.glob("default.txt.bak-*")
+            if path != backup_path
+        ]
+        self.assertEqual(len(current_backups), 1)
+        self.assertEqual(current_backups[0].read_bytes(), current_bytes)
+        self.assertIn(
+            "Restored the global mod list", window.configuration_status.text()
+        )
 
     def test_workshop_page_button_opens_only_selected_workshop_item(self) -> None:
         temporary = tempfile.TemporaryDirectory()

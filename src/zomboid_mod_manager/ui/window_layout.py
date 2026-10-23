@@ -385,6 +385,14 @@ class WindowLayoutMixin:
             lambda: self._load_active_configuration()
         )
         target_row.addWidget(self.load_config_button)
+        self.restore_config_button = QPushButton("Restore Backup…")
+        self.restore_config_button.setToolTip(
+            "Preview and restore a timestamped backup of the global mod list."
+        )
+        self.restore_config_button.clicked.connect(
+            self._restore_active_configuration_backup
+        )
+        target_row.addWidget(self.restore_config_button)
         self.setup_layout.addLayout(target_row)
 
         self.configuration_status = QLabel(
@@ -393,7 +401,7 @@ class WindowLayoutMixin:
         self.configuration_status.setWordWrap(True)
         self.setup_layout.addWidget(self.configuration_status)
         warning = QLabel(
-            "Changes apply only to Zomboid/mods/default.txt. Per-save mod lists are protected."
+            "This tab changes only Zomboid/mods/default.txt. Import save lists read-only from Mod Packs."
         )
         warning.setWordWrap(True)
         self.setup_layout.addWidget(warning)

@@ -34,6 +34,8 @@ _VERSION_PATTERN = re.compile(r"v?(\d+)\.(\d+)\.(\d+)\Z")
 _CHECKSUM_PATTERN = re.compile(r"([0-9a-fA-F]{64})\s+\*?(.+)")
 _BUILD_ID_PATTERN = re.compile(r"[0-9a-f]{40}\Z")
 _SHA256_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
+_UPDATE_RESULT_NAME = "update-result.json"
+_MAX_UPDATE_RESULT_BYTES = 16_384
 
 
 class UpdateError(RuntimeError):
@@ -55,6 +57,16 @@ class UpdateRelease:
     checksum_url: str
     build_id: str = ""
     expected_sha256: str = ""
+
+
+@dataclass(frozen=True)
+class UpdateOutcome:
+    status: str
+    version: str
+    expected_build_id: str
+    installed_build_id: str
+    message: str
+    log_path: str
 
 
 def _version_key(version: str) -> tuple[int, int, int]:
@@ -308,12 +320,85 @@ def download_update(
         partial_path.unlink(missing_ok=True)
 
 
-def launch_update_helper(installer_path: Path) -> None:
-    """Close this packaged app, run the verified installer silently, then relaunch."""
+def _update_result_path() -> Path:
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if not local_app_data:
+        local_app_data = str(Path.home() / "AppData" / "Local")
+    return Path(local_app_data) / "ZomboidSorter" / _UPDATE_RESULT_NAME
+
+
+def consume_update_outcome(app_directory: Path) -> UpdateOutcome | None:
+    """Read and remove a completed updater receipt for this installation."""
+    result_path = _update_result_path()
+    try:
+        if result_path.stat().st_size > _MAX_UPDATE_RESULT_BYTES:
+            return None
+        raw = result_path.read_bytes()
+    except OSError:
+        return None
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except UnicodeDecodeError, json.JSONDecodeError:
+        return None
+    if not isinstance(value, dict) or value.get("schema") != 1:
+        return None
+    status = value.get("status")
+    version = value.get("version")
+    expected_build_id = value.get("expected_build_id")
+    installed_build_id = value.get("installed_build_id")
+    receipt_directory = value.get("app_directory")
+    message = value.get("message")
+    log_path = value.get("log_path")
+    if (
+        status not in {"success", "failed"}
+        or not isinstance(version, str)
+        or not _VERSION_PATTERN.fullmatch(version)
+        or not isinstance(expected_build_id, str)
+        or not _BUILD_ID_PATTERN.fullmatch(expected_build_id)
+        or not isinstance(installed_build_id, str)
+        or (installed_build_id and not _BUILD_ID_PATTERN.fullmatch(installed_build_id))
+        or not isinstance(receipt_directory, str)
+        or not isinstance(message, str)
+        or not isinstance(log_path, str)
+    ):
+        return None
+    if status == "success" and installed_build_id != expected_build_id:
+        return None
+    try:
+        current_directory = app_directory.resolve(strict=False)
+        reported_directory = Path(receipt_directory).resolve(strict=False)
+    except OSError:
+        return None
+    if os.path.normcase(str(current_directory)) != os.path.normcase(
+        str(reported_directory)
+    ):
+        return None
+    outcome = UpdateOutcome(
+        status=status,
+        version=version,
+        expected_build_id=expected_build_id,
+        installed_build_id=installed_build_id,
+        message=message[:2_000],
+        log_path=log_path[:1_000],
+    )
+    try:
+        result_path.unlink()
+    except OSError:
+        pass
+    return outcome
+
+
+def launch_update_helper(
+    installer_path: Path, *, expected_version: str, expected_build_id: str
+) -> None:
+    """Close this packaged app, verify installation, report its result, and relaunch."""
     if sys.platform != "win32" or not getattr(sys, "frozen", False):
         raise UpdateError(
             "Automatic updates are available only in the packaged Windows app."
         )
+    _version_key(expected_version)
+    if not _BUILD_ID_PATTERN.fullmatch(expected_build_id):
+        raise UpdateError("The update has an invalid commit ID.")
 
     installer = installer_path.resolve(strict=True)
     app_executable = Path(sys.executable).resolve(strict=True)
@@ -324,11 +409,40 @@ def launch_update_helper(installer_path: Path) -> None:
     helper_source = r"""param(
     [Parameter(Mandatory=$true)][string]$InstallerPath,
     [Parameter(Mandatory=$true)][string]$AppDirectory,
-    [Parameter(Mandatory=$true)][int]$ParentProcessId
+    [Parameter(Mandatory=$true)][int]$ParentProcessId,
+    [Parameter(Mandatory=$true)][string]$ExpectedVersion,
+    [Parameter(Mandatory=$true)][string]$ExpectedBuildId
 )
 $ErrorActionPreference = 'Stop'
 $AppPath = Join-Path $AppDirectory 'ZomboidSorter.exe'
 $LogPath = Join-Path $env:TEMP 'ZomboidSorter-update-error.txt'
+$LocalAppDataPath = $env:LOCALAPPDATA
+if (-not $LocalAppDataPath) {
+    $LocalAppDataPath = Join-Path $env:USERPROFILE 'AppData\Local'
+}
+$ResultDirectory = Join-Path $LocalAppDataPath 'ZomboidSorter'
+$ResultPath = Join-Path $ResultDirectory 'update-result.json'
+$InstalledBuildId = ''
+function Write-UpdateResult([string]$Status, [string]$Message) {
+    try {
+        [System.IO.Directory]::CreateDirectory($ResultDirectory) | Out-Null
+        $Result = [ordered]@{
+            schema = 1
+            status = $Status
+            version = $ExpectedVersion
+            expected_build_id = $ExpectedBuildId
+            installed_build_id = $InstalledBuildId
+            app_directory = $AppDirectory
+            message = $Message
+            log_path = $LogPath
+        } | ConvertTo-Json -Compress
+        [System.IO.File]::WriteAllText(
+            $ResultPath,
+            $Result,
+            [System.Text.UTF8Encoding]::new($false)
+        )
+    } catch {}
+}
 try {
     Wait-Process -Id $ParentProcessId -ErrorAction SilentlyContinue
     $Setup = Start-Process -FilePath $InstallerPath `
@@ -340,9 +454,21 @@ try {
     if (-not (Test-Path -LiteralPath $AppPath -PathType Leaf)) {
         throw 'The installer finished but the app executable is missing.'
     }
+    $BuildIdPath = Join-Path $AppDirectory 'BUILD_ID'
+    if (-not (Test-Path -LiteralPath $BuildIdPath -PathType Leaf)) {
+        throw 'The installer finished but BUILD_ID is missing.'
+    }
+    $InstalledBuildId = ([System.IO.File]::ReadAllText($BuildIdPath)).Trim().ToLowerInvariant()
+    if ($InstalledBuildId -cne $ExpectedBuildId) {
+        throw "Installed build $InstalledBuildId does not match expected build $ExpectedBuildId."
+    }
+    Remove-Item -LiteralPath $LogPath -Force -ErrorAction SilentlyContinue
+    Write-UpdateResult 'success' "ZomboidSorter $ExpectedVersion was installed and verified."
     Start-Process -FilePath $AppPath -WorkingDirectory $AppDirectory
 } catch {
-    try { [System.IO.File]::WriteAllText($LogPath, $_.Exception.Message) } catch {}
+    $Message = $_.Exception.Message
+    try { [System.IO.File]::WriteAllText($LogPath, $Message) } catch {}
+    Write-UpdateResult 'failed' $Message
     if (Test-Path -LiteralPath $AppPath -PathType Leaf) {
         try { Start-Process -FilePath $AppPath -WorkingDirectory $AppDirectory } catch {}
     }
@@ -372,6 +498,10 @@ try {
                 str(app_directory),
                 "-ParentProcessId",
                 str(os.getpid()),
+                "-ExpectedVersion",
+                expected_version,
+                "-ExpectedBuildId",
+                expected_build_id,
             ],
             close_fds=True,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),

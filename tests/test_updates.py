@@ -210,7 +210,11 @@ class UpdateCheckTests(unittest.TestCase):
                 patch.object(updates.sys, "executable", str(app_executable)),
                 patch.object(updates.subprocess, "Popen") as popen,
             ):
-                updates.launch_update_helper(installer)
+                updates.launch_update_helper(
+                    installer,
+                    expected_version="0.1.6",
+                    expected_build_id="c" * 40,
+                )
 
             arguments = popen.call_args.args[0]
             helper_path = Path(arguments[arguments.index("-File") + 1])
@@ -218,10 +222,107 @@ class UpdateCheckTests(unittest.TestCase):
                 helper_script = helper_path.read_text(encoding="utf-8")
                 self.assertIn("Wait-Process -Id $ParentProcessId", helper_script)
                 self.assertIn("/VERYSILENT", helper_script)
+                self.assertIn("$ExpectedBuildId", helper_script)
+                self.assertIn("update-result.json", helper_script)
+                self.assertIn("Write-UpdateResult 'success'", helper_script)
+                self.assertIn("Write-UpdateResult 'failed'", helper_script)
                 self.assertIn("Start-Process -FilePath $AppPath", helper_script)
                 self.assertEqual(popen.call_args.kwargs["cwd"], app_directory)
             finally:
                 helper_path.unlink(missing_ok=True)
+
+    def test_consumes_successful_update_receipt_for_matching_install(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            app_directory = root / "installed app"
+            app_directory.mkdir()
+            result_directory = root / "LocalAppData" / "ZomboidSorter"
+            result_directory.mkdir(parents=True)
+            result_path = result_directory / updates._UPDATE_RESULT_NAME
+            result_path.write_text(
+                json.dumps(
+                    {
+                        "schema": 1,
+                        "status": "success",
+                        "version": "0.1.6",
+                        "expected_build_id": "c" * 40,
+                        "installed_build_id": "c" * 40,
+                        "app_directory": str(app_directory),
+                        "message": "installed",
+                        "log_path": "",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.dict("os.environ", {"LOCALAPPDATA": str(root / "LocalAppData")}):
+                outcome = updates.consume_update_outcome(app_directory)
+
+            self.assertIsNotNone(outcome)
+            self.assertEqual(outcome.status, "success")
+            self.assertEqual(outcome.installed_build_id, "c" * 40)
+            self.assertFalse(result_path.exists())
+
+    def test_leaves_update_receipt_for_a_different_install_unconsumed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            result_directory = root / "LocalAppData" / "ZomboidSorter"
+            result_directory.mkdir(parents=True)
+            result_path = result_directory / updates._UPDATE_RESULT_NAME
+            result_path.write_text(
+                json.dumps(
+                    {
+                        "schema": 1,
+                        "status": "failed",
+                        "version": "0.1.6",
+                        "expected_build_id": "c" * 40,
+                        "installed_build_id": "",
+                        "app_directory": str(root / "other install"),
+                        "message": "installer failed",
+                        "log_path": "update.log",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.dict("os.environ", {"LOCALAPPDATA": str(root / "LocalAppData")}):
+                outcome = updates.consume_update_outcome(root / "this install")
+
+            self.assertIsNone(outcome)
+            self.assertTrue(result_path.exists())
+
+    def test_consumes_failed_update_receipt_for_matching_install(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            app_directory = root / "installed app"
+            app_directory.mkdir()
+            result_directory = root / "LocalAppData" / "ZomboidSorter"
+            result_directory.mkdir(parents=True)
+            result_path = result_directory / updates._UPDATE_RESULT_NAME
+            result_path.write_text(
+                json.dumps(
+                    {
+                        "schema": 1,
+                        "status": "failed",
+                        "version": "0.1.6",
+                        "expected_build_id": "c" * 40,
+                        "installed_build_id": "",
+                        "app_directory": str(app_directory),
+                        "message": "installer exited with code 1",
+                        "log_path": str(root / "update-error.txt"),
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.dict("os.environ", {"LOCALAPPDATA": str(root / "LocalAppData")}):
+                outcome = updates.consume_update_outcome(app_directory)
+
+            self.assertIsNotNone(outcome)
+            self.assertEqual(outcome.status, "failed")
+            self.assertEqual(outcome.message, "installer exited with code 1")
+            self.assertEqual(outcome.log_path, str(root / "update-error.txt"))
+            self.assertFalse(result_path.exists())
 
 
 if __name__ == "__main__":

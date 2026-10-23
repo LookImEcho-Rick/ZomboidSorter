@@ -11,6 +11,7 @@ from PySide6.QtGui import (
     QDesktopServices,
 )
 from PySide6.QtWidgets import (
+    QFileDialog,
     QMessageBox,
 )
 
@@ -18,7 +19,10 @@ from zomboid_mod_manager.configuration import (
     SelectedConfigurationPathMismatch,
     apply_active_configuration,
     is_global_default_mod_list,
+    list_active_configuration_backups,
+    read_active_configuration_backup,
     read_unchanged_active_configuration,
+    restore_active_configuration,
     selected_path_matches_configuration,
 )
 from zomboid_mod_manager.gameio.active_mods import (
@@ -44,6 +48,13 @@ class ActiveConfigurationMixin:
             and tuple(self._staged_mod_ids) != self._active_config.config.mods
         )
         self.apply_config_button.setEnabled(bool(same_target and dirty))
+        self.restore_config_button.setEnabled(
+            bool(
+                self._active_config is not None
+                and same_target
+                and is_global_default_mod_list(self._active_config.path)
+            )
+        )
         self.launch_game_button.setText(
             "Apply & Launch…" if dirty else "Launch Project Zomboid"
         )
@@ -142,6 +153,118 @@ class ActiveConfigurationMixin:
 
     def _apply_active_configuration(self) -> bool:
         return self._apply_staged_configuration(require_confirmation=True)
+
+    def _restore_active_configuration_backup(self) -> None:
+        snapshot = self._active_config
+        if snapshot is None or not self._active_config_matches_selected_path():
+            QMessageBox.warning(
+                self,
+                "Global Mod List Unavailable",
+                "Load the supported global Zomboid/mods/default.txt file before restoring a backup.",
+            )
+            return
+        if not is_global_default_mod_list(snapshot.path):
+            QMessageBox.warning(
+                self,
+                "Unsupported Mod List",
+                "Backups can only be restored to the global Zomboid/mods/default.txt file.",
+            )
+            return
+        try:
+            backups = list_active_configuration_backups(snapshot)
+        except (OSError, ActiveModConfigError) as exc:
+            QMessageBox.warning(self, "Could Not List Backups", str(exc))
+            return
+        if not backups:
+            QMessageBox.information(
+                self,
+                "No Global Mod List Backups",
+                "No timestamped backups were found beside the loaded global mod list.",
+            )
+            return
+        selected, _ = QFileDialog.getOpenFileName(
+            self,
+            "Choose a global mod list backup",
+            str(snapshot.path.parent),
+            "Global mod list backups (default.txt.bak-*)",
+        )
+        if not selected:
+            return
+        backup_path = Path(selected)
+        try:
+            backup = read_active_configuration_backup(snapshot, backup_path)
+        except (OSError, ActiveModConfigError) as exc:
+            QMessageBox.warning(self, "Could Not Read Backup", str(exc))
+            return
+
+        current = snapshot.config
+        restored = backup.config
+        added = tuple(mod_id for mod_id in restored.mods if mod_id not in current.mods)
+        removed = tuple(
+            mod_id for mod_id in current.mods if mod_id not in restored.mods
+        )
+        maps_added = tuple(
+            map_id for map_id in restored.maps if map_id not in current.maps
+        )
+        maps_removed = tuple(
+            map_id for map_id in current.maps if map_id not in restored.maps
+        )
+        detail_lines = [f"Backup: {backup_path}"]
+        detail_lines.append(
+            "Mod order: "
+            + ("changes" if restored.mods != current.mods else "unchanged")
+        )
+        detail_lines.extend(self._format_restore_diff("Mod IDs added", added))
+        detail_lines.extend(self._format_restore_diff("Mod IDs removed", removed))
+        detail_lines.append(
+            "Map order: "
+            + ("changes" if restored.maps != current.maps else "unchanged")
+        )
+        detail_lines.extend(self._format_restore_diff("Maps added", maps_added))
+        detail_lines.extend(self._format_restore_diff("Maps removed", maps_removed))
+        if tuple(self._staged_mod_ids) != current.mods:
+            detail_lines.append(
+                "Unapplied staged changes will be replaced by this backup."
+            )
+
+        box = QMessageBox(
+            QMessageBox.Icon.Warning,
+            "Restore Global Mod List Backup",
+            "Restore this backup to Project Zomboid's global mod list?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            self,
+        )
+        box.setInformativeText(
+            f"The backup contains {len(restored.mods)} Mod IDs and {len(restored.maps)} maps. "
+            "A backup of the current file will be created before restoring."
+        )
+        box.setDetailedText("\n".join(detail_lines))
+        box.setDefaultButton(QMessageBox.StandardButton.No)
+        if box.exec() != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            current_backup = restore_active_configuration(snapshot, backup_path)
+        except (OSError, ActiveModConfigError) as exc:
+            self.configuration_status.setText(f"Restore failed safely: {exc}")
+            QMessageBox.warning(self, "Could Not Restore Backup", str(exc))
+            self._update_apply_enabled()
+            return
+        self._load_active_configuration_impl(force=True)
+        self.configuration_status.setText(
+            f"Restored the global mod list from {backup_path.name}. "
+            f"The previous list was backed up to {current_backup}."
+        )
+
+    @staticmethod
+    def _format_restore_diff(label: str, values: tuple[str, ...]) -> list[str]:
+        if not values:
+            return [f"{label}: none"]
+        preview = values[:20]
+        lines = [f"{label} ({len(values)}):"]
+        lines.extend(f"  {value}" for value in preview)
+        if len(values) > len(preview):
+            lines.append(f"  …and {len(values) - len(preview)} more")
+        return lines
 
     def _apply_staged_configuration(
         self, *, require_confirmation: bool, launch_after_apply: bool = False

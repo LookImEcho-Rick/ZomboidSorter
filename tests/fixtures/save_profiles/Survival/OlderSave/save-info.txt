@@ -1,0 +1,1 @@
+This file confirms discovery does not need to open unrelated save contents.

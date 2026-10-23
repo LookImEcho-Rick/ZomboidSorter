@@ -18,12 +18,14 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from zomboid_mod_manager.domain import ScanResult
 from zomboid_mod_manager.profiles import (
     ModProfile,
     ProfileError,
     ProfileStore,
     parse_profile,
 )
+from zomboid_mod_manager.ui.save_mod_pack_dialog import SaveModPackDialog
 from zomboid_mod_manager.ui.theme import apply_theme
 
 
@@ -37,16 +39,23 @@ class PackListWidget(QListWidget):
         painter.drawText(
             self.viewport().rect().adjusted(20, 20, -20, -20),
             Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap,
-            "NO SAVED MOD PACKS\nSave a load order or import a pack to get started.",
+            "NO SAVED MOD PACKS\nSave a load order or import a pack or save list to get started.",
         )
 
 
 class ModPacksDialog(QDialog):
     """Let the user choose a pack to apply or manage saved packs."""
 
-    def __init__(self, profile_store: ProfileStore, parent=None) -> None:
+    def __init__(
+        self,
+        profile_store: ProfileStore,
+        parent=None,
+        *,
+        scan_result: ScanResult | None = None,
+    ) -> None:
         super().__init__(parent)
         self._profile_store = profile_store
+        self._scan_result = scan_result
         self.selected_pack: ModProfile | None = None
         self.setWindowTitle("Mod Packs")
         self.resize(700, 500)
@@ -94,6 +103,12 @@ class ModPacksDialog(QDialog):
         self.import_button = QPushButton("Import…")
         self.import_button.clicked.connect(self._import_pack)
         actions.addWidget(self.import_button)
+        self.import_save_button = QPushButton("From Save…")
+        self.import_save_button.setToolTip(
+            "Read a save's mods.txt and save its order as an app-owned Mod Pack."
+        )
+        self.import_save_button.clicked.connect(self._import_from_save)
+        actions.addWidget(self.import_save_button)
         self.export_button = QPushButton("Export…")
         self.export_button.clicked.connect(self._export_selected_pack)
         actions.addWidget(self.export_button)
@@ -242,6 +257,35 @@ class ModPacksDialog(QDialog):
             QMessageBox.warning(self, "Could not export Mod Pack", str(exc))
             return
         self.status.setText(f"Exported Mod Pack '{name}' to {path}.")
+
+    def _import_from_save(self) -> None:
+        dialog = SaveModPackDialog(scan_result=self._scan_result, parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        profile = dialog.selected_profile
+        if profile is None:
+            return
+        overwrite = False
+        if profile.name in self._profile_store.list_names():
+            answer = QMessageBox.question(
+                self,
+                "Replace Mod Pack",
+                f"'{profile.name}' already exists. Replace it and keep a backup?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            overwrite = True
+        try:
+            self._profile_store.save(profile, overwrite=overwrite)
+        except (OSError, ProfileError) as exc:
+            QMessageBox.warning(self, "Could Not Save Mod Pack", str(exc))
+            return
+        self.status.setText(
+            f"Saved '{profile.name}' from a save's mods.txt. The save was not changed."
+        )
+        self._refresh_packs(profile.name)
 
     def _show_restore_menu(self) -> None:
         menu = QMenu(self)

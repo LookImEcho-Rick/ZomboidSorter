@@ -5,12 +5,16 @@ from __future__ import annotations
 from pathlib import Path
 
 from .gameio.active_mods import (
+    ActiveModConfig,
     ActiveModConfigError,
     ActiveModSnapshot,
     ConcurrentConfigChangeError,
     read_active_mods,
+    write_active_configuration,
     write_active_mods,
 )
+
+_MAX_ACTIVE_BACKUP_BYTES = 1024 * 1024
 
 
 class SelectedConfigurationPathMismatch(ValueError):
@@ -72,3 +76,73 @@ def apply_active_configuration(
     if not selected_path_matches_configuration(snapshot, selected_path_text):
         raise SelectedConfigurationPathMismatch
     return write_active_mods(snapshot, mod_ids)
+
+
+def _is_link_or_junction(path: Path) -> bool:
+    if path.is_symlink():
+        return True
+    is_junction = getattr(path, "is_junction", None)
+    return bool(is_junction and is_junction())
+
+
+def list_active_configuration_backups(
+    snapshot: ActiveModSnapshot,
+) -> tuple[Path, ...]:
+    """List regular backup files beside the selected global mod list."""
+    if not is_global_default_mod_list(snapshot.path):
+        raise ActiveModConfigError(
+            "Backups are available only for the global Zomboid/mods/default.txt file."
+        )
+    if not snapshot.path.parent.is_dir():
+        return ()
+    prefix = f"{snapshot.path.name}.bak-"
+    parent = snapshot.path.parent.resolve(strict=False)
+    backups = []
+    for candidate in snapshot.path.parent.glob(f"{snapshot.path.name}.bak-*"):
+        if not candidate.name.startswith(prefix) or _is_link_or_junction(candidate):
+            continue
+        try:
+            if candidate.is_file() and candidate.resolve(strict=False).parent == parent:
+                backups.append(candidate)
+        except OSError:
+            continue
+    return tuple(sorted(backups, key=lambda path: path.name, reverse=True))
+
+
+def read_active_configuration_backup(
+    snapshot: ActiveModSnapshot, backup_path: Path
+) -> ActiveModSnapshot:
+    """Read a sibling global-list backup without modifying either file."""
+    if not is_global_default_mod_list(snapshot.path):
+        raise ActiveModConfigError(
+            "Backups are available only for the global Zomboid/mods/default.txt file."
+        )
+    prefix = f"{snapshot.path.name}.bak-"
+    if (
+        not backup_path.name.startswith(prefix)
+        or _is_link_or_junction(backup_path)
+        or backup_path.parent.resolve(strict=False)
+        != snapshot.path.parent.resolve(strict=False)
+    ):
+        raise ActiveModConfigError(
+            "Choose a regular timestamped backup beside the selected global mod list."
+        )
+    try:
+        if not backup_path.is_file():
+            raise ActiveModConfigError("The selected backup is not a regular file.")
+        if backup_path.stat(follow_symlinks=False).st_size > _MAX_ACTIVE_BACKUP_BYTES:
+            raise ActiveModConfigError("The selected backup exceeds the 1 MiB limit.")
+    except OSError as exc:
+        raise ActiveModConfigError(
+            f"Could not read the selected backup: {exc}"
+        ) from exc
+    return read_active_mods(backup_path)
+
+
+def restore_active_configuration(
+    snapshot: ActiveModSnapshot, backup_path: Path
+) -> Path:
+    """Restore a selected sibling backup through the guarded atomic writer."""
+    backup = read_active_configuration_backup(snapshot, backup_path)
+    config: ActiveModConfig = backup.config
+    return write_active_configuration(snapshot, config)

@@ -4,11 +4,17 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from zomboid_mod_manager.configuration import (
+    list_active_configuration_backups,
+    restore_active_configuration,
+)
 from zomboid_mod_manager.gameio.active_mods import (
+    ActiveModConfig,
     ActiveModConfigError,
     ConcurrentConfigChangeError,
     parse_active_mod_config,
     read_active_mods,
+    write_active_configuration,
     write_active_mods,
 )
 
@@ -91,6 +97,49 @@ class ActiveModConfigTests(unittest.TestCase):
                 with self.subTest(path=path), self.assertRaises(ActiveModConfigError):
                     write_active_mods(read_active_mods(path), ("Changed",))
                 self.assertEqual(path.read_bytes(), original)
+
+    def test_restore_backup_restores_mods_maps_and_keeps_current_backup(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = _default_path(temporary)
+            original = FIXTURE.read_bytes()
+            path.write_bytes(original)
+            original_config = read_active_mods(path).config
+            current_config = ActiveModConfig(
+                version=1,
+                mods=("Changed", "AnotherMod"),
+                maps=("ChangedMap",),
+                newline="\r\n",
+                has_utf8_bom=True,
+            )
+            write_active_configuration(read_active_mods(path), current_config)
+            current_bytes = path.read_bytes()
+            backup_path = path.with_name("default.txt.bak-20261023T120000.000000")
+            backup_path.write_bytes(original)
+
+            snapshot = read_active_mods(path)
+            listed = list_active_configuration_backups(snapshot)
+            self.assertIn(backup_path, listed)
+
+            current_backup = restore_active_configuration(snapshot, backup_path)
+
+            restored = read_active_mods(path)
+            self.assertEqual(restored.config, original_config)
+            self.assertEqual(current_backup.read_bytes(), current_bytes)
+
+    def test_restore_rejects_backup_outside_selected_config_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = _default_path(temporary)
+            path.write_bytes(FIXTURE.read_bytes())
+            outside = root / "outside" / "default.txt.bak-20261023"
+            outside.parent.mkdir()
+            outside.write_bytes(FIXTURE.read_bytes())
+            snapshot = read_active_mods(path)
+
+            with self.assertRaises(ActiveModConfigError):
+                restore_active_configuration(snapshot, outside)
+
+            self.assertEqual(path.read_bytes(), FIXTURE.read_bytes())
 
 
 if __name__ == "__main__":
