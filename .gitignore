@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+pysidedeploy.spec
+*.build/
+.nuitka/
+.codex-checkpoints/
+.tox/
+.mypy_cache/

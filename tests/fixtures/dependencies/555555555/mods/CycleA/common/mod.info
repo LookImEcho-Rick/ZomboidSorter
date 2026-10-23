@@ -1,0 +1,3 @@
+name=Cycle A
+id=CycleA
+require=CycleB

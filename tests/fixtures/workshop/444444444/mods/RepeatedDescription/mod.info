@@ -1,0 +1,7 @@
+name=Repeated Description Example
+id=RepeatedDescription
+description=First description line
+description=
+description=Final description line
+poster=poster.png
+poster=showcase.png

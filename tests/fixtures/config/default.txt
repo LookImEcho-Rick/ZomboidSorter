@@ -1,0 +1,12 @@
+VERSION = 1,
+
+mods
+{
+    mod = ModAlpha,
+    mod = Mod Beta,
+}
+
+maps
+{
+    map = ExampleMap,
+}

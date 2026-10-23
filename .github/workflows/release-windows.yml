@@ -1,0 +1,82 @@
+name: Windows release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing v<version> tag to release'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: x64
+      - name: Validate tag and version
+        shell: pwsh
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          REF_TAG: ${{ github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          $version = python -c 'import pathlib,tomllib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"])'
+          $tag = if ($env:EVENT_NAME -eq 'workflow_dispatch') { $env:INPUT_TAG } else { $env:REF_TAG }
+          if ($tag -ne "v$version") { throw "Tag $tag does not match project version $version" }
+          "RELEASE_TAG=$tag" >> $env:GITHUB_ENV
+      - name: Install pinned dependencies
+        shell: pwsh
+        run: python -m pip install -e ".[dev,windows]" -c packaging/constraints-windows.txt
+      - name: Test and lint
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = Join-Path (Get-Location) 'src'
+          python -m unittest discover -s tests -v
+          ruff check src tests
+          ruff format --check src tests
+          python -m compileall -q src tests
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --version=6.7.1 --yes --no-progress
+      - name: Build installer and checksum
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\python.exe -m pip install -e ".[dev,windows]" -c packaging\constraints-windows.txt
+          .\packaging\build_installer.ps1
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: dist/installer/*
+      - name: Check redistribution approval
+        shell: pwsh
+        run: |
+          if (-not (Test-Path packaging/RELEASE_READY -PathType Leaf)) {
+            throw 'Binary release is blocked until packaging/RELEASE_READY is committed after the Qt/WebEngine license and source review.'
+          }
+      - name: Publish tagged GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = Get-ChildItem dist/installer -File | Where-Object { $_.Name -match '\.(exe|sha256)$' } | ForEach-Object FullName
+          gh release view $env:RELEASE_TAG *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:RELEASE_TAG $assets --clobber
+          } else {
+            gh release create $env:RELEASE_TAG $assets --title "ZomboidSorter $env:RELEASE_TAG" --generate-notes
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Release upload failed.' }

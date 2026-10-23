@@ -1,0 +1,66 @@
+# Project Zomboid mod-system research
+
+This is the current evidence summary, refreshed for Milestones 6–9 on 2026-10-22. Build 42 is the primary target; the local installation reports 42.21.0. This is not a complete game-format specification. Sources distinguish developer material, community-maintained API references, local source, and unresolved behavior. The global mod list and installed metadata were read-only; no saves or game files were modified.
+
+## Verified structure and identities
+
+| Concern | Finding | Confidence / source |
+| --- | --- | --- |
+| Build 41 layout | A Workshop mod is rooted at the Workshop content directory and contains `media` and its metadata directly. Build 41 ignores B42 version directories. | High; [The Indie Stone's mod-system announcement](https://projectzomboid.com/blog/news/2024/08/tidy-up-time/), especially paragraphs 48–53. |
+| Build 42 layout | A mod may provide `common/` files and version directories such as `42`, `42.21`, or newer compatible versions. The developer announcement describes common content plus version-aware loading. Keep candidates separate until a verified runtime selection rule is needed. | High for the announced design; malformed and duplicate candidate edge cases remain open. [The Indie Stone mod-system announcement](https://projectzomboid.com/blog/news/2024/08/tidy-up-time/). |
+| Workshop staging vs installed content | A published Workshop project has `workshop.txt` and `Contents/mods/<entry>/...`; installed Steam content is normally under `steamapps/workshop/content/108600/<WorkshopID>/`. Local mods normally live under the user's `Zomboid/mods/`. | Medium-high; [Build 42 mod structure guide](https://github.com/gotmayonase/pz-modding-guide/blob/main/mod-structure.md) and [PZMM scanner](https://github.com/paraxaQQ/pzmm/blob/main/core/mods.py). Verify actual library paths during Milestone 1. |
+| Workshop ID vs Mod ID | The numeric Workshop item directory identifies the subscribed item. `id=` inside each `mod.info` identifies a mod entry. One item can contain multiple entries and thus multiple Mod IDs. | High; community format guide and PZMM's scanner groups discovered `mod.info` files by `id` under each Workshop item. |
+| `mod.info` | Key/value text beside the mod's `media` folder. The 42.21 API reference documents `id`, comma-separated `require`, `incompatible`, `loadModAfter`, `loadModBefore`, `versionMin`, `versionMax`, `url`, and repeatable `poster` fields. Repeated `description=` lines are also present in the local library and are preserved. | Medium-high; [PZ API mod.info reference](https://pz-wiki-modding.github.io/PZ-API-Docs/scripts/root_files/modinfo.html), checked against local metadata and game UI source. Exact escaping/runtime parser edge cases remain open. |
+
+For UI previews, the same `mod.info` reference says the first declared `poster=` is the main image; repeated posters are allowed, and a versioned metadata file may refer to an image under `../common/`. `icon=` is a smaller list image and can be used as a fallback. The Phase C resolver reads only images whose resolved paths stay within that mod entry and labels the supplying metadata candidate without treating it as the active Build 42 candidate. A read-only scan of the local installation resolved 52 declared previews among 57 entries; one native Qt capture successfully decoded and displayed a real poster.
+| Dedicated-server settings | Server `.ini` has distinct `WorkshopItems` and `Mods` lists: Workshop IDs identify what to fetch; Mod IDs identify what to enable. This is not the desktop client's single-player profile format. | Medium-high; [PZ Mod Manager server plugin](https://github.com/WildBrianNL/pz-mod-manager) reads and writes the server `.ini` as its source of truth. Confirm exact separators and Build 42 behavior before implementing a server mode. |
+
+## Load order and activation
+
+The Indie Stone describes Build 42 as adding version-aware mod loading and new load-order functionality, but its public announcement does not specify all precedence rules, dependency syntax, or write targets. RimWorld sorting rules must not be transplanted. A community PZ manager advertises topological sorting from dependencies; that proves a tool applies such a heuristic, not that every edge or resulting order is guaranteed by the game.
+
+The installed `ModSelectorModel.lua` uses `getRequire()` and `getIncompatible()` for dependency state; `ModLoadOrderPanel.lua` reads `getLoadAfter()`, `getRequire()`, and `getLoadBefore()` when proposing an order. The app uses these declarations only when the metadata candidates agree, preserves current order as a stable tie-breaker, and reports cycles rather than forcing a result. It does not claim to reproduce every game runtime rule.
+
+PZMM reads `mods.txt` in saves and `mods/default.txt`, and its current source chooses the most recently modified save's file before falling back to the default list. It also has a separate `modmanager-mods.txt` integration. Treat the first two as a useful implementation lead, not yet as an authoritative, complete persistence contract. Do not write to any of these in Milestone 1; confirm vanilla behavior and target selection before Milestone 2. Server settings remain a separate target. Never edit save contents as a profile shortcut.
+
+The actual local `ModSelectorModel.lua` distinguishes the global `default` list from save/new-game `currentGame`. This app only targets the verified global `Zomboid/mods/default.txt` version-1 `mods`/`maps` format; the in-game preset file, per-save lists, and server `.ini` remain separate and unsupported.
+
+The read-only Workshop importer calls Steam's public `GetCollectionDetails` and `GetPublishedFileDetails` endpoints, filters collection items to PZ App ID `108600`, records missing/unavailable item IDs in app-owned profiles, and never subscribes or downloads. `GetPublishedFileDetails` also supplies a public Workshop item's full BBCode description. A direct lookup for an item already found in the local PZ Workshop folder may omit `consumer_appid`; preserve its description when that field is absent, and reject only an explicitly different app ID. [Steamworks ISteamRemoteStorage API](https://partner.steamgames.com/doc/webapi/ISteamRemoteStorage).
+
+File-overlap analysis is opt-in and limited to files under each metadata candidate's `media/` folder. It hashes same-sized files within explicit limits and reports differing or unverified relative paths with both source paths. A path overlap does not establish that the game loads both candidates or that the runtime treats that resource as a replacement. Console diagnostics recognize only specific high-signal signatures (missing script definitions/fluids, a reported world-load stop, or Lua exceptions with explicit mod attribution). Generic `ERROR`, `WARN`, and `require(...) failed` messages are omitted because the local log contains benign engine and vanilla messages in those forms.
+
+In the 2024 Build 42 transition announcement, The Indie Stone said it planned to disable mods on the first B42 load. That was a transition note, not a general rule to apply on every launch today.
+
+## Existing tools assessed
+
+- [PZMM](https://github.com/paraxaQQ/pzmm) is a native PyQt6 Windows desktop manager. Its code recursively scans local/Workshop trees, parses `mod.info`, associates Workshop IDs with contained Mod IDs, and recognizes multiple versioned metadata files. Useful for discovery cases and UI ideas; its version picker, deduplication, active-list precedence, and custom `modmanager-mods.txt` writes are implementation choices that need independent validation.
+- [pz-mod-manager](https://github.com/WildBrianNL/pz-mod-manager) is a Pelican server-panel plugin, not a native Windows client. Its re-read-before-write approach for the server `.ini` is a useful safety pattern; server path and configuration logic are not the desktop target.
+
+No REA or game binary analysis was used. Source and developer documentation were sufficient for a read-only discovery design. The unresolved runtime questions are recorded in `REA_FINDINGS.md` and should first be investigated through normal documentation/local game fixtures.
+
+## Initial discovery contract (completed)
+
+Implement only read-only Windows discovery and a basic PySide6 window:
+
+1. Detect Steam libraries and the Project Zomboid install where possible; allow an explicit path if automatic detection fails.
+2. Scan the user's local mod root and Steam Workshop app `108600` content root without subscribing, updating, copying, or writing.
+3. Recognize B41 root metadata and B42 `common`/version-folder metadata. Preserve each source installation and B42 folder candidate; do not guess the best folder until the active game build and compatible-folder selection are reliably known.
+4. Keep each Workshop item and each contained ModEntry distinct; preserve duplicate Mod IDs and report them rather than silently dropping one.
+5. Parse `mod.info` defensively, retain source path and raw fields, and report missing/invalid metadata without crashing. Initial fields: name, ID, author, description, version, and declared requirements where syntax is verified.
+6. Show discovered records, source, and diagnostics in the basic window. Include fixture coverage for the cases in the roadmap and identify fixture results as simulated; separately record whether a real local installation was checked.
+
+This was the initial read-only scope. Later milestones added guarded global-list writes, profiles, dependency ordering, read-only public Workshop collection metadata, and opt-in diagnostics. Per-save writes, authentication, subscriptions, downloads, and mod deletion remain out of scope.
+
+## Additional verification from the installed game (2026-10-22)
+
+The local Steam installation and the user's global mod list were inspected read-only. No save directory was opened, and no game file was modified.
+
+- The installed Lua source at `media/lua/client/OptionScreens/ModSelector/ModSelectorModel.lua` selects `ActiveMods.getById("default")` for the global Mod screen, and `"currentGame"` for a new game or selected save. The same file calls `saveModsFile()` after global changes, while a selected save uses `manipulateSavefile(saveFolder, "WriteModsDotTxt")`. `MainScreen.lua` copies the global default list when an old save has no mod list and resets `currentGame` separately. This supports a narrowly scoped global target; it does not authorize editing save-specific lists.
+- The observed global file at `Zomboid/mods/default.txt` uses `VERSION = 1`, a `mods` block of ordered `mod = <ModID>,` lines, and a separate `maps` block. Its observed encoding was UTF-8 without BOM and CRLF, with 15 active IDs and no map entries. This is one real file sample; the parser accepts only the verified shape and preserves the map list. It refuses unknown versions/syntax rather than rewriting them.
+- The game’s `ModSelectorModel.lua` reads `getRequire()` and `getIncompatible()` for dependency state. Its `ModLoadOrderPanel.lua` consumes `getLoadAfter()`, `getRequire()`, and `getLoadBefore()` when producing an automatic order. This is evidence that these constraints affect the official UI; do not claim a complete ordering contract until Milestone 5 compares cycle and tie behavior carefully.
+- The game stores favorite/preset UI data separately in `pz_modlist_settings.cfg`. Build 42.20's [official feature overview](https://projectzomboid.com/blog/features-overview-build-42-20/) confirms the in-game manager supports searching, favorites, ordering, dependencies/incompatibilities, and shareable presets. This app complements that UI with richer library diagnostics and portable profiles.
+- The local game reports Build 42.21.0. A read-only scanner run found 50 Workshop item folders, 57 logical mod entries, 80 `mod.info` candidates, and zero parser/duplicate diagnostics. The parser preserves repeated `description=` and `poster=` values.
+- An opt-in read-only media scan indexed 17,120 files and found 2,732 potential differing/unverified path pairs. It shows 100 source-backed examples and makes no claim that every overlap is an in-game conflict; file-type behavior and candidate selection remain unresolved.
+- The local `console.txt` parser read 2,398 lines and reported zero high-signal findings. Generic engine errors and vanilla `require` warnings are not promoted to mod faults.
+
+The implementation writes only the global default list after explicit confirmation. It never targets per-save `mods.txt`, `Sandbox Presets`, server `.ini`, or `ActiveMods` directories. Integration writes were tested on temporary fixtures only.

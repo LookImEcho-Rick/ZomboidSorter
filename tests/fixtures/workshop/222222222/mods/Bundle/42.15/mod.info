@@ -1,0 +1,4 @@
+name=Bundle Core
+id=BundleCore
+version=2.1
+require=BaseLib

@@ -1,0 +1,7 @@
+name=Local Shared Mod
+id=LocalShared
+author=Fixture Author
+version=1.2
+require=BaseLib, OtherLib
+description=First line with equals a=b
+second description line
