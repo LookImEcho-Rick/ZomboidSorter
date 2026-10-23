@@ -13,18 +13,27 @@ if (-not $env:RUNNER_TEMP -or -not $env:APPDATA) {
     throw 'The GitHub Actions runner temp and AppData paths are required.'
 }
 
-$InstallerPath = (Resolve-Path -LiteralPath $InstallerPath -PathType Leaf).Path
+if (-not (Test-Path -LiteralPath $InstallerPath -PathType Leaf)) {
+    throw "Installer file does not exist: $InstallerPath"
+}
+$InstallerPath = (Resolve-Path -LiteralPath $InstallerPath).Path
 if ((Split-Path -Leaf $InstallerPath) -notmatch '^ZomboidSorter-\d+\.\d+\.\d+-windows-setup\.exe$') {
     throw "Unexpected installer filename: $InstallerPath"
 }
 if ($PreviousInstallerPath) {
-    $PreviousInstallerPath = (Resolve-Path -LiteralPath $PreviousInstallerPath -PathType Leaf).Path
+    if (-not (Test-Path -LiteralPath $PreviousInstallerPath -PathType Leaf)) {
+        throw "Previous installer file does not exist: $PreviousInstallerPath"
+    }
+    $PreviousInstallerPath = (Resolve-Path -LiteralPath $PreviousInstallerPath).Path
     if ((Split-Path -Leaf $PreviousInstallerPath) -notmatch '^ZomboidSorter-\d+\.\d+\.\d+-windows-setup\.exe$') {
         throw "Unexpected previous installer filename: $PreviousInstallerPath"
     }
 }
 
-$RunnerTemp = (Resolve-Path -LiteralPath $env:RUNNER_TEMP -PathType Container).Path
+if (-not (Test-Path -LiteralPath $env:RUNNER_TEMP -PathType Container)) {
+    throw 'GitHub Actions runner temp folder does not exist.'
+}
+$RunnerTemp = (Resolve-Path -LiteralPath $env:RUNNER_TEMP).Path
 $RunId = [guid]::NewGuid().ToString('N')
 $RunRoot = Join-Path $RunnerTemp "ZomboidSorter-installer-smoke-$RunId"
 $RunRootFull = [System.IO.Path]::GetFullPath($RunRoot)
@@ -160,7 +169,7 @@ function Test-PackagedApplicationLaunch {
     if (-not (Test-Path -LiteralPath $Executable -PathType Leaf)) {
         throw "Packaged application is missing before launch check: $Executable"
     }
-    $Executable = (Resolve-Path -LiteralPath $Executable -PathType Leaf).Path
+    $Executable = (Resolve-Path -LiteralPath $Executable).Path
     $InstallRoot = [System.IO.Path]::GetFullPath($InstallDirectory).TrimEnd('\') + '\'
     if (-not $Executable.StartsWith($InstallRoot, [StringComparison]::OrdinalIgnoreCase)) {
         throw "Packaged application escaped the isolated install directory: $Executable"
