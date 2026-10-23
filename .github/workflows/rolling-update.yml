@@ -17,6 +17,7 @@ on:
       - "packaging/licenses/**"
       - "packaging/portable.flag"
       - "packaging/smoke_test_installer.ps1"
+      - "packaging/smoke_test_rolling_update.ps1"
       - "packaging/SOURCE_OFFER.md"
       - "packaging/THIRD_PARTY_NOTICES.md"
       - "pyproject.toml"
@@ -50,6 +51,39 @@ jobs:
       - name: Install pinned dependencies
         shell: pwsh
         run: python -m pip install -e ".[dev,windows]" -c packaging\constraints-windows.txt
+      - name: Download and verify latest stable installer for update smoke
+        id: previous-installer
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $releases = gh release list --repo $env:GITHUB_REPOSITORY --limit 50 --json tagName,isPrerelease | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Could not list stable releases for updater smoke testing.' }
+          $stable = $releases |
+            Where-Object { -not $_.isPrerelease -and $_.tagName -match '^v\d+\.\d+\.\d+$' } |
+            Sort-Object { [version]$_.tagName.Substring(1) } -Descending |
+            Select-Object -First 1
+          if (-not $stable) { throw 'No stable release is available for updater smoke testing.' }
+          $release = gh release view $stable.tagName --repo $env:GITHUB_REPOSITORY --json assets | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw "Could not inspect stable release $($stable.tagName)." }
+          $asset = $release.assets |
+            Where-Object { $_.name -eq 'ZomboidSorter-windows-setup.exe' -or $_.name -match '^ZomboidSorter-\d+\.\d+\.\d+-windows-setup\.exe$' } |
+            Select-Object -First 1
+          if (-not $asset) { throw "Stable release $($stable.tagName) has no Windows installer." }
+          $directory = Join-Path $env:RUNNER_TEMP 'ZomboidSorter-previous-stable'
+          New-Item -ItemType Directory -Path $directory -Force | Out-Null
+          gh release download $stable.tagName --repo $env:GITHUB_REPOSITORY --pattern $asset.name --dir $directory
+          if ($LASTEXITCODE -ne 0) { throw "Could not download the $($stable.tagName) installer." }
+          gh release download $stable.tagName --repo $env:GITHUB_REPOSITORY --pattern "$($asset.name).sha256" --dir $directory
+          if ($LASTEXITCODE -ne 0) { throw "Could not download the $($stable.tagName) installer checksum." }
+          $installer = Join-Path $directory $asset.name
+          $checksum = [System.IO.File]::ReadAllText("$($installer).sha256").Trim()
+          $match = [regex]::Match($checksum, '^([0-9a-fA-F]{64})\s+\*?' + [regex]::Escape($asset.name) + '$')
+          if (-not $match.Success) { throw 'Previous installer checksum file has an unexpected format.' }
+          $actual = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $match.Groups[1].Value.ToLowerInvariant()) { throw 'Previous stable installer checksum verification failed.' }
+          "path=$installer" >> $env:GITHUB_OUTPUT
+          "tag=$($stable.tagName)" >> $env:GITHUB_OUTPUT
       - name: Test and lint
         shell: pwsh
         run: |
@@ -99,6 +133,7 @@ jobs:
           "installer=$rollingInstaller" >> $env:GITHUB_OUTPUT
           "checksum=$checksum" >> $env:GITHUB_OUTPUT
           "manifest=$manifestPath" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
       - name: Attest rolling update provenance
         uses: actions/attest@v4
         with:
@@ -107,6 +142,7 @@ jobs:
             ${{ steps.update-assets.outputs.checksum }}
             ${{ steps.update-assets.outputs.manifest }}
       - name: Publish or refresh the rolling update release
+        id: publish
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -115,6 +151,7 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or -not $remoteMain) { throw 'Could not confirm the current main branch head.' }
           if ($remoteMain -ne $env:GITHUB_SHA) {
             Write-Host "Skipping stale build $env:GITHUB_SHA because main is now $remoteMain."
+            'published=false' >> $env:GITHUB_OUTPUT
             exit 0
           }
           $installer = '${{ steps.update-assets.outputs.installer }}'
@@ -141,3 +178,12 @@ jobs:
             git push origin $refspec
             if ($LASTEXITCODE -ne 0) { throw 'Could not move the rolling tag to the verified commit.' }
           }
+          'published=true' >> $env:GITHUB_OUTPUT
+      - name: Verify in-app update from the previous stable app
+        if: steps.publish.outputs.published == 'true'
+        shell: pwsh
+        run: |
+          .\packaging\smoke_test_rolling_update.ps1 `
+            -PreviousInstallerPath '${{ steps.previous-installer.outputs.path }}' `
+            -ExpectedVersion '${{ steps.update-assets.outputs.version }}' `
+            -ExpectedBuildId $env:GITHUB_SHA

@@ -72,6 +72,13 @@ Application license: GPL-3.0-or-later (root LICENSE)
 - GitHub-hosted Windows 2022 stable workflow [39926601286](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/39926601286) passed tests, lint/format, compilation, upgrade/install smoke, and artifact attestation. The stable installer is 120,155,294 bytes with SHA-256 `90274eab86d3daed7e07439e28bd0882ac24e657d1d99f5fd00e9f22e9f3f431`; its sidecar matches the GitHub asset digest. Release page: https://github.com/LookImEcho-Rick/ZomboidSorter/releases/tag/v0.1.6.
 - The updater module simulated the previous v0.1.5 build, discovered the published v0.1.6 rolling package, downloaded it, and verified its size, SHA-256, and Windows executable header. The temporary download was removed. The separate local helper simulation confirmed a success receipt, relaunch, and preservation of portable settings and a Mod Pack. The old packaged app's button-to-helper handoff through a real newer published update, Windows 10, and another-PC behavior remain unverified.
 
+## Version 0.1.7 release preparation (2026-10-23)
+
+- The source release version is 0.1.7. This update adds ordered map lists to Mod Packs, preserves maps from older packs, and adds conditional reuse for slow repeated library scans. It adds no runtime dependencies, Qt modules, bundled assets, or license-delivery changes; the reviewed Qt/PySide6/WebEngine inventory and source offer above still apply.
+- Local validation: 125 unit tests passed with two environment-only symlink skips; Ruff, formatting, compileall, PowerShell parsing, and workflow YAML parsing passed. The Windows onedir PyInstaller build completed with CPython 3.14.7 and PyInstaller 6.22.3. The local host does not have Inno Setup available, so the versionless installer build and packaged old-app update remain assigned to the hosted Windows workflow.
+- Build 41 and Build 42.21.0 metadata selections and global-list flows were checked with the real local mod/Workshop metadata and separate temporary config files. No real game config or save was accessed and no game was launched. Full gameplay/runtime compatibility remains unverified.
+- Hosted v0.1.7 rolling and stable installer checks, exact artifact hashes, and release URLs will be added after those workflows complete.
+
 ## Evidence shipped with the installer
 
 - `THIRD_PARTY_NOTICES.md` identifies the open-source terms and source request procedure.

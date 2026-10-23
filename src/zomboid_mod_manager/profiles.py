@@ -24,6 +24,7 @@ class ModProfile:
     name: str
     mod_ids: tuple[str, ...]
     workshop_ids: tuple[str, ...] = ()
+    map_ids: tuple[str, ...] | None = None
 
 
 _INVALID_NAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
@@ -57,6 +58,18 @@ def validate_profile(profile: ModProfile) -> None:
         )
     if len(profile.mod_ids) != len(set(profile.mod_ids)):
         raise ProfileError("The profile contains duplicate Mod IDs.")
+    if profile.map_ids is not None:
+        if len(profile.map_ids) > _MAX_PROFILE_MODS:
+            raise ProfileError("The profile contains too many Map IDs.")
+        if any(
+            not map_id or map_id != map_id.strip() or "\n" in map_id or "\r" in map_id
+            for map_id in profile.map_ids
+        ):
+            raise ProfileError(
+                "Map IDs must be non-empty, single-line values without surrounding spaces."
+            )
+        if len(profile.map_ids) != len(set(profile.map_ids)):
+            raise ProfileError("The profile contains duplicate Map IDs.")
     if any(
         not re.fullmatch(r"\d{1,20}", workshop_id)
         for workshop_id in profile.workshop_ids
@@ -79,12 +92,14 @@ def parse_profile(data: bytes) -> ModProfile:
         raise ProfileError("The profile root must be a JSON object.")
     version = value.get("schemaVersion")
     expected_keys = {"schemaVersion", "name", "modIds"}
-    if version == 2:
+    if version in (2, 3):
         expected_keys.add("workshopIds")
+    if version == 3:
+        expected_keys.add("mapIds")
     if (
         isinstance(version, bool)
         or not isinstance(version, int)
-        or version not in (1, 2)
+        or version not in (1, 2, 3)
     ):
         raise ProfileError(f"Unsupported profile schema version: {version!r}.")
     if set(value) != expected_keys:
@@ -93,24 +108,40 @@ def parse_profile(data: bytes) -> ModProfile:
         raise ProfileError("Profile name must be text and modIds must be a list.")
     if any(not isinstance(mod_id, str) for mod_id in value["modIds"]):
         raise ProfileError("Every Mod ID must be text.")
+    map_ids = value.get("mapIds")
+    if version == 3 and not isinstance(map_ids, list):
+        raise ProfileError("mapIds must be a list of text IDs.")
+    if map_ids is not None and (
+        not isinstance(map_ids, list)
+        or any(not isinstance(map_id, str) for map_id in map_ids)
+    ):
+        raise ProfileError("mapIds must be a list of text IDs.")
     workshop_ids = value.get("workshopIds", [])
     if not isinstance(workshop_ids, list) or any(
         not isinstance(item, str) for item in workshop_ids
     ):
         raise ProfileError("workshopIds must be a list of text IDs.")
-    profile = ModProfile(value["name"], tuple(value["modIds"]), tuple(workshop_ids))
+    profile = ModProfile(
+        value["name"],
+        tuple(value["modIds"]),
+        tuple(workshop_ids),
+        tuple(map_ids) if map_ids is not None else None,
+    )
     validate_profile(profile)
     return profile
 
 
 def serialize_profile(profile: ModProfile) -> bytes:
     validate_profile(profile)
+    version = 3 if profile.map_ids is not None else 2
     value = {
-        "schemaVersion": 2,
+        "schemaVersion": version,
         "name": profile.name,
         "modIds": list(profile.mod_ids),
         "workshopIds": list(profile.workshop_ids),
     }
+    if profile.map_ids is not None:
+        value["mapIds"] = list(profile.map_ids)
     return (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
 
 

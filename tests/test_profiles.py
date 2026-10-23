@@ -37,8 +37,11 @@ class ProfileTests(unittest.TestCase):
             "B42 Co-op",
             ("WorkshopMod", "MissingLocalMod", "MapMod"),
             ("123456789", "987654321"),
+            ("Riverside, KY", "NorthMap"),
         )
-        self.assertEqual(parse_profile(serialize_profile(profile)), profile)
+        serialized = serialize_profile(profile)
+        self.assertIn(b'"schemaVersion": 3', serialized)
+        self.assertEqual(parse_profile(serialized), profile)
 
     def test_profile_validation_rejects_bad_names_and_duplicate_ids(self) -> None:
         for profile in (
@@ -66,16 +69,22 @@ class ProfileTests(unittest.TestCase):
             root = Path(temporary)
             store = ProfileStore(root / "profiles")
             exported = root / "shared-profile.json"
-            store.save(ModProfile("Shared", ("Z", "A")))
+            shared_profile = ModProfile(
+                "Shared",
+                ("Z", "A"),
+                ("123456789",),
+                ("Riverside, KY", "NorthMap"),
+            )
+            store.save(shared_profile)
             store.export("Shared", exported)
             imported_store = ProfileStore(root / "other-profiles")
             imported, _ = imported_store.import_file(exported)
-            self.assertEqual(imported, ModProfile("Shared", ("Z", "A")))
+            self.assertEqual(imported, shared_profile)
 
             deleted = store.delete("Shared")
             self.assertEqual(store.list_names(), ())
             restored = store.restore_deleted(deleted)
-            self.assertEqual(restored, ModProfile("Shared", ("Z", "A")))
+            self.assertEqual(restored, shared_profile)
             self.assertEqual(store.load("Shared"), restored)
 
     def test_import_rejects_unknown_schema(self) -> None:
@@ -85,6 +94,24 @@ class ProfileTests(unittest.TestCase):
             b'{"schemaVersion": 1, "name": "Old", "modIds": ["A"]}'
         )
         self.assertEqual(old_profile, ModProfile("Old", ("A",)))
+        old_workshop_profile = parse_profile(
+            b'{"schemaVersion": 2, "name": "Older", "modIds": ["A"], '
+            b'"workshopIds": ["123"]}'
+        )
+        self.assertEqual(old_workshop_profile, ModProfile("Older", ("A",), ("123",)))
+        self.assertIn(b'"schemaVersion": 2', serialize_profile(old_workshop_profile))
+
+    def test_profile_validation_rejects_bad_map_ids(self) -> None:
+        for map_ids in (("Map", "Map"), ("Map", " bad"), ("Map\nOther",)):
+            with self.subTest(map_ids=map_ids), self.assertRaises(ProfileError):
+                serialize_profile(
+                    ModProfile("Invalid map pack", ("Mod",), map_ids=map_ids)
+                )
+        with self.assertRaises(ProfileError):
+            parse_profile(
+                b'{"schemaVersion":3,"name":"Invalid map pack",'
+                b'"modIds":[],"workshopIds":[],"mapIds":null}'
+            )
 
 
 if __name__ == "__main__":

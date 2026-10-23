@@ -160,7 +160,12 @@ class ModPacksDialog(QDialog):
             return
         self.details.setText(
             f"{len(profile.mod_ids)} Mod IDs in saved order · "
-            f"{len(profile.workshop_ids)} Workshop items"
+            f"{len(profile.workshop_ids)} Workshop items · "
+            + (
+                f"{len(profile.map_ids)} Map IDs in saved order"
+                if profile.map_ids is not None
+                else "map list not saved (current maps stay unchanged)"
+            )
         )
         self.load_apply_button.setEnabled(True)
 

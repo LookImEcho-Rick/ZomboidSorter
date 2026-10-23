@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 from .gameio.active_mods import (
@@ -71,10 +72,19 @@ def apply_active_configuration(
     snapshot: ActiveModSnapshot,
     selected_path_text: str,
     mod_ids: tuple[str, ...],
+    map_ids: tuple[str, ...] | None = None,
 ) -> Path:
-    """Apply staged IDs after rechecking that the UI still targets this file."""
+    """Apply staged IDs after rechecking that the UI still targets this file.
+
+    A ``None`` map list preserves the loaded maps. Profiles with explicit map IDs
+    can replace both ordered lists in the same guarded write.
+    """
     if not selected_path_matches_configuration(snapshot, selected_path_text):
         raise SelectedConfigurationPathMismatch
+    if map_ids is not None:
+        return write_active_configuration(
+            snapshot, replace(snapshot.config, mods=mod_ids, maps=map_ids)
+        )
     return write_active_mods(snapshot, mod_ids)
 
 

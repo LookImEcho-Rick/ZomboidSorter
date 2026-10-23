@@ -506,6 +506,7 @@ class MainWindowTests(unittest.TestCase):
             window.save_profile_button.click()
 
         self.assertEqual(profile_store.load("Weekend Pack").mod_ids, saved_order)
+        self.assertEqual(profile_store.load("Weekend Pack").map_ids, ("ExampleMap",))
         self.assertIn("Saved Mod Pack 'Weekend Pack'", window.status.text())
         self.assertEqual(config_path.read_bytes(), original_config)
         self.assertEqual(config_path.read_bytes(), original_config)
@@ -541,6 +542,7 @@ class MainWindowTests(unittest.TestCase):
 
         self.assertEqual(dialog.selected_profile.mod_ids, ("FirstMod", "SecondMod"))
         self.assertEqual(dialog.selected_profile.workshop_ids, ())
+        self.assertEqual(dialog.selected_profile.map_ids, ("OneMap",))
         self.assertEqual(mods_path.read_text(encoding="utf-8"), original_mods)
         self.assertEqual(unrelated_save_file.read_bytes(), b"save-data-sentinel")
 
@@ -628,6 +630,52 @@ class MainWindowTests(unittest.TestCase):
             "Loaded and applied Mod Pack 'Weekend Pack'", window.status.text()
         )
         self.assertFalse(window.apply_config_button.isEnabled())
+        window.close()
+
+    def test_map_aware_mod_pack_confirms_and_applies_global_map_list(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        config_path = root / "Zomboid" / "mods" / "default.txt"
+        config_path.parent.mkdir(parents=True)
+        original = (
+            "VERSION = 1,\n\nmods\n{\n    mod = ExistingMod,\n}\n\n"
+            "maps\n{\n    map = ExistingMap,\n}\n"
+        )
+        config_path.write_text(original, encoding="utf-8")
+        profile = ModProfile(
+            "Imported Save",
+            ("SaveMod",),
+            map_ids=("Riverside, KY", "NorthMap"),
+        )
+        detected = DetectedPaths((), (), (), (), FIXTURES / "local_mods")
+        window = MainWindow(
+            detected,
+            active_config_path=config_path,
+            profile_store=ProfileStore(root / "profiles"),
+        )
+        self._wait_for_background_workers(window)
+
+        with patch(
+            "zomboid_mod_manager.ui.window_profiles.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.No,
+        ):
+            window._apply_mod_pack(profile)
+        self.assertEqual(config_path.read_text(encoding="utf-8"), original)
+
+        with patch(
+            "zomboid_mod_manager.ui.window_profiles.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ) as confirm:
+            window._apply_mod_pack(profile)
+        self.assertEqual(confirm.call_count, 1)
+        self.assertEqual(read_active_mods(config_path).config.mods, ("SaveMod",))
+        self.assertEqual(
+            read_active_mods(config_path).config.maps, ("Riverside, KY", "NorthMap")
+        )
+        backups = list(config_path.parent.glob("default.txt.bak-*"))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(backups[0].read_text(encoding="utf-8"), original)
         window.close()
 
     def test_workspace_filters_sort_and_context_actions_preserve_staged_state(
@@ -1026,7 +1074,7 @@ class MainWindowTests(unittest.TestCase):
             "zomboid_mod_manager.ui.window_workers.scan_mods",
             side_effect=wait_until_cancelled,
         ):
-            window._start_scan()
+            window._refresh_scan()
             self.assertTrue(scan_started.wait(timeout=5))
             self.assertTrue(window.cancel_scan_button.isVisible())
             window.cancel_scan_button.click()
@@ -1040,6 +1088,56 @@ class MainWindowTests(unittest.TestCase):
         self.assertIs(window._last_result, previous_result)
         self.assertTrue(window.cancel_scan_button.isHidden())
         self.assertIn("cancelled", window.status.text().casefold())
+        window.close()
+
+    def test_recent_slow_scan_is_reused_until_refresh_is_requested(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        window, _ = self._make_launch_window(Path(temporary.name))
+        window.show()
+        deadline = time.monotonic() + 5
+        while window._worker is not None and time.monotonic() < deadline:
+            self.app.processEvents()
+            QTest.qWait(5)
+        self.assertIsNotNone(window._last_result)
+
+        local_roots, workshop_roots = window._selected_roots()
+        window._last_scan_key = window._scan_key(local_roots, workshop_roots)
+        window._last_scan_duration = 0.5
+        window._last_scan_at = time.monotonic()
+        window._last_scan_label = "12:34:56"
+        with patch(
+            "zomboid_mod_manager.ui.window_workers.scan_mods",
+            return_value=window._last_result,
+        ) as scan_mods:
+            window._last_scan_duration = 0.1
+            window._start_scan()
+            deadline = time.monotonic() + 5
+            while window._worker is not None and time.monotonic() < deadline:
+                self.app.processEvents()
+                QTest.qWait(5)
+            self.assertIsNone(window._worker)
+            scan_mods.assert_called_once()
+
+        window._last_scan_key = window._scan_key(local_roots, workshop_roots)
+        window._last_scan_duration = 0.5
+        window._last_scan_at = time.monotonic()
+        window._last_scan_label = "12:34:56"
+        window._start_scan()
+        self.assertIsNone(window._worker)
+        self.assertIn("reused from 12:34:56", window.status.text())
+
+        with patch(
+            "zomboid_mod_manager.ui.window_workers.scan_mods",
+            return_value=window._last_result,
+        ) as scan_mods:
+            window._refresh_scan()
+            deadline = time.monotonic() + 5
+            while window._worker is not None and time.monotonic() < deadline:
+                self.app.processEvents()
+                QTest.qWait(5)
+            self.assertIsNone(window._worker)
+            scan_mods.assert_called_once()
         window.close()
 
     def test_close_does_not_block_while_scan_worker_finishes(self) -> None:

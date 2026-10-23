@@ -186,7 +186,9 @@ class SaveModPackDialog(QDialog):
         lines.extend(f"  {mod_id}" for mod_id in save.config.mods)
         lines.append(f"\nMaps ({len(save.config.maps)}) in saved order:")
         lines.extend(f"  {map_id}" for map_id in save.config.maps)
-        lines.append("\nOnly these Mod IDs are copied to the new app-owned pack.")
+        lines.append(
+            "\nThese ordered Mod IDs and map IDs are copied to the new app-owned pack."
+        )
         self.details.setPlainText("\n".join(lines))
         self._update_buttons()
 
@@ -227,6 +229,7 @@ class SaveModPackDialog(QDialog):
             name=self.pack_name.text().strip(),
             mod_ids=save.config.mods,
             workshop_ids=self._workshop_ids(save.config.mods),
+            map_ids=save.config.maps,
         )
         try:
             validate_profile(profile)

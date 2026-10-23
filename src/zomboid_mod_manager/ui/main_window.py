@@ -93,6 +93,12 @@ class MainWindow(
         self._worker: ScanWorker | None = None
         self._scan_again_after_current = False
         self._scan_result_received = False
+        self._last_scan_key: tuple[tuple[str, str], ...] | None = None
+        self._last_scan_at = 0.0
+        self._last_scan_duration = 0.0
+        self._last_scan_label = ""
+        self._active_scan_key: tuple[tuple[str, str], ...] | None = None
+        self._active_scan_started_at = 0.0
         self._shutdown_requested = False
         self._shutdown_workers: tuple[QThread, ...] = ()
         self._shutdown_timer = QTimer(self)

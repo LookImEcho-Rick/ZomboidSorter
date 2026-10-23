@@ -1,5 +1,13 @@
 # Progress
 
+## Map-aware Mod Packs, scan reuse, and Build 41/42 config checks (2026-10-23)
+
+- Mod Pack schema v3 stores ordered map IDs alongside Mod IDs and Workshop IDs. Saving from the global workspace captures the global maps; **From Save…** captures the save's explicit map list. Applying a map-aware pack requires a default-No prompt before replacing global maps and writes both lists through the guarded, backed-up atomic writer. Legacy v1/v2 packs have no explicit map list and preserve the currently loaded maps.
+- Repeated scans are reused for 30 seconds only when the previous scan took at least 250 ms and the selected roots are unchanged. **Refresh** always scans again. The real local library had 62 entries and 85 metadata files; three reads took 0.070, 0.067, and 0.069 seconds (0.069-second median), so its normal scans do not use the cache. Build 41 selection resolved 39 entries; exact Build 42.21.0 selection resolved 36.
+- Build 41 and Build 42.21.0 config flows passed using separate temporary global-list files: both ordered lists were written and read back, and each backup matched the initial bytes. Real mod metadata was read for the scan measurements, but no real game config or save was accessed, no installed mod was changed, and no game was launched. The checks validate file and metadata-selection behavior, not gameplay or loader compatibility.
+- Added a hosted Windows rolling-update smoke script that installs the previous stable app into a disposable portable folder, presses **Check for Updates**, waits for helper handoff and verified relaunch, checks the profile/settings sentinels and update receipt, then uninstalls while confirming portable data survives. The hosted workflow result is pending publication of this commit.
+- Local validation passed: 125 tests with two environment-only symlink skips, Ruff check/format, compileall, PowerShell parsing, workflow YAML parsing, and a Windows onedir PyInstaller build. The hosted installer build, old-app updater smoke, and v0.1.7 release have not run yet.
+
 ## Update results, global backup restore, and save-list import (2026-10-23)
 
 - The update helper now checks that the installed executable and `BUILD_ID` match the downloaded package, records a one-time result, and relaunches the app. On startup, the app reports verified success or failure and shows the temporary error-log path when available.

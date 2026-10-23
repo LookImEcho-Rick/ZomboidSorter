@@ -267,7 +267,11 @@ class ActiveConfigurationMixin:
         return lines
 
     def _apply_staged_configuration(
-        self, *, require_confirmation: bool, launch_after_apply: bool = False
+        self,
+        *,
+        require_confirmation: bool,
+        launch_after_apply: bool = False,
+        map_ids: tuple[str, ...] | None = None,
     ) -> bool:
         if self._active_config is None:
             return False
@@ -278,7 +282,9 @@ class ActiveConfigurationMixin:
                 "Load the selected global default mod list before applying it.",
             )
             return False
-        if tuple(self._staged_mod_ids) == self._active_config.config.mods:
+        if tuple(self._staged_mod_ids) == self._active_config.config.mods and (
+            map_ids is None or map_ids == self._active_config.config.maps
+        ):
             return True
         if require_confirmation:
             title = (
@@ -308,6 +314,7 @@ class ActiveConfigurationMixin:
                 self._active_config,
                 self.active_config_path.text(),
                 tuple(self._staged_mod_ids),
+                map_ids,
             )
         except SelectedConfigurationPathMismatch:
             QMessageBox.warning(
@@ -322,9 +329,14 @@ class ActiveConfigurationMixin:
             self._update_apply_enabled()
             return False
         self._load_active_configuration_impl(force=True)
-        if self._active_config is None or tuple(
-            self._active_config.config.mods
-        ) != tuple(self._staged_mod_ids):
+        if (
+            self._active_config is None
+            or tuple(self._active_config.config.mods) != tuple(self._staged_mod_ids)
+            or (
+                map_ids is not None
+                and tuple(self._active_config.config.maps) != tuple(map_ids)
+            )
+        ):
             self.configuration_status.setText(
                 "Apply could not be verified after reloading the global mod list."
             )
@@ -335,9 +347,10 @@ class ActiveConfigurationMixin:
             )
             self._update_apply_enabled()
             return False
-        self.configuration_status.setText(
-            f"Applied {len(self._staged_mod_ids)} active Mod IDs. Backup: {backup}"
-        )
+        applied_summary = f"Applied {len(self._staged_mod_ids)} active Mod IDs"
+        if map_ids is not None:
+            applied_summary += f" and {len(map_ids)} Map IDs"
+        self.configuration_status.setText(f"{applied_summary}. Backup: {backup}")
         return True
 
     def _active_config_matches_selected_path(self) -> bool:

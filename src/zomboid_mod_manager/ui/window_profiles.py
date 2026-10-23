@@ -35,7 +35,12 @@ class ProfileActionsMixin:
         if not accepted:
             return
         profile = ModProfile(
-            name.strip(), tuple(self._staged_mod_ids), self._staged_workshop_ids()
+            name.strip(),
+            tuple(self._staged_mod_ids),
+            self._staged_workshop_ids(),
+            self._active_config.config.maps
+            if self._active_config is not None
+            else None,
         )
         overwrite = False
         if profile.name in self._profile_store.list_names():
@@ -99,20 +104,42 @@ class ProfileActionsMixin:
             QMessageBox.warning(self, "Could not read global Mod List", str(exc))
             return
 
+        desired_maps = (
+            latest.config.maps if profile.map_ids is None else profile.map_ids
+        )
+        maps_changed = desired_maps != latest.config.maps
+        if maps_changed:
+            answer = QMessageBox.question(
+                self,
+                "Replace Global Map List?",
+                f"Apply Mod Pack '{profile.name}' and replace the global map list with "
+                f"{len(profile.map_ids or ())} Map IDs? A timestamped backup will be created. "
+                "Per-save mod lists will not be changed.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                self.configuration_status.setText(
+                    f"Applying Mod Pack '{profile.name}' was cancelled; the game list was not changed."
+                )
+                return
+
         self._active_config = latest
         self._staged_mod_ids = list(profile.mod_ids)
         self._profile_workshop_ids = profile.workshop_ids
         self._refresh_management_lists()
         self._update_apply_enabled()
         self._update_diagnostics()
-        if tuple(profile.mod_ids) == latest.config.mods:
+        if tuple(profile.mod_ids) == latest.config.mods and not maps_changed:
             self.configuration_status.setText(
                 f"Mod Pack '{profile.name}' is already active; no file change was needed."
             )
             self.status.setText(f"Mod Pack '{profile.name}' is already active.")
             return
 
-        if self._apply_staged_configuration(require_confirmation=False):
+        if self._apply_staged_configuration(
+            require_confirmation=False, map_ids=profile.map_ids
+        ):
             self._profile_workshop_ids = profile.workshop_ids
             self._refresh_management_lists()
             self._update_diagnostics()

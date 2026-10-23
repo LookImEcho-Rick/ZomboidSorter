@@ -611,7 +611,7 @@ class WindowLayoutMixin:
         self.workspace_scan_button.setToolTip(
             "Rescan installed mods without changing game files."
         )
-        self.workspace_scan_button.clicked.connect(self._start_scan)
+        self.workspace_scan_button.clicked.connect(self._refresh_scan)
         self.scan_button = self.workspace_scan_button
         footer.addWidget(self.workspace_scan_button)
         footer.addWidget(self.launch_game_button)
@@ -689,7 +689,9 @@ class WindowLayoutMixin:
             return
         if page is not self.workspace_page:
             return
+        local_roots, workshop_roots = self._selected_roots()
+        scan_key = self._scan_key(local_roots, workshop_roots)
         if self._worker is not None and self._worker.isRunning():
-            self._scan_again_after_current = True
+            self._scan_again_after_current = scan_key != self._active_scan_key
             return
         self._start_scan()

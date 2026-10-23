@@ -60,6 +60,26 @@ class ActiveModConfigTests(unittest.TestCase):
             self.assertEqual(updated.config.newline, "\n")
             self.assertFalse(list(Path(temporary).glob("*.tmp")))
 
+    def test_write_replaces_maps_when_applying_a_map_aware_pack(self) -> None:
+        original = FIXTURE.read_bytes()
+        with tempfile.TemporaryDirectory() as temporary:
+            path = _default_path(temporary)
+            path.write_bytes(original)
+            snapshot = read_active_mods(path)
+            config = ActiveModConfig(
+                version=snapshot.config.version,
+                mods=("NewMod",),
+                maps=("Riverside, KY", "NorthMap"),
+                newline=snapshot.config.newline,
+                has_utf8_bom=snapshot.config.has_utf8_bom,
+            )
+            backup = write_active_configuration(snapshot, config)
+
+            self.assertEqual(backup.read_bytes(), original)
+            updated = read_active_mods(path)
+            self.assertEqual(updated.config.mods, ("NewMod",))
+            self.assertEqual(updated.config.maps, ("Riverside, KY", "NorthMap"))
+
     def test_write_preserves_utf8_bom_and_crlf(self) -> None:
         content = b"\xef\xbb\xbfVERSION = 1,\r\n\r\nmods\r\n{\r\n    mod = Alpha,\r\n}\r\n\r\nmaps\r\n{\r\n}\r\n"
         with tempfile.TemporaryDirectory() as temporary:

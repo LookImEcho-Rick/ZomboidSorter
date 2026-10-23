@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import time
+from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import (
@@ -19,6 +22,9 @@ from zomboid_mod_manager.domain import ScanResult
 from .window_workers import (
     ScanWorker,
 )
+
+_SCAN_CACHE_SECONDS = 30.0
+_SCAN_CACHE_MIN_SECONDS = 0.25
 
 
 class DiscoveryMixin:
@@ -57,12 +63,42 @@ class DiscoveryMixin:
         ]
         return local_roots, workshop_roots
 
-    def _start_scan(self) -> None:
+    def _scan_key(
+        self, local_roots: list[Path], workshop_roots: list[Path]
+    ) -> tuple[tuple[str, str], ...]:
+        roots: list[tuple[str, str]] = []
+        for kind, selected in (("local", local_roots), ("workshop", workshop_roots)):
+            for path in selected:
+                try:
+                    normalized = path.expanduser().resolve(strict=False)
+                except OSError, RuntimeError:
+                    normalized = path.expanduser().absolute()
+                roots.append((kind, os.path.normcase(str(normalized))))
+        return tuple(roots)
+
+    def _refresh_scan(self) -> None:
+        self._start_scan(force=True)
+
+    def _start_scan(self, *, force: bool = False) -> None:
         if self._shutdown_requested:
             return
-        if self._worker is not None and self._worker.isRunning():
-            return
         local_roots, workshop_roots = self._selected_roots()
+        scan_key = self._scan_key(local_roots, workshop_roots)
+        if self._worker is not None and self._worker.isRunning():
+            self._scan_again_after_current = scan_key != self._active_scan_key
+            return
+        if (
+            not force
+            and self._last_result is not None
+            and scan_key == self._last_scan_key
+            and self._last_scan_duration >= _SCAN_CACHE_MIN_SECONDS
+            and time.monotonic() - self._last_scan_at < _SCAN_CACHE_SECONDS
+        ):
+            self.status.setText(
+                f"Library scan reused from {self._last_scan_label}; "
+                "select Refresh to check for newly installed mods."
+            )
+            return
         self._scan_result_received = False
         self.scan_button.setEnabled(False)
         self.workspace_scan_button.setEnabled(False)
@@ -72,6 +108,8 @@ class DiscoveryMixin:
             self.available_list.viewport().update()
         self.progress.show()
         self._worker = ScanWorker(local_roots, workshop_roots)
+        self._active_scan_key = scan_key
+        self._active_scan_started_at = time.monotonic()
         self._worker.result_ready.connect(self._show_result)
         self._worker.failed.connect(self._show_failure)
         self._worker.progress.connect(self._scan_progress)
@@ -115,6 +153,7 @@ class DiscoveryMixin:
 
     def _finish_scan(self) -> None:
         self._worker = None
+        self._active_scan_key = None
         self.cancel_scan_button.hide()
         self.cancel_scan_button.setEnabled(True)
         if self._shutdown_requested:
@@ -202,6 +241,12 @@ class DiscoveryMixin:
         self._preview_generation += 1
         self._preview_cache.clear()
         self._last_result = result
+        self._last_scan_key = self._active_scan_key
+        self._last_scan_at = time.monotonic()
+        self._last_scan_duration = max(
+            0.0, self._last_scan_at - self._active_scan_started_at
+        )
+        self._last_scan_label = datetime.now().astimezone().strftime("%H:%M:%S")
         self._entries = {entry.key: entry for entry in result.entries}
         self.table_model.removeRows(0, self.table_model.rowCount())
         for entry in result.entries:
