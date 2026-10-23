@@ -52,6 +52,7 @@ Application license: GPL-3.0-or-later (root LICENSE)
 - This release adds standard/portable installer choices, setup-mode retention and cross-mode safeguards, publisher-matched Authenticode verification for in-app updates, and a modular `MainWindow` implementation. It adds no runtime dependencies, Qt modules, bundled assets, or license-delivery changes; the reviewed Qt/PySide6/WebEngine pins and source offer above still apply.
 - Local validation installer: `ZomboidSorter-0.1.4-windows-setup.exe`; SHA-256 `190c70670216f895951ce09a3c410cc21e21efe176e72e4cd3a6810a9cf83cd0`; 120,097,642 bytes. It compiled on Windows 11 with CPython 3.14.7, PyInstaller 6.22.3, and Inno Setup 6.7.3. The local validation installer is unsigned; the tagged workflow must produce the signed release artifact.
 - Validation: 98 tests passed with one environment-only symlink skip; Ruff check/format, compileall, and `git diff --check` passed. The v0.1.4 installed GUI, interactive mode-switch prompt, and signed updater path have not been manually verified.
+- GitHub Actions run [39908628919](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/39908628919) passed hosted tests/lint and the Windows app-bundle build but failed at the signing-configuration check. All six required Azure settings listed in `packaging/README.md` were empty, so the run did not create or publish a signed installer or checksum. The pushed `v0.1.4` tag must be rerun after configuring them.
 
 ## Evidence shipped with the installer
 
