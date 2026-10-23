@@ -1,5 +1,15 @@
 # Progress
 
+## Rolling updater and versionless v0.1.5 release (2026-10-23)
+
+- The app now displays v0.1.5 in its window title and header; the installer also carries version 0.1.5 in its metadata. Installer output and stable/rolling GitHub assets use the versionless name `ZomboidSorter-windows-setup.exe`.
+- The Update button checks the published rolling package for a new commit, verifies the manifest, installer size, and SHA-256, then hands off to a Windows helper that waits for the app to exit, installs silently, and relaunches. Source-run development builds do not offer a packaged self-update.
+- All 109 tests passed with one environment-only symlink skip; Ruff check/format, compileall, workflow YAML parsing, PowerShell parser checks, and `git diff --check` passed. The local Windows 11 installer compiled successfully as `ZomboidSorter-windows-setup.exe` (120,120,771 bytes; SHA-256 `acef06816b7637fc90cdc0538db94c2293c5ef710e508f1b84fc8ef0123c1ea2`) with CPython 3.14.7, PyInstaller 6.22.3, and Inno Setup 6.7.3.
+- The temporary portable-install simulation used the local installer and update helper; the app relaunched as `ZomboidSorter v0.1.5` and closed cleanly. Separately, the updater module downloaded the published rolling installer (120,120,328 bytes), verified its manifest/checksum/Windows executable header, and correctly reported that build `1cbe22f1` was current.
+- GitHub-hosted Windows 2022 rolling workflow [39920312458](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/39920312458) passed tests, lint/format, app/installer build, packaged-install smoke, and artifact attestation; it published the rolling prerelease from commit `1cbe22f1fcb4bf5690a44dc412612892a3959f28`.
+- GitHub-hosted Windows 2022 stable release workflow [39920316030](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/39920316030) passed and published `ZomboidSorter-windows-setup.exe` for v0.1.5 (120,197,462 bytes, SHA-256 `5c39240540b826dd4e27fd8cb363d3425ec746ef0af798cb2556f6f7349ba382`). The checksum sidecar matches GitHub's asset digest. [Stable release](https://github.com/LookImEcho-Rick/ZomboidSorter/releases/tag/v0.1.5).
+- The local helper simulation and a real rolling download were validated separately; the app button was not run through a full published-update cycle, and update-data preservation, Windows 10, and another PC remain unverified. No Project Zomboid config, saves, installed mods, or Workshop subscriptions were changed.
+
 ## Build-aware overlap triage and packaged launch checks (2026-10-23)
 
 - File-overlap scans now use the selected metadata target and, by default, only Mod IDs in the staged active order. A checkbox includes all discovered mods; selecting **All candidates** includes every metadata version. The report states its scope. It retains every grouped path within existing scan limits, searches the full result set, and loads table rows in pages of 250.
