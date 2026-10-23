@@ -14,6 +14,7 @@ PrivilegesRequired=lowest
 UsePreviousAppDir=yes
 DisableProgramGroupPage=yes
 LicenseFile=..\LICENSE
+InfoBeforeFile=SOURCE_OFFER.md
 SetupIconFile=..\assets\zomboidsorter.ico
 OutputDir=..\dist\installer
 OutputBaseFilename=ZomboidSorter-{#AppVersion}-windows-setup
@@ -28,6 +29,8 @@ UninstallDisplayIcon={app}\ZomboidSorter.exe
 Source: "..\dist\ZomboidSorter\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "SOURCE_OFFER.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "licenses\*"; DestDir: "{app}\licenses"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\ZomboidSorter"; Filename: "{app}\ZomboidSorter.exe"

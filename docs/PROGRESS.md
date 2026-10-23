@@ -121,7 +121,15 @@ Updated 2026-10-22 after the desktop UX refresh.
 
 ## Release limitations
 
-- The packaged app has only been smoke-tested on the development machine; a clean Windows account/VM and upgrade-recovery pass remain outstanding.
+- The packaged app has been smoke-tested on the development machine. A clean Windows account/VM, Windows 10, and real-game apply/launch checks remain outstanding.
 - Workshop API integration is response-mock tested, not live-tested. Subscription, update, and download flows are absent.
 - Exact Build 42 runtime selection/precedence, duplicate-Mod-ID winner behavior, and resource-specific file override/merge semantics remain unresolved. The UI labels candidate overlaps as potential.
-- Per-save and server configurations are intentionally unsupported. The app license and public-release Qt obligations still need a release decision.
+- Per-save and server configurations are intentionally unsupported. The original code is GPL-3.0-or-later. The Qt/WebEngine third-party notice inventory still needs final review before binary publication.
+
+## Public release preparation (2026-10-22)
+
+- Created and pushed the public repository at `LookImEcho-Rick/ZomboidSorter`. The project has a GPL-3.0-or-later license, fixture-labeled README screenshots, the ZomboidSorter wordmark/icon, an Inno Setup per-user installer, and a tagged-release Actions workflow. The installer publication step is gated by `packaging/RELEASE_READY` until third-party redistribution review is complete.
+- Added the maintainer's written source offer for exact bundled Qt/PySide6/WebEngine sources. The installer displays it before installation and includes it with GPL/LGPL, CPython, and PyInstaller license texts. GitHub Issues are the request channel.
+- The Windows PyInstaller build now excludes parallel Qt WebEngine debug resource copies after checking their release counterparts. The installer decreased from 151,796,348 to 142,547,256 bytes. All remaining Qt plugins, QML, locales, and release WebEngine resources are retained pending a dependency-backed trim.
+- Validation: 69 unit tests passed with one environment symlink skip; Ruff check/format and compileall passed. The trimmed-resource WebEngine smoke loaded a local HTML data page successfully from the development Python environment using the packaged resource path. The Inno installer compiled, installed to an isolated directory, launched for five seconds, and silently uninstalled; the installed executable was removed. Earlier installer-only 0.1.0→0.1.1 upgrade testing preserved an isolated Mod Pack fixture byte-for-byte, but the rebuilt optimized 0.1.0 installer was not separately upgrade-tested.
+- The latest local installer is `dist/installer/ZomboidSorter-0.1.0-windows-setup.exe` with SHA-256 `bdc7f265f35d2e0c33fcff7e91b1ce87f1e262ca679f9e2511152ef38443d529`. It was built with Python 3.14.7 on Windows 11; the release workflow is configured to build with Python 3.11. No GitHub Release asset has been published or verified.

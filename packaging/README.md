@@ -16,7 +16,7 @@ $env:PYTHONPATH = (Join-Path (Get-Location) 'src')
 .\packaging\build_installer.ps1
 ```
 
-This produces `dist/installer/ZomboidSorter-<version>-windows-setup.exe` and a matching `.sha256` file. `build_windows.ps1` limits DLL search paths during PyInstaller collection. Its bundled Qt and WebEngine plugins/resources must be kept in `_internal`. The installer and Qt window icons use project assets under `assets/`.
+This produces `dist/installer/ZomboidSorter-<version>-windows-setup.exe` and a matching `.sha256` file. `build_windows.ps1` limits DLL search paths during PyInstaller collection and removes only the parallel Qt WebEngine **debug** resource copies after checking that the release resource files exist. Its remaining bundled Qt and WebEngine plugins/resources must be kept in `_internal`. The installer and Qt window icons use project assets under `assets/`. The build copies the bundled interpreter's CPython license and PyInstaller's license into the application; the installer also includes the Qt LGPL texts and shows `SOURCE_OFFER.md` before installation.
 
 ## Release
 
@@ -29,8 +29,8 @@ The workflow needs repository Actions enabled and `contents: write` permission f
 
 ## Third-party redistribution review
 
-The app uses PySide6 6.12.0, dynamically loaded Qt libraries, and Qt WebEngine. Qt for Python is available under LGPL-3.0/GPL-3.0 or a commercial license. Qt WebEngine incorporates Chromium under additional terms, including LGPL-2.1. The install directory permits replacement of compatible dynamic libraries. The installer includes `THIRD_PARTY_NOTICES.md` and the app's GPL text.
+The app uses PySide6 6.12.0, dynamically loaded Qt libraries, and Qt WebEngine. Qt for Python is available under LGPL-3.0/GPL-3.0 or a commercial license. Qt WebEngine incorporates Chromium under additional terms, including LGPL-2.1. The install directory permits replacement of compatible dynamic libraries. The installer includes `THIRD_PARTY_NOTICES.md`, the app's GPL text, LGPL texts, and a written source offer with GitHub Issues as the request channel.
 
-Before public distribution, include the complete applicable third-party license texts/notices for the **actual** bundle and make the corresponding Qt/PySide6/WebEngine source available, or provide a valid written source offer and fulfill it. Qt says an upstream link alone may be insufficient. The present notice inventory is not a completed legal compliance review; publication remains gated on this step.
+Before public distribution, review the complete applicable third-party license texts/notices for the **actual** bundle and confirm that the written source offer can be fulfilled for the exact Qt/PySide6/WebEngine binaries. Qt says an upstream link alone may be insufficient. The present notice inventory is not a completed legal compliance review; publication remains gated on this step.
 
 Primary references: [Qt for Python licensing](https://doc.qt.io/qtforpython-6/), [Qt LGPL obligations](https://www.qt.io/development/open-source-lgpl-obligations), [Qt WebEngine licensing](https://doc.qt.io/qt-6/qtwebengine-licensing.html), and [Inno Setup AppId/upgrades](https://jrsoftware.org/ishelp/topic_setup_appid.htm). The source and logo assets are original to this project; RimSort and Project Zomboid art are not bundled.
