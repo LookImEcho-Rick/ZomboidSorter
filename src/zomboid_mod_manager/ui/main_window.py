@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from collections import OrderedDict
 from collections.abc import Callable
 from pathlib import Path
@@ -58,6 +59,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from zomboid_mod_manager import __version__
 from zomboid_mod_manager.diagnostics.console_log import (
     analyze_console_log,
     format_console_log_report,
@@ -98,6 +100,13 @@ from zomboid_mod_manager.ui.sort_rules_dialog import SortRulesDialog
 from zomboid_mod_manager.ui.theme import apply_theme
 from zomboid_mod_manager.ui.workshop_browser import WorkshopBrowserPanel
 from zomboid_mod_manager.ui.workshop_dialog import WorkshopCollectionDialog
+from zomboid_mod_manager.updates import (
+    UpdateCancelled,
+    UpdateError,
+    UpdateRelease,
+    check_for_update,
+    download_update,
+)
 from zomboid_mod_manager.workshop import fetch_item_metadata
 
 SEARCH_ROLE = int(Qt.ItemDataRole.UserRole) + 1
@@ -140,6 +149,44 @@ class DiagnosticWorker(QThread):
             self.result_ready.emit(self._operation())
         except Exception as exc:  # noqa: BLE001 - Surface diagnostic failures in the UI.
             self.failed.emit(str(exc))
+
+
+class UpdateCheckWorker(QThread):
+    result_ready = Signal(object)
+    failed = Signal(str)
+
+    def run(self) -> None:
+        try:
+            self.result_ready.emit(check_for_update(__version__))
+        except Exception as exc:  # noqa: BLE001 - Surface update check failures in the UI.
+            self.failed.emit(str(exc))
+
+
+class UpdateDownloadWorker(QThread):
+    progress = Signal(int, int)
+    installer_ready = Signal(str)
+    failed = Signal(str)
+    cancelled = Signal()
+
+    def __init__(self, release: UpdateRelease) -> None:
+        super().__init__()
+        self.release = release
+
+    def run(self) -> None:
+        try:
+            installer = download_update(
+                self.release,
+                progress=self.progress.emit,
+                cancelled=self.isInterruptionRequested,
+            )
+        except UpdateCancelled:
+            self.cancelled.emit()
+        except UpdateError as exc:
+            self.failed.emit(str(exc))
+        except Exception as exc:  # noqa: BLE001 - Surface unexpected update failures.
+            self.failed.emit(str(exc))
+        else:
+            self.installer_ready.emit(str(installer))
 
 
 class WorkshopDescriptionWorker(QThread):
@@ -535,6 +582,8 @@ class MainWindow(QMainWindow):
         self._workshop_description_cache: OrderedDict[str, tuple[str, str]] = (
             OrderedDict()
         )
+        self._update_check_worker: UpdateCheckWorker | None = None
+        self._update_download_worker: UpdateDownloadWorker | None = None
 
         central = QWidget(self)
         self.setCentralWidget(central)
@@ -779,6 +828,12 @@ class MainWindow(QMainWindow):
         subtitle.setObjectName("secondaryText")
         identity.addWidget(subtitle)
         header.addLayout(identity, 1)
+        self.update_button = QPushButton("Check for Updates")
+        self.update_button.setToolTip(
+            f"Check GitHub for a newer ZomboidSorter release (current: {__version__})."
+        )
+        self.update_button.clicked.connect(self._check_for_updates)
+        header.addWidget(self.update_button)
         header.addWidget(self.advanced_preview_checkbox)
         layout.addLayout(header)
         self.main_tabs.currentChanged.connect(self._on_main_tab_changed)
@@ -2678,6 +2733,114 @@ class MainWindow(QMainWindow):
                 )
             )
 
+    def _check_for_updates(self) -> None:
+        if (
+            self._update_check_worker is not None
+            and self._update_check_worker.isRunning()
+        ):
+            return
+        if (
+            self._update_download_worker is not None
+            and self._update_download_worker.isRunning()
+        ):
+            return
+        self.update_button.setEnabled(False)
+        self.update_button.setText("Checking…")
+        self.status.setText("Checking GitHub for updates…")
+        worker = UpdateCheckWorker(self)
+        self._update_check_worker = worker
+        worker.result_ready.connect(self._update_check_complete)
+        worker.failed.connect(self._update_check_failed)
+        worker.start()
+
+    def _update_check_complete(self, release: UpdateRelease | None) -> None:
+        self._update_check_worker = None
+        self.update_button.setEnabled(True)
+        self.update_button.setText("Check for Updates")
+        if release is None:
+            self.status.setText(f"ZomboidSorter {__version__} is up to date.")
+            QMessageBox.information(
+                self,
+                "No Updates Available",
+                f"You are using the latest release of ZomboidSorter ({__version__}).",
+            )
+            return
+
+        message = QMessageBox(self)
+        message.setIcon(QMessageBox.Icon.Information)
+        message.setWindowTitle("Update Available")
+        message.setTextFormat(Qt.TextFormat.PlainText)
+        message.setText(f"ZomboidSorter {release.version} is available.")
+        message.setInformativeText(
+            f"Installed version: {__version__}\n"
+            "The verified Windows installer will open to complete the update."
+        )
+        message.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        message.setDefaultButton(QMessageBox.StandardButton.No)
+        message.button(QMessageBox.StandardButton.Yes).setText("Download and Install")
+        if message.exec() == QMessageBox.StandardButton.Yes:
+            self._download_update(release)
+        else:
+            self.status.setText(f"ZomboidSorter {release.version} is available.")
+
+    def _update_check_failed(self, error: str) -> None:
+        self._update_check_worker = None
+        self.update_button.setEnabled(True)
+        self.update_button.setText("Check for Updates")
+        self.status.setText("Could not check for updates.")
+        QMessageBox.warning(self, "Update Check Failed", error)
+
+    def _download_update(self, release: UpdateRelease) -> None:
+        self.update_button.setEnabled(False)
+        self.update_button.setText("Downloading…")
+        self.status.setText(f"Downloading ZomboidSorter {release.version}…")
+        worker = UpdateDownloadWorker(release)
+        self._update_download_worker = worker
+        worker.progress.connect(self._update_download_progress)
+        worker.installer_ready.connect(self._launch_update_installer)
+        worker.failed.connect(self._update_download_failed)
+        worker.cancelled.connect(self._update_download_cancelled)
+        worker.start()
+
+    def _update_download_progress(self, downloaded: int, total: int) -> None:
+        percent = min(100, int(downloaded * 100 / total)) if total else 0
+        self.status.setText(f"Downloading update… {percent}%")
+
+    def _update_download_failed(self, error: str) -> None:
+        self._update_download_worker = None
+        self.update_button.setEnabled(True)
+        self.update_button.setText("Check for Updates")
+        self.status.setText("Update download failed.")
+        QMessageBox.warning(self, "Update Download Failed", error)
+
+    def _update_download_cancelled(self) -> None:
+        self._update_download_worker = None
+        self.update_button.setEnabled(True)
+        self.update_button.setText("Check for Updates")
+        self.status.setText("Update download cancelled.")
+
+    def _launch_update_installer(self, installer_path: str) -> None:
+        self._update_download_worker = None
+        installer = Path(installer_path)
+        try:
+            subprocess.Popen([str(installer)], close_fds=True, cwd=installer.parent)
+        except OSError as exc:
+            self.update_button.setEnabled(True)
+            self.update_button.setText("Check for Updates")
+            self.status.setText("Could not launch the update installer.")
+            QMessageBox.warning(
+                self,
+                "Could Not Start Installer",
+                f"The installer was downloaded and verified, but Windows could not open it:\n{exc}",
+            )
+            return
+        self.status.setText(
+            "Installer opened. Follow its prompts to complete the update."
+        )
+        QApplication.quit()
+
     def _show_failure(self, message: str) -> None:
         self.scan_button.setEnabled(True)
         self.workspace_scan_button.setEnabled(True)
@@ -2713,6 +2876,18 @@ class MainWindow(QMainWindow):
             self._workshop_description_worker.wait()
         if self._preview_worker is not None and self._preview_worker.isRunning():
             self._preview_worker.wait()
+        if (
+            self._update_check_worker is not None
+            and self._update_check_worker.isRunning()
+        ):
+            self._update_check_worker.requestInterruption()
+            self._update_check_worker.wait()
+        if (
+            self._update_download_worker is not None
+            and self._update_download_worker.isRunning()
+        ):
+            self._update_download_worker.requestInterruption()
+            self._update_download_worker.wait()
         event.accept()
 
     def _apply_theme(self) -> None:

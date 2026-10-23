@@ -23,6 +23,7 @@ from zomboid_mod_manager.sorting.user_rules import (
 )
 from zomboid_mod_manager.ui.main_window import MainWindow
 from zomboid_mod_manager.ui.workshop_browser import WorkshopBrowserPanel
+from zomboid_mod_manager.updates import UpdateRelease
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -52,6 +53,67 @@ class MainWindowTests(unittest.TestCase):
         )
         self.addCleanup(window.close)
         return window, config_path
+
+    def test_update_button_checks_release_and_reports_when_current(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        window, _ = self._make_launch_window(Path(temporary.name))
+
+        with (
+            patch(
+                "zomboid_mod_manager.ui.main_window.check_for_update",
+                return_value=None,
+            ) as check_for_update,
+            patch(
+                "zomboid_mod_manager.ui.main_window.QMessageBox.information"
+            ) as information,
+        ):
+            window.update_button.click()
+            deadline = time.monotonic() + 5
+            while not window.update_button.isEnabled() and time.monotonic() < deadline:
+                self.app.processEvents()
+                QTest.qWait(10)
+
+        self.assertTrue(window.update_button.isEnabled())
+        self.assertEqual(window.update_button.text(), "Check for Updates")
+        self.assertIn("up to date", window.status.text().casefold())
+        check_for_update.assert_called_once_with("0.1.2")
+        information.assert_called_once()
+
+    def test_update_button_downloads_a_new_release_after_confirmation(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        window, _ = self._make_launch_window(Path(temporary.name))
+        release = UpdateRelease(
+            version="0.1.3",
+            tag_name="v0.1.3",
+            installer_name="ZomboidSorter-0.1.3-windows-setup.exe",
+            installer_url="https://github.com/LookImEcho-Rick/ZomboidSorter/releases/download/v0.1.3/ZomboidSorter-0.1.3-windows-setup.exe",
+            installer_size=100,
+            checksum_name="ZomboidSorter-0.1.3-windows-setup.exe.sha256",
+            checksum_url="https://github.com/LookImEcho-Rick/ZomboidSorter/releases/download/v0.1.3/ZomboidSorter-0.1.3-windows-setup.exe.sha256",
+        )
+
+        with (
+            patch(
+                "zomboid_mod_manager.ui.main_window.check_for_update",
+                return_value=release,
+            ),
+            patch.object(
+                QMessageBox,
+                "exec",
+                return_value=QMessageBox.StandardButton.Yes,
+            ) as prompt,
+            patch.object(window, "_download_update") as download_update,
+        ):
+            window.update_button.click()
+            deadline = time.monotonic() + 5
+            while not download_update.called and time.monotonic() < deadline:
+                self.app.processEvents()
+                QTest.qWait(10)
+
+        self.assertTrue(prompt.called)
+        download_update.assert_called_once_with(release)
 
     def test_workshop_browser_panel_starts_without_loading_webengine(self) -> None:
         panel = WorkshopBrowserPanel()

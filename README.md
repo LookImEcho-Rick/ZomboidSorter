@@ -27,6 +27,8 @@ Discovery is read-only. It skips symbolic links and junctions and limits each `m
 2. Run the installer. It installs for the current Windows user and adds a Start menu shortcut. Windows may warn about an unsigned installer; inspect the checksum before proceeding.
 3. Launch **ZomboidSorter** from Start. The PySide6/Qt runtime and embedded Workshop browser are included; Python is not required.
 
+Use **Check for Updates** in the app header to check GitHub for a newer stable release. If one is available, the app asks before downloading, verifies the installer against the release SHA-256 file, and opens the normal Windows installer to finish the upgrade.
+
 If there is no Release with a downloadable installer yet, use the source instructions below. Do not download an installer from an unofficial mirror.
 
 ## First launch and basic use

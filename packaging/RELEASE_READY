@@ -32,6 +32,13 @@ Application license: GPL-3.0-or-later (root LICENSE)
 - Release page: https://github.com/LookImEcho-Rick/ZomboidSorter/releases/tag/v0.1.1
 - The local Build 42.21.0 global-list apply/launch acceptance and byte-for-byte restoration are recorded in `docs/PROGRESS.md`.
 
+## Version 0.1.2 release preparation (2026-10-22)
+
+- The source release version is 0.1.2. This update adds a GitHub stable-release check and verified installer download using the standard update flow; it adds no runtime dependencies, Qt modules, bundled assets, or license-delivery changes. The reviewed Qt/PySide6/WebEngine pins and source offer above still apply.
+- Local validation installer: `ZomboidSorter-0.1.2-windows-setup.exe`; SHA-256 `4aec5916944ff13f7038dfd3a5e6d401091d0e670a38c261295ab88741a0e7ce`; 120,054,174 bytes. It compiled successfully on Windows 11 with CPython 3.14.7, PyInstaller 6.22.3, and Inno Setup 6.7.3. Its full component manifest is embedded at `licenses/BUILD_COMPONENTS.txt`.
+- The 82-test suite passed with one environment-only symlink skip; Ruff check, Ruff format check, and compileall passed. The live updater lookup read the existing v0.1.1 release and checksum. The v0.1.2 tagged workflow and published artifact verification are pending publication.
+- The updater verifies the advertised installer size, SHA-256 sidecar, and Windows executable header before opening the standard per-user installer. An isolated install/upgrade/uninstall smoke test of this v0.1.2 installer has not been run.
+
 ## Evidence shipped with the installer
 
 - `THIRD_PARTY_NOTICES.md` identifies the open-source terms and source request procedure.

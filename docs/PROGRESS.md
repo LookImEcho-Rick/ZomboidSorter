@@ -175,3 +175,9 @@ Updated 2026-10-22 after the desktop UX refresh.
 
 - Moved the Steam Workshop tab controls, navigation, URL parsing, and lazy WebEngine lifecycle into `ui/workshop_browser.py` as `WorkshopBrowserPanel`. `MainWindow` now mounts the panel and opens its home page when the tab is first selected, reducing its Workshop-specific responsibilities while preserving lazy loading.
 - Validation: the two focused panel tests and the existing fixture-based MainWindow tab-switch test passed. The full 76-test suite passed with one environment-only symlink skip; Ruff check, project-wide formatting, and compileall passed. No separate live-page verification was run for this refactor.
+
+## In-app update checker (2026-10-22)
+
+- Set the source version to 0.1.2 and added a **Check for Updates** button. It checks the latest stable GitHub Release off the UI thread, compares numeric versions, and only accepts the repository's version-matched Windows installer and checksum assets. After confirmation it downloads the installer, checks its advertised size, SHA-256 sidecar, and Windows executable header, then opens the regular per-user Inno Setup installer and exits the app.
+- Validation: the 82-test suite passed with one environment-only symlink skip; Ruff check, Ruff format check, and `git diff --check` passed. A read-only live GitHub lookup returned v0.1.1 and its checksum, confirming the release response and checksum format. Installer replacement, settings/profile preservation through this new launch path, and the 0.1.2 release workflow have not been run.
+- Release limitation: the latest published release is still v0.1.1, so 0.1.2 becomes available to the updater after its installer and `.sha256` asset are published. Updating opens the standard installer wizard rather than silently replacing files; refresh the version-specific release record in `packaging/RELEASE_READY` after the 0.1.2 package review.
