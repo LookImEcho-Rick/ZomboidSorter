@@ -2,7 +2,7 @@
 
 ![ZomboidSorter wordmark](assets/zomboidsorter-wordmark.png)
 
-**A Windows mod workspace for Project Zomboid.**
+**A mod workspace for Project Zomboid.**
 
 </div>
 
