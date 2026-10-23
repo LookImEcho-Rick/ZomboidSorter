@@ -1,5 +1,11 @@
 # Progress
 
+## Cancellable discovery scans and shutdown (2026-10-22)
+
+- Discovery now reports scan stages and periodic local-folder / Workshop-item counts. The status bar offers **Cancel scan**; cancellation is checked while enumerating directories, reading metadata candidates, and building discovery diagnostics, and keeps the previous scan results intact.
+- Closing while background workers are active now requests interruption and continues closing from worker-finished signals instead of blocking the UI with unbounded `wait()` calls. Shutdown is asynchronous; a filesystem call or in-flight network request can finish before its worker stops.
+- Validation: all 11 discovery tests and the two focused UI cancellation/shutdown tests passed; Ruff check and format passed for the changed Python files. The full suite was not run.
+
 ## Discovery hardening (2026-10-22)
 
 - `mod.info` reads are capped at 1 MiB, including a bounded read if a file changes after its initial size check. Files too large to read, unreadable files, and files invalid as both UTF-8 and Windows-1252 remain visible with path-specific metadata diagnostics; one failure no longer aborts the scan.
@@ -175,6 +181,11 @@ Updated 2026-10-22 after the desktop UX refresh.
 
 - Moved the Steam Workshop tab controls, navigation, URL parsing, and lazy WebEngine lifecycle into `ui/workshop_browser.py` as `WorkshopBrowserPanel`. `MainWindow` now mounts the panel and opens its home page when the tab is first selected, reducing its Workshop-specific responsibilities while preserving lazy loading.
 - Validation: the two focused panel tests and the existing fixture-based MainWindow tab-switch test passed. The full 76-test suite passed with one environment-only symlink skip; Ruff check, project-wide formatting, and compileall passed. No separate live-page verification was run for this refactor.
+
+## MainWindow active-configuration workflow extraction (2026-10-22)
+
+- Moved global-list loading, selected-target matching, supported-target checks, stale-snapshot detection, and the guarded apply call into `configuration.py`. `MainWindow` keeps confirmation dialogs, visible status, and widget updates; `gameio/active_mods.py` still owns parsing and safe disk writes. Updated the existing apply-failure test to patch the new service boundary.
+- Validation: Ruff check/format and Python compile checks passed. Automated tests were not run for this refactor. No Project Zomboid configuration or save files were written.
 
 ## In-app update checker (2026-10-22)
 

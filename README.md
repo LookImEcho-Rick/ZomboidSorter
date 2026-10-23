@@ -15,11 +15,11 @@ ZomboidSorter discovers local and Steam Workshop mods, shows metadata and warnin
 | Platform | Status |
 | --- | --- |
 | Windows 11, 64-bit | Development and packaged launch checked on this machine. |
-| Windows 10, 64-bit | Intended target; clean-machine installer test still needed. |
+| Windows 10, 64-bit | Intended target; Windows 10 and other-PC installer tests remain unverified. |
 | Project Zomboid Build 42 | Primary target. A local 42.21.0 installation was scanned read-only. |
 | Project Zomboid Build 41 | Root `mod.info` metadata is recognized in fixtures; live B41 behavior is unverified. |
 
-Discovery is read-only. It skips symbolic links and junctions and limits each `mod.info` read to 1 MiB; unreadable, oversized, or undecodable files are reported with their path. The app changes only the global `Zomboid/mods/default.txt` list after confirmation. It makes a timestamped backup, checks for concurrent edits, writes atomically, and reads the result back. Per-save and server configuration are unsupported. It never deletes installed mods or saves. A temporary global-list apply and restore was verified with the local Build 42.21.0 installation: the startup log showed the marker Mod ID, and the original list was restored byte-for-byte. The game reached its startup warning screen; no save was opened. Gameplay behavior, clean-machine setup, and Windows 10 remain unverified.
+Discovery is read-only. It skips symbolic links and junctions and limits each `mod.info` read to 1 MiB; unreadable, oversized, or undecodable files are reported with their path. The app changes only the global `Zomboid/mods/default.txt` list after confirmation. It makes a timestamped backup, checks for concurrent edits, writes atomically, and reads the result back. Per-save and server configuration are unsupported. It never deletes installed mods or saves. A temporary global-list apply and restore was verified with the local Build 42.21.0 installation: the startup log showed the marker Mod ID, and the original list was restored byte-for-byte. The game reached its startup warning screen; no save was opened. Gameplay behavior and loading a save were not tested; testing on other PCs and Windows 10 remains unverified.
 
 ## Download and install
 
@@ -34,7 +34,7 @@ If there is no Release with a downloadable installer yet, use the source instruc
 ## First launch and basic use
 
 1. Install and launch Project Zomboid through Steam at least once. Open its Mods screen to let the game create the global list if `default.txt` is missing.
-2. In **Paths Settings**, confirm the detected local mods folder, Workshop folder, and global `Zomboid/mods/default.txt` path. Use **Refresh** to scan. Discovery is read-only.
+2. In **Paths Settings**, confirm the detected local mods folder, Workshop folder, and global `Zomboid/mods/default.txt` path. Use **Refresh** to scan; the scan is read-only and can be cancelled while it runs.
 3. In **Mod Workspace**, select entries under **Discover** and enable them into **Active Order**. Drag or use the move buttons to stage an order. Warnings identify missing and duplicate IDs; an order suggestion is a proposal, not a guarantee of the game's runtime order.
 4. Use **Save as Pack…** to keep the staged list as an app-owned Mod Pack. **Mod Packs…** can import, export, recover, and apply packs. Applying a pack updates the same global list with a backup.
 5. Select **Apply To Project Zomboid…** to confirm a global-list write. **Apply & Launch…** applies staged changes first and asks Windows to hand the game link to Steam; successful handoff does not prove that the game started.

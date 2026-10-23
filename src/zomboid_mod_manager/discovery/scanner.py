@@ -6,7 +6,7 @@ import os
 import re
 import stat
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 
 from zomboid_mod_manager.domain import (
@@ -23,6 +23,20 @@ _MAX_METADATA_BYTES = 1024 * 1024
 _LINK_SKIP_MESSAGE = (
     "Skipped symbolic link or junction; discovery does not follow linked paths."
 )
+
+
+class ScanCancelled(Exception):
+    """Raised when the caller requests that a read-only scan stop."""
+
+
+def _check_cancelled(cancelled: Callable[[], bool] | None) -> None:
+    if cancelled is not None and cancelled():
+        raise ScanCancelled
+
+
+def _report_progress(progress: Callable[[str], None] | None, message: str) -> None:
+    if progress is not None:
+        progress(message)
 
 
 def _path_key(path: Path) -> str:
@@ -47,8 +61,12 @@ def _report_link(path: Path, diagnostics: list[Diagnostic] | None) -> None:
 
 
 def _candidate_paths(
-    entry_path: Path, diagnostics: list[Diagnostic] | None = None
+    entry_path: Path,
+    diagnostics: list[Diagnostic] | None = None,
+    *,
+    cancelled: Callable[[], bool] | None = None,
 ) -> tuple[Path, ...]:
+    _check_cancelled(cancelled)
     candidates: list[Path] = []
     if _is_link(entry_path):
         _report_link(entry_path, diagnostics)
@@ -70,12 +88,16 @@ def _candidate_paths(
         candidates.append(common_info)
 
     try:
-        children = tuple(entry_path.iterdir())
+        children: list[Path] = []
+        for child in entry_path.iterdir():
+            _check_cancelled(cancelled)
+            children.append(child)
     except OSError:
-        children = ()
+        children = []
 
     version_dirs: list[Path] = []
     for child in children:
+        _check_cancelled(cancelled)
         if not _VERSION_FOLDER.fullmatch(child.name):
             continue
         if _is_link(child):
@@ -87,6 +109,7 @@ def _candidate_paths(
     )
 
     for version_dir in version_dirs:
+        _check_cancelled(cancelled)
         metadata_path = version_dir / "mod.info"
         if _is_link(metadata_path):
             _report_link(metadata_path, diagnostics)
@@ -104,7 +127,13 @@ def _layout(entry_path: Path, metadata_path: Path) -> tuple[str, str | None]:
     return f"versioned ({parent.name})", parent.name
 
 
-def _parse_metadata(metadata_path: Path, entry_path: Path) -> MetadataCandidate:
+def _parse_metadata(
+    metadata_path: Path,
+    entry_path: Path,
+    *,
+    cancelled: Callable[[], bool] | None = None,
+) -> MetadataCandidate:
+    _check_cancelled(cancelled)
     diagnostics: list[str] = []
     layout, version_folder = _layout(entry_path, metadata_path)
 
@@ -134,6 +163,7 @@ def _parse_metadata(metadata_path: Path, entry_path: Path) -> MetadataCandidate:
         flags |= getattr(os, "O_NOFOLLOW", 0)
         descriptor = os.open(metadata_path, flags)
         with os.fdopen(descriptor, "rb") as source_file:
+            _check_cancelled(cancelled)
             opened_stat = os.fstat(source_file.fileno())
             if not stat.S_ISREG(opened_stat.st_mode):
                 return failed_candidate("mod.info is not a regular file; skipped.")
@@ -218,8 +248,14 @@ def _build_entries(
     source: SourceType,
     workshop_id: str | None,
     metadata_paths: tuple[Path, ...],
+    *,
+    cancelled: Callable[[], bool] | None = None,
 ) -> tuple[ModEntry, ...]:
-    parsed = tuple(_parse_metadata(path, entry_path) for path in metadata_paths)
+    parsed_candidates: list[MetadataCandidate] = []
+    for path in metadata_paths:
+        _check_cancelled(cancelled)
+        parsed_candidates.append(_parse_metadata(path, entry_path, cancelled=cancelled))
+    parsed = tuple(parsed_candidates)
     grouped: dict[str, list[MetadataCandidate]] = defaultdict(list)
     for candidate in parsed:
         mod_id = candidate.fields.get("id", "").strip()
@@ -278,26 +314,40 @@ def _build_entries(
     return tuple(entries)
 
 
-def _is_entry(entry_path: Path, diagnostics: list[Diagnostic] | None = None) -> bool:
-    return bool(_candidate_paths(entry_path, diagnostics))
+def _is_entry(
+    entry_path: Path,
+    diagnostics: list[Diagnostic] | None = None,
+    *,
+    cancelled: Callable[[], bool] | None = None,
+) -> bool:
+    return bool(_candidate_paths(entry_path, diagnostics, cancelled=cancelled))
 
 
 def _workshop_entry_roots(
-    item_path: Path, diagnostics: list[Diagnostic]
+    item_path: Path,
+    diagnostics: list[Diagnostic],
+    *,
+    cancelled: Callable[[], bool] | None = None,
 ) -> tuple[Path, ...]:
     roots: list[Path] = []
     seen: set[str] = set()
     for wrapper in (item_path / "mods", item_path / "Contents" / "mods"):
+        _check_cancelled(cancelled)
         if _is_link(wrapper):
             _report_link(wrapper, diagnostics)
             continue
         if not wrapper.is_dir():
             continue
         try:
-            children = sorted(wrapper.iterdir(), key=lambda path: path.name.casefold())
+            children = []
+            for child in wrapper.iterdir():
+                _check_cancelled(cancelled)
+                children.append(child)
+            children.sort(key=lambda path: path.name.casefold())
         except OSError:
             continue
         for child in children:
+            _check_cancelled(cancelled)
             if _is_link(child):
                 _report_link(child, diagnostics)
                 continue
@@ -308,12 +358,20 @@ def _workshop_entry_roots(
                 seen.add(key)
                 roots.append(child)
 
-    if _is_entry(item_path, diagnostics):
+    if _is_entry(item_path, diagnostics, cancelled=cancelled):
         roots.insert(0, item_path)
     return tuple(roots)
 
 
-def _scan_local_root(root: Path, diagnostics: list[Diagnostic]) -> list[ModEntry]:
+def _scan_local_root(
+    root: Path,
+    diagnostics: list[Diagnostic],
+    *,
+    cancelled: Callable[[], bool] | None = None,
+    progress: Callable[[str], None] | None = None,
+) -> list[ModEntry]:
+    _check_cancelled(cancelled)
+    _report_progress(progress, f"Checking local mods: {root}")
     if _is_link(root):
         _report_link(root, diagnostics)
         return []
@@ -325,11 +383,15 @@ def _scan_local_root(root: Path, diagnostics: list[Diagnostic]) -> list[ModEntry
 
     entry_roots: list[Path] = []
     seen: set[str] = set()
-    if _is_entry(root, diagnostics):
+    if _is_entry(root, diagnostics, cancelled=cancelled):
         entry_roots.append(root)
         seen.add(_path_key(root))
     try:
-        children = sorted(root.iterdir(), key=lambda path: path.name.casefold())
+        children = []
+        for child in root.iterdir():
+            _check_cancelled(cancelled)
+            children.append(child)
+        children.sort(key=lambda path: path.name.casefold())
     except OSError as exc:
         diagnostics.append(
             Diagnostic(f"Could not list local mod folder: {exc}", root, "error")
@@ -337,6 +399,7 @@ def _scan_local_root(root: Path, diagnostics: list[Diagnostic]) -> list[ModEntry
         return []
 
     for child in children:
+        _check_cancelled(cancelled)
         if _is_link(child):
             _report_link(child, diagnostics)
         elif child.is_dir() and _path_key(child) not in seen:
@@ -344,22 +407,41 @@ def _scan_local_root(root: Path, diagnostics: list[Diagnostic]) -> list[ModEntry
             seen.add(_path_key(child))
 
     entries: list[ModEntry] = []
-    for entry_root in entry_roots:
-        metadata_paths = _candidate_paths(entry_root, diagnostics)
+    for index, entry_root in enumerate(entry_roots, start=1):
+        _check_cancelled(cancelled)
+        if index == 1 or index % 25 == 0 or index == len(entry_roots):
+            _report_progress(
+                progress,
+                f"Scanning local mods: {index}/{len(entry_roots)} folders",
+            )
+        metadata_paths = _candidate_paths(entry_root, diagnostics, cancelled=cancelled)
         if not metadata_paths:
             diagnostics.append(
                 Diagnostic("Local mod entry has no recognized mod.info.", entry_root)
             )
             continue
         entries.extend(
-            _build_entries(entry_root, entry_root, "local", None, metadata_paths)
+            _build_entries(
+                entry_root,
+                entry_root,
+                "local",
+                None,
+                metadata_paths,
+                cancelled=cancelled,
+            )
         )
     return entries
 
 
 def _scan_workshop_root(
-    root: Path, diagnostics: list[Diagnostic]
+    root: Path,
+    diagnostics: list[Diagnostic],
+    *,
+    cancelled: Callable[[], bool] | None = None,
+    progress: Callable[[str], None] | None = None,
 ) -> list[WorkshopItem]:
+    _check_cancelled(cancelled)
+    _report_progress(progress, f"Listing Workshop items: {root}")
     if _is_link(root):
         _report_link(root, diagnostics)
         return []
@@ -370,7 +452,11 @@ def _scan_workshop_root(
         return []
 
     try:
-        item_paths = sorted(root.iterdir(), key=lambda path: path.name)
+        item_paths = []
+        for item_path in root.iterdir():
+            _check_cancelled(cancelled)
+            item_paths.append(item_path)
+        item_paths.sort(key=lambda path: path.name)
     except OSError as exc:
         diagnostics.append(
             Diagnostic(f"Could not list Workshop content folder: {exc}", root, "error")
@@ -378,16 +464,23 @@ def _scan_workshop_root(
         return []
 
     items: list[WorkshopItem] = []
+    scanned_items = 0
     for item_path in item_paths:
+        _check_cancelled(cancelled)
         if not item_path.name.isdecimal():
             continue
+        scanned_items += 1
+        if scanned_items == 1 or scanned_items % 25 == 0:
+            _report_progress(
+                progress, f"Scanning Workshop items: {scanned_items} checked"
+            )
         item_diags: list[Diagnostic] = []
         if _is_link(item_path):
             _report_link(item_path, diagnostics)
             continue
         if not item_path.is_dir():
             continue
-        entry_roots = _workshop_entry_roots(item_path, item_diags)
+        entry_roots = _workshop_entry_roots(item_path, item_diags, cancelled=cancelled)
         if not entry_roots:
             item_diags.append(
                 Diagnostic(
@@ -398,7 +491,10 @@ def _scan_workshop_root(
 
         entries: list[ModEntry] = []
         for entry_root in entry_roots:
-            metadata_paths = _candidate_paths(entry_root, item_diags)
+            _check_cancelled(cancelled)
+            metadata_paths = _candidate_paths(
+                entry_root, item_diags, cancelled=cancelled
+            )
             if not metadata_paths:
                 item_diags.append(
                     Diagnostic(
@@ -408,7 +504,12 @@ def _scan_workshop_root(
                 continue
             entries.extend(
                 _build_entries(
-                    entry_root, item_path, "workshop", item_path.name, metadata_paths
+                    entry_root,
+                    item_path,
+                    "workshop",
+                    item_path.name,
+                    metadata_paths,
+                    cancelled=cancelled,
                 )
             )
 
@@ -421,13 +522,19 @@ def _scan_workshop_root(
             )
         )
         diagnostics.extend(item_diags)
+    _report_progress(progress, f"Scanned {scanned_items} Workshop item folders")
     return items
 
 
 def scan_mods(
-    *, local_roots: Iterable[Path] = (), workshop_roots: Iterable[Path] = ()
+    *,
+    local_roots: Iterable[Path] = (),
+    workshop_roots: Iterable[Path] = (),
+    cancelled: Callable[[], bool] | None = None,
+    progress: Callable[[str], None] | None = None,
 ) -> ScanResult:
     """Scan chosen roots without modifying files or choosing a game-version candidate."""
+    _check_cancelled(cancelled)
     diagnostics: list[Diagnostic] = []
     unique_local: list[Path] = []
     unique_workshop: list[Path] = []
@@ -435,11 +542,13 @@ def scan_mods(
     seen_workshop: set[str] = set()
 
     for root in local_roots:
+        _check_cancelled(cancelled)
         key = _path_key(Path(root))
         if key not in seen_local:
             seen_local.add(key)
             unique_local.append(Path(root))
     for root in workshop_roots:
+        _check_cancelled(cancelled)
         key = _path_key(Path(root))
         if key not in seen_workshop:
             seen_workshop.add(key)
@@ -448,23 +557,38 @@ def scan_mods(
     if not unique_local and not unique_workshop:
         diagnostics.append(Diagnostic("No scan locations are configured."))
 
-    local_entries = [
-        entry for root in unique_local for entry in _scan_local_root(root, diagnostics)
-    ]
-    workshop_items = [
-        item
-        for root in unique_workshop
-        for item in _scan_workshop_root(root, diagnostics)
-    ]
+    local_entries: list[ModEntry] = []
+    for root in unique_local:
+        local_entries.extend(
+            _scan_local_root(
+                root,
+                diagnostics,
+                cancelled=cancelled,
+                progress=progress,
+            )
+        )
+    workshop_items: list[WorkshopItem] = []
+    for root in unique_workshop:
+        workshop_items.extend(
+            _scan_workshop_root(
+                root,
+                diagnostics,
+                cancelled=cancelled,
+                progress=progress,
+            )
+        )
 
-    all_entries = local_entries + [
-        entry for item in workshop_items for entry in item.entries
-    ]
+    all_entries = list(local_entries)
+    for item in workshop_items:
+        _check_cancelled(cancelled)
+        all_entries.extend(item.entries)
     by_id: dict[str, list[ModEntry]] = defaultdict(list)
     for entry in all_entries:
+        _check_cancelled(cancelled)
         if entry.mod_id:
             by_id[entry.mod_id].append(entry)
     for mod_id, matches in sorted(by_id.items(), key=lambda item: item[0].casefold()):
+        _check_cancelled(cancelled)
         distinct_entries = {entry.key for entry in matches}
         if len(distinct_entries) > 1:
             locations = ", ".join(str(entry.entry_path) for entry in matches)
@@ -476,8 +600,10 @@ def scan_mods(
 
     by_workshop_id: dict[str, list[WorkshopItem]] = defaultdict(list)
     for item in workshop_items:
+        _check_cancelled(cancelled)
         by_workshop_id[item.workshop_id].append(item)
     for workshop_id, items in sorted(by_workshop_id.items()):
+        _check_cancelled(cancelled)
         if len(items) > 1:
             locations = ", ".join(str(item.path) for item in items)
             diagnostics.append(
@@ -486,6 +612,7 @@ def scan_mods(
                 )
             )
 
+    _check_cancelled(cancelled)
     return ScanResult(
         local_entries=tuple(local_entries),
         workshop_items=tuple(workshop_items),

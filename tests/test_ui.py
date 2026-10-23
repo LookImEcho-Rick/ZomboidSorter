@@ -5,6 +5,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from threading import Event
 from unittest.mock import Mock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -14,6 +15,7 @@ from PySide6.QtGui import QColor, QImage
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
+from zomboid_mod_manager.discovery.scanner import ScanCancelled
 from zomboid_mod_manager.domain import DetectedPaths, Diagnostic, ScanResult
 from zomboid_mod_manager.gameio.active_mods import read_active_mods
 from zomboid_mod_manager.profiles import ModProfile, ProfileStore
@@ -240,7 +242,7 @@ class MainWindowTests(unittest.TestCase):
                 return_value=QMessageBox.StandardButton.Yes,
             ),
             patch(
-                "zomboid_mod_manager.ui.main_window.write_active_mods",
+                "zomboid_mod_manager.configuration.write_active_mods",
                 side_effect=OSError("fixture write failure"),
             ),
             patch("zomboid_mod_manager.ui.main_window.QMessageBox.warning") as warning,
@@ -722,6 +724,78 @@ class MainWindowTests(unittest.TestCase):
         self.assertTrue(window.progress.isHidden())
         self.assertEqual(config_path.read_bytes(), original_bytes)
         window.close()
+
+    def test_cancel_scan_button_stops_scan_and_keeps_previous_results(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        window, _ = self._make_launch_window(Path(temporary.name))
+        window.show()
+        deadline = time.monotonic() + 5
+        while window._worker is not None and time.monotonic() < deadline:
+            self.app.processEvents()
+            QTest.qWait(5)
+        self.assertIsNotNone(window._last_result)
+        previous_result = window._last_result
+
+        scan_started = Event()
+
+        def wait_until_cancelled(*, cancelled, **_kwargs):
+            scan_started.set()
+            while not cancelled():
+                time.sleep(0.005)
+            raise ScanCancelled
+
+        with patch(
+            "zomboid_mod_manager.ui.main_window.scan_mods",
+            side_effect=wait_until_cancelled,
+        ):
+            window._start_scan()
+            self.assertTrue(scan_started.wait(timeout=5))
+            self.assertTrue(window.cancel_scan_button.isVisible())
+            window.cancel_scan_button.click()
+
+            deadline = time.monotonic() + 5
+            while window._worker is not None and time.monotonic() < deadline:
+                self.app.processEvents()
+                QTest.qWait(5)
+
+        self.assertIsNone(window._worker)
+        self.assertIs(window._last_result, previous_result)
+        self.assertTrue(window.cancel_scan_button.isHidden())
+        self.assertIn("cancelled", window.status.text().casefold())
+        window.close()
+
+    def test_close_does_not_block_while_scan_worker_finishes(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        scan_started = Event()
+
+        def delayed_scan(**_kwargs):
+            scan_started.set()
+            time.sleep(0.35)
+            return ScanResult((), (), ())
+
+        with patch(
+            "zomboid_mod_manager.ui.main_window.scan_mods",
+            side_effect=delayed_scan,
+        ):
+            window, _ = self._make_launch_window(Path(temporary.name))
+            window.show()
+            self.assertTrue(scan_started.wait(timeout=5))
+
+            close_started = time.monotonic()
+            window.close()
+            close_elapsed = time.monotonic() - close_started
+
+            self.assertLess(close_elapsed, 0.15)
+            self.assertTrue(window.isVisible())
+            deadline = time.monotonic() + 5
+            while window.isVisible() and time.monotonic() < deadline:
+                self.app.processEvents()
+                QTest.qWait(5)
+
+        self.assertFalse(window.isVisible())
+        self.assertFalse(window._shutdown_workers)
 
     def test_window_scans_fixtures_and_filters_results(self) -> None:
         temporary = tempfile.TemporaryDirectory()

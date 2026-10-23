@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from zomboid_mod_manager.discovery.scanner import scan_mods
+from zomboid_mod_manager.discovery.scanner import ScanCancelled, scan_mods
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -219,6 +219,29 @@ class DiscoveryTests(unittest.TestCase):
                     for diagnostic in result.diagnostics
                 )
             )
+
+    def test_scan_cancellation_is_checked_after_progress_callback(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "mods"
+            root.mkdir()
+            cancel_requested = False
+            progress_messages: list[str] = []
+
+            def report_progress(message: str) -> None:
+                nonlocal cancel_requested
+                progress_messages.append(message)
+                if message.startswith("Checking local mods:"):
+                    cancel_requested = True
+
+            with self.assertRaises(ScanCancelled):
+                scan_mods(
+                    local_roots=[root],
+                    cancelled=lambda: cancel_requested,
+                    progress=report_progress,
+                )
+
+            self.assertEqual(len(progress_messages), 1)
+            self.assertTrue(progress_messages[0].startswith("Checking local mods:"))
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@ from PySide6.QtCore import (
     QSortFilterProxyModel,
     Qt,
     QThread,
+    QTimer,
     QUrl,
     Signal,
 )
@@ -60,6 +61,14 @@ from PySide6.QtWidgets import (
 )
 
 from zomboid_mod_manager import __version__
+from zomboid_mod_manager.configuration import (
+    SelectedConfigurationPathMismatch,
+    apply_active_configuration,
+    is_global_default_mod_list,
+    load_active_configuration,
+    read_unchanged_active_configuration,
+    selected_path_matches_configuration,
+)
 from zomboid_mod_manager.diagnostics.console_log import (
     analyze_console_log,
     format_console_log_report,
@@ -70,13 +79,12 @@ from zomboid_mod_manager.diagnostics.file_overlaps import (
     format_file_overlap_report,
 )
 from zomboid_mod_manager.discovery.paths import detect_paths
-from zomboid_mod_manager.discovery.scanner import scan_mods
+from zomboid_mod_manager.discovery.scanner import ScanCancelled, scan_mods
 from zomboid_mod_manager.domain import DetectedPaths, ModEntry, ScanResult
 from zomboid_mod_manager.gameio.active_mods import (
     ActiveModConfigError,
     ActiveModSnapshot,
-    read_active_mods,
-    write_active_mods,
+    ConcurrentConfigChangeError,
 )
 from zomboid_mod_manager.profiles import (
     ModProfile,
@@ -118,6 +126,8 @@ NEW_WORKSHOP_ROLE = ISSUE_ROLE + 1
 class ScanWorker(QThread):
     result_ready = Signal(object)
     failed = Signal(str)
+    progress = Signal(str)
+    cancelled = Signal()
 
     def __init__(self, local_roots: list[Path], workshop_roots: list[Path]) -> None:
         super().__init__()
@@ -126,12 +136,18 @@ class ScanWorker(QThread):
 
     def run(self) -> None:
         try:
-            self.result_ready.emit(
-                scan_mods(
-                    local_roots=self._local_roots,
-                    workshop_roots=self._workshop_roots,
-                )
+            result = scan_mods(
+                local_roots=self._local_roots,
+                workshop_roots=self._workshop_roots,
+                cancelled=self.isInterruptionRequested,
+                progress=self.progress.emit,
             )
+            if self.isInterruptionRequested():
+                self.cancelled.emit()
+                return
+            self.result_ready.emit(result)
+        except ScanCancelled:
+            self.cancelled.emit()
         except Exception as exc:  # noqa: BLE001 - Surface unexpected scanner failures in the UI.
             self.failed.emit(f"Scan failed: {exc}")
 
@@ -179,6 +195,10 @@ class UpdateDownloadWorker(QThread):
                 progress=self.progress.emit,
                 cancelled=self.isInterruptionRequested,
             )
+            if self.isInterruptionRequested():
+                installer.unlink(missing_ok=True)
+                self.cancelled.emit()
+                return
         except UpdateCancelled:
             self.cancelled.emit()
         except UpdateError as exc:
@@ -559,6 +579,11 @@ class MainWindow(QMainWindow):
         self._detected = detected or detect_paths()
         self._worker: ScanWorker | None = None
         self._scan_again_after_current = False
+        self._shutdown_requested = False
+        self._shutdown_workers: tuple[QThread, ...] = ()
+        self._shutdown_timer = QTimer(self)
+        self._shutdown_timer.setSingleShot(True)
+        self._shutdown_timer.timeout.connect(self._continue_shutdown)
         self._entries: dict[str, ModEntry] = {}
         self._last_result: ScanResult | None = None
         self._recently_added_workshop_entry_keys: set[str] = set()
@@ -841,6 +866,12 @@ class MainWindow(QMainWindow):
 
         self.status = QLabel("Ready · scans only read installed mod folders")
         self.statusBar().addWidget(self.status, 1)
+        self.cancel_scan_button = QPushButton("Cancel scan")
+        self.cancel_scan_button.setAccessibleName("Cancel mod scan")
+        self.cancel_scan_button.setToolTip("Stop scanning the selected mod folders.")
+        self.cancel_scan_button.clicked.connect(self._cancel_scan)
+        self.statusBar().addPermanentWidget(self.cancel_scan_button)
+        self.cancel_scan_button.hide()
         self.progress = QProgressBar()
         self.progress.setRange(0, 0)
         self.progress.setTextVisible(False)
@@ -1228,7 +1259,7 @@ class MainWindow(QMainWindow):
                 "Load the supported global Zomboid/mods/default.txt file before applying a Mod Pack.",
             )
             return
-        if not self._is_global_default_mod_list(snapshot.path):
+        if not is_global_default_mod_list(snapshot.path):
             QMessageBox.warning(
                 self,
                 "Unsupported Mod List",
@@ -1236,16 +1267,16 @@ class MainWindow(QMainWindow):
             )
             return
         try:
-            latest = read_active_mods(snapshot.path)
-        except (OSError, ActiveModConfigError) as exc:
-            QMessageBox.warning(self, "Could not read global Mod List", str(exc))
-            return
-        if latest.fingerprint != snapshot.fingerprint:
+            latest = read_unchanged_active_configuration(snapshot)
+        except ConcurrentConfigChangeError:
             QMessageBox.warning(
                 self,
                 "Global Mod List Changed",
                 "The global mod list changed since it was loaded. Reload it, then load the Mod Pack again.",
             )
+            return
+        except (OSError, ActiveModConfigError) as exc:
+            QMessageBox.warning(self, "Could not read global Mod List", str(exc))
             return
 
         self._active_config = latest
@@ -1294,7 +1325,7 @@ class MainWindow(QMainWindow):
         try:
             if not path_text:
                 raise ActiveModConfigError("Choose a global default.txt path first.")
-            snapshot = read_active_mods(Path(path_text).expanduser())
+            snapshot = load_active_configuration(path_text)
         except (OSError, ActiveModConfigError) as exc:
             self._active_config = None
             self._staged_mod_ids = []
@@ -2011,22 +2042,22 @@ class MainWindow(QMainWindow):
                 "Load selected list",
                 "The selected path differs from the loaded mod list. Load the selected global list before launching.",
             )
-        if not self._is_global_default_mod_list(snapshot.path):
+        if not is_global_default_mod_list(snapshot.path):
             return (
                 "Choose global default.txt",
                 "Launch supports only the global Zomboid/mods/default.txt target. Save and server mod lists are not changed.",
             )
         try:
-            current = read_active_mods(snapshot.path)
+            read_unchanged_active_configuration(snapshot)
+        except ConcurrentConfigChangeError:
+            return (
+                "Reload changed list",
+                "The global mod list changed outside this app. Reload it before launching so the current list is clear.",
+            )
         except OSError, ActiveModConfigError:
             return (
                 "Reload global list",
                 "The loaded global mod list can no longer be read. Load it again before launching.",
-            )
-        if current.fingerprint != snapshot.fingerprint:
-            return (
-                "Reload changed list",
-                "The global mod list changed outside this app. Reload it before launching so the current list is clear.",
             )
         return None
 
@@ -2094,7 +2125,18 @@ class MainWindow(QMainWindow):
             if answer != QMessageBox.StandardButton.Yes:
                 return False
         try:
-            backup = write_active_mods(self._active_config, tuple(self._staged_mod_ids))
+            backup = apply_active_configuration(
+                self._active_config,
+                self.active_config_path.text(),
+                tuple(self._staged_mod_ids),
+            )
+        except SelectedConfigurationPathMismatch:
+            QMessageBox.warning(
+                self,
+                "Could Not Apply Mod List",
+                "Load the selected global default mod list before applying it.",
+            )
+            return False
         except (OSError, ActiveModConfigError) as exc:
             self.configuration_status.setText(f"Apply failed safely: {exc}")
             QMessageBox.warning(self, "Could not apply mod list", str(exc))
@@ -2122,27 +2164,8 @@ class MainWindow(QMainWindow):
     def _active_config_matches_selected_path(self) -> bool:
         if self._active_config is None:
             return False
-        try:
-            selected = (
-                Path(self.active_config_path.text()).expanduser().resolve(strict=False)
-            )
-            loaded = self._active_config.path.expanduser().resolve(strict=False)
-        except OSError:
-            return False
-        return selected == loaded
-
-    @staticmethod
-    def _is_global_default_mod_list(path: Path) -> bool:
-        if path.is_symlink():
-            return False
-        try:
-            parts = tuple(part.casefold() for part in path.resolve(strict=False).parts)
-        except OSError:
-            return False
-        return (
-            len(parts) >= 3
-            and parts[-3:] == ("zomboid", "mods", "default.txt")
-            and "saves" not in parts
+        return selected_path_matches_configuration(
+            self._active_config, self.active_config_path.text()
         )
 
     def _launch_project_zomboid(self) -> None:
@@ -2161,7 +2184,7 @@ class MainWindow(QMainWindow):
                 "Load the selected global default mod list before launching so the game uses the intended mods.",
             )
             return
-        if not self._is_global_default_mod_list(snapshot.path):
+        if not is_global_default_mod_list(snapshot.path):
             QMessageBox.warning(
                 self,
                 "Unsupported Mod List Target",
@@ -2177,19 +2200,19 @@ class MainWindow(QMainWindow):
             if snapshot is None:
                 return
         try:
-            current = read_active_mods(snapshot.path)
+            read_unchanged_active_configuration(snapshot)
+        except ConcurrentConfigChangeError:
+            QMessageBox.warning(
+                self,
+                "Global Mod List Changed",
+                "The global mod list changed outside this app. Reload it before launching so the current list is clear.",
+            )
+            return
         except (OSError, ActiveModConfigError) as exc:
             QMessageBox.warning(
                 self,
                 "Could Not Verify Global Mod List",
                 f"The global mod list could not be verified. Reload it before launching.\n\n{exc}",
-            )
-            return
-        if current.fingerprint != snapshot.fingerprint:
-            QMessageBox.warning(
-                self,
-                "Global Mod List Changed",
-                "The global mod list changed outside this app. Reload it before launching so the current list is clear.",
             )
             return
         if not QDesktopServices.openUrl(QUrl("steam://run/108600")):
@@ -2239,6 +2262,8 @@ class MainWindow(QMainWindow):
         return local_roots, workshop_roots
 
     def _start_scan(self) -> None:
+        if self._shutdown_requested:
+            return
         if self._worker is not None and self._worker.isRunning():
             return
         local_roots, workshop_roots = self._selected_roots()
@@ -2252,10 +2277,49 @@ class MainWindow(QMainWindow):
         self._worker = ScanWorker(local_roots, workshop_roots)
         self._worker.result_ready.connect(self._show_result)
         self._worker.failed.connect(self._show_failure)
+        self._worker.progress.connect(self._scan_progress)
+        self._worker.cancelled.connect(self._scan_cancelled)
         self._worker.finished.connect(self._finish_scan)
+        self.cancel_scan_button.setEnabled(True)
+        self.cancel_scan_button.show()
         self._worker.start()
 
+    def _scan_progress(self, message: str) -> None:
+        worker = self._worker
+        if (
+            self._shutdown_requested
+            or worker is None
+            or worker.isInterruptionRequested()
+        ):
+            return
+        self.status.setText(message)
+
+    def _cancel_scan(self) -> None:
+        worker = self._worker
+        if worker is None or not worker.isRunning():
+            return
+        self._scan_again_after_current = False
+        self.cancel_scan_button.setEnabled(False)
+        self.status.setText("Cancelling scan…")
+        worker.requestInterruption()
+
+    def _scan_cancelled(self) -> None:
+        if self._shutdown_requested:
+            return
+        self._scan_again_after_current = False
+        if self._last_result is None:
+            self.available_list.empty_text = (
+                "Scan cancelled · select Refresh to try again"
+            )
+            self.available_list.viewport().update()
+        self.status.setText("Scan cancelled; previous results are unchanged.")
+
     def _finish_scan(self) -> None:
+        self._worker = None
+        self.cancel_scan_button.hide()
+        self.cancel_scan_button.setEnabled(True)
+        if self._shutdown_requested:
+            return
         self.scan_button.setEnabled(True)
         self.workspace_scan_button.setEnabled(True)
         self._update_busy_indicator()
@@ -2270,7 +2334,37 @@ class MainWindow(QMainWindow):
         )
         self.progress.setVisible(scan_busy or diagnostic_busy)
 
+    def _background_workers(self) -> tuple[QThread, ...]:
+        return tuple(
+            worker
+            for worker in (
+                self._worker,
+                self._diagnostic_worker,
+                self._workshop_description_worker,
+                self._preview_worker,
+                self._update_check_worker,
+                self._update_download_worker,
+            )
+            if worker is not None
+        )
+
+    def _continue_shutdown(self) -> None:
+        if not self._shutdown_requested:
+            return
+        if any(worker.isRunning() for worker in self._shutdown_workers):
+            if not self._shutdown_timer.isActive():
+                self._shutdown_timer.start(25)
+            return
+        self._shutdown_timer.stop()
+        self._shutdown_workers = ()
+        self.close()
+
     def _show_result(self, result: ScanResult) -> None:
+        if self._shutdown_requested:
+            return
+        if self._worker is not None and self._worker.isInterruptionRequested():
+            self._scan_cancelled()
+            return
         self.scan_button.setEnabled(True)
         self.workspace_scan_button.setEnabled(True)
         self.import_workshop_collection_button.setEnabled(True)
@@ -2671,6 +2765,9 @@ class MainWindow(QMainWindow):
 
     def _workshop_description_worker_finished(self) -> None:
         self._workshop_description_worker = None
+        if self._shutdown_requested:
+            self._workshop_description_pending = None
+            return
         pending = self._workshop_description_pending
         self._workshop_description_pending = None
         if pending and pending == self._workshop_description_requested_id:
@@ -2710,6 +2807,9 @@ class MainWindow(QMainWindow):
 
     def _preview_worker_finished(self) -> None:
         self._preview_worker = None
+        if self._shutdown_requested:
+            self._preview_pending = None
+            return
         pending = self._preview_pending
         self._preview_pending = None
         if (
@@ -2751,10 +2851,12 @@ class MainWindow(QMainWindow):
         self._update_check_worker = worker
         worker.result_ready.connect(self._update_check_complete)
         worker.failed.connect(self._update_check_failed)
+        worker.finished.connect(self._update_check_worker_finished)
         worker.start()
 
     def _update_check_complete(self, release: UpdateRelease | None) -> None:
-        self._update_check_worker = None
+        if self._shutdown_requested:
+            return
         self.update_button.setEnabled(True)
         self.update_button.setText("Check for Updates")
         if release is None:
@@ -2780,17 +2882,28 @@ class MainWindow(QMainWindow):
         )
         message.setDefaultButton(QMessageBox.StandardButton.No)
         message.button(QMessageBox.StandardButton.Yes).setText("Download and Install")
-        if message.exec() == QMessageBox.StandardButton.Yes:
+        answer = message.exec()
+        if self._shutdown_requested:
+            return
+        if answer == QMessageBox.StandardButton.Yes:
             self._download_update(release)
         else:
             self.status.setText(f"ZomboidSorter {release.version} is available.")
 
     def _update_check_failed(self, error: str) -> None:
-        self._update_check_worker = None
+        if self._shutdown_requested:
+            return
         self.update_button.setEnabled(True)
         self.update_button.setText("Check for Updates")
         self.status.setText("Could not check for updates.")
         QMessageBox.warning(self, "Update Check Failed", error)
+
+    def _update_check_worker_finished(self) -> None:
+        if (
+            self._update_check_worker is not None
+            and not self._update_check_worker.isRunning()
+        ):
+            self._update_check_worker = None
 
     def _download_update(self, release: UpdateRelease) -> None:
         self.update_button.setEnabled(False)
@@ -2802,28 +2915,45 @@ class MainWindow(QMainWindow):
         worker.installer_ready.connect(self._launch_update_installer)
         worker.failed.connect(self._update_download_failed)
         worker.cancelled.connect(self._update_download_cancelled)
+        worker.finished.connect(self._update_download_worker_finished)
         worker.start()
 
     def _update_download_progress(self, downloaded: int, total: int) -> None:
+        if self._shutdown_requested:
+            return
         percent = min(100, int(downloaded * 100 / total)) if total else 0
         self.status.setText(f"Downloading update… {percent}%")
 
     def _update_download_failed(self, error: str) -> None:
-        self._update_download_worker = None
+        if self._shutdown_requested:
+            return
         self.update_button.setEnabled(True)
         self.update_button.setText("Check for Updates")
         self.status.setText("Update download failed.")
         QMessageBox.warning(self, "Update Download Failed", error)
 
     def _update_download_cancelled(self) -> None:
-        self._update_download_worker = None
+        if self._shutdown_requested:
+            return
         self.update_button.setEnabled(True)
         self.update_button.setText("Check for Updates")
         self.status.setText("Update download cancelled.")
 
+    def _update_download_worker_finished(self) -> None:
+        if (
+            self._update_download_worker is not None
+            and not self._update_download_worker.isRunning()
+        ):
+            self._update_download_worker = None
+
     def _launch_update_installer(self, installer_path: str) -> None:
-        self._update_download_worker = None
         installer = Path(installer_path)
+        if self._shutdown_requested:
+            try:
+                installer.unlink(missing_ok=True)
+            except OSError:
+                pass
+            return
         try:
             subprocess.Popen([str(installer)], close_fds=True, cwd=installer.parent)
         except OSError as exc:
@@ -2842,6 +2972,8 @@ class MainWindow(QMainWindow):
         QApplication.quit()
 
     def _show_failure(self, message: str) -> None:
+        if self._shutdown_requested:
+            return
         self.scan_button.setEnabled(True)
         self.workspace_scan_button.setEnabled(True)
         self.status.setText(message)
@@ -2863,31 +2995,26 @@ class MainWindow(QMainWindow):
                 "paths/active_config", self.active_config_path.text()
             )
             self._settings.sync()
-        if self._worker is not None and self._worker.isRunning():
-            self._worker.requestInterruption()
-            self._worker.wait()
-        if self._diagnostic_worker is not None and self._diagnostic_worker.isRunning():
-            self._diagnostic_worker.requestInterruption()
-            self._diagnostic_worker.wait()
-        if (
-            self._workshop_description_worker is not None
-            and self._workshop_description_worker.isRunning()
-        ):
-            self._workshop_description_worker.wait()
-        if self._preview_worker is not None and self._preview_worker.isRunning():
-            self._preview_worker.wait()
-        if (
-            self._update_check_worker is not None
-            and self._update_check_worker.isRunning()
-        ):
-            self._update_check_worker.requestInterruption()
-            self._update_check_worker.wait()
-        if (
-            self._update_download_worker is not None
-            and self._update_download_worker.isRunning()
-        ):
-            self._update_download_worker.requestInterruption()
-            self._update_download_worker.wait()
+        workers = tuple(
+            worker for worker in self._background_workers() if worker.isRunning()
+        )
+        if workers:
+            if not self._shutdown_requested:
+                self._shutdown_requested = True
+                self._shutdown_workers = workers
+                self._scan_again_after_current = False
+                self._workshop_description_pending = None
+                self._preview_pending = None
+                self.status.setText("Closing after background work stops…")
+                self.progress.show()
+                self.centralWidget().setEnabled(False)
+                self.cancel_scan_button.hide()
+                for worker in workers:
+                    worker.finished.connect(self._continue_shutdown)
+                    worker.requestInterruption()
+            event.ignore()
+            QTimer.singleShot(0, self._continue_shutdown)
+            return
         event.accept()
 
     def _apply_theme(self) -> None:
