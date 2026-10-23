@@ -309,6 +309,7 @@ def _build_entries(
                 workshop_id=workshop_id,
                 candidates=candidates,
                 diagnostics=tuple(issues),
+                directory_candidates=parsed,
             )
         )
     return tuple(entries)

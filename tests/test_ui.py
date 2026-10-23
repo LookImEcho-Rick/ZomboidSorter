@@ -15,6 +15,7 @@ from PySide6.QtGui import QColor, QImage
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
+from zomboid_mod_manager import __version__
 from zomboid_mod_manager.discovery.scanner import ScanCancelled
 from zomboid_mod_manager.domain import DetectedPaths, Diagnostic, ScanResult
 from zomboid_mod_manager.gameio.active_mods import read_active_mods
@@ -34,6 +35,21 @@ class MainWindowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.app = QApplication.instance() or QApplication([])
+
+    def _wait_for_background_workers(self, window: MainWindow) -> None:
+        deadline = time.monotonic() + 10
+        while (
+            any(worker.isRunning() for worker in window._background_workers())
+            and time.monotonic() < deadline
+        ):
+            self.app.processEvents()
+            QTest.qWait(10)
+        running = tuple(
+            type(worker).__name__
+            for worker in window._background_workers()
+            if worker.isRunning()
+        )
+        self.assertFalse(running, f"Background workers did not finish: {running}")
 
     def _make_launch_window(
         self, root: Path, *, mods: tuple[str, ...] = ()
@@ -60,6 +76,13 @@ class MainWindowTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         window, _ = self._make_launch_window(Path(temporary.name))
+        deadline = time.monotonic() + 5
+        while (
+            "scan complete" not in window.status.text().casefold()
+            and time.monotonic() < deadline
+        ):
+            self.app.processEvents()
+            QTest.qWait(10)
 
         with (
             patch(
@@ -79,7 +102,7 @@ class MainWindowTests(unittest.TestCase):
         self.assertTrue(window.update_button.isEnabled())
         self.assertEqual(window.update_button.text(), "Check for Updates")
         self.assertIn("up to date", window.status.text().casefold())
-        check_for_update.assert_called_once_with("0.1.2")
+        check_for_update.assert_called_once_with(__version__)
         information.assert_called_once()
 
     def test_update_button_downloads_a_new_release_after_confirmation(self) -> None:
@@ -340,6 +363,7 @@ class MainWindowTests(unittest.TestCase):
         self.app.processEvents()
         self.assertEqual(window.available_list.visible_count, 0)
         self.assertIn("No mods match", window.available_list.empty_text)
+        self._wait_for_background_workers(window)
         window.close()
 
     def test_mod_pack_save_captures_current_order(self) -> None:
@@ -573,6 +597,7 @@ class MainWindowTests(unittest.TestCase):
             Qt.KeyboardModifier.ControlModifier,
         )
         self.assertEqual(len(window.available_list.selectedItems()), 4)
+        self._wait_for_background_workers(window)
         window.close()
 
     def test_selected_mod_preview_loads_without_changing_config(self) -> None:
@@ -666,6 +691,96 @@ class MainWindowTests(unittest.TestCase):
         self.assertEqual(Path(open_url.call_args.args[0].toLocalFile()), entry_root)
         self.assertEqual(config_path.read_bytes(), original)
         window.close()
+
+    def test_exact_build_updates_names_details_and_dependency_diagnostics(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        base = Path(temporary.name)
+        local_root = base / "local-mods"
+        entry_root = local_root / "Example"
+        for folder, metadata in (
+            (
+                "common",
+                "name=Shared Name\nid=Example\nrequire=MissingShared\n",
+            ),
+            ("42", "name=Build 42 Name\nid=Example\nrequire=MissingBase\n"),
+            (
+                "42.21",
+                "name=Build 42.21 Name\nid=Example\nrequire=MissingCurrent\n",
+            ),
+        ):
+            candidate = entry_root / folder / "mod.info"
+            candidate.parent.mkdir(parents=True, exist_ok=True)
+            candidate.write_text(metadata, encoding="utf-8")
+
+        config_path = base / "Zomboid" / "mods" / "default.txt"
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text(
+            "VERSION = 1,\n\nmods\n{\n    mod = Example,\n}\n\nmaps\n{\n}\n",
+            encoding="utf-8",
+        )
+        detected = DetectedPaths((), (), (), (), local_root)
+        window = MainWindow(
+            detected,
+            active_config_path=config_path,
+            profile_store=ProfileStore(base / "profiles"),
+        )
+        deadline = time.monotonic() + 5
+        while (
+            "scan complete" not in window.status.text().casefold()
+            and time.monotonic() < deadline
+        ):
+            self.app.processEvents()
+            QTest.qWait(10)
+
+        window.metadata_preview_target.setCurrentIndex(
+            window.metadata_preview_target.findData("42")
+        )
+        window.metadata_build_version.setText("42.21.0")
+        window.active_list.setCurrentRow(0)
+        self.app.processEvents()
+
+        self.assertTrue(
+            window.active_list.item(0).text().startswith("Build 42.21 Name")
+        )
+        self.assertIn("versioned (42.21)", window.details.toPlainText())
+        self.assertNotIn("Shared Name", window.details.toPlainText())
+        diagnostics = window.diagnostics.toPlainText()
+        self.assertIn("MissingCurrent", diagnostics)
+        self.assertNotIn("MissingShared", diagnostics)
+        self.assertNotIn("MissingBase", diagnostics)
+        window.close()
+
+    def test_metadata_target_and_build_are_restored_from_settings(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        settings = QSettings(
+            str(Path(temporary.name) / "settings.ini"), QSettings.Format.IniFormat
+        )
+        settings.setValue("metadata/target", "42")
+        settings.setValue("metadata/build_version", "42.21.0")
+        detected = DetectedPaths((), (), (), (), None)
+
+        with (
+            patch(
+                "zomboid_mod_manager.ui.main_window.QSettings", return_value=settings
+            ),
+            patch(
+                "zomboid_mod_manager.ui.main_window.detect_paths",
+                return_value=detected,
+            ),
+            patch.object(MainWindow, "_start_scan"),
+        ):
+            window = MainWindow(
+                active_config_path=FIXTURES / "config" / "default.txt",
+                profile_store=ProfileStore(Path(temporary.name) / "profiles"),
+            )
+
+        self.assertEqual(window.metadata_preview_target.currentData(), "42")
+        self.assertEqual(window.metadata_build_version.text(), "42.21.0")
+        self.assertFalse(window.metadata_build_version.isHidden())
+        window.close()
+        self.assertEqual(settings.value("metadata/target"), "42")
 
     def test_phase_d_revert_counts_and_busy_feedback(self) -> None:
         temporary = tempfile.TemporaryDirectory()
@@ -825,6 +940,9 @@ class MainWindowTests(unittest.TestCase):
             QTest.qWait(10)
 
         self.assertIn("scan complete", window.status.text().casefold())
+        completed_status = window.status.text()
+        window._scan_progress("Late progress message")
+        self.assertEqual(window.status.text(), completed_status)
         self.assertEqual(window.table_model.rowCount(), 8)
         self.assertEqual(window.active_list.count(), 2)
         self.assertFalse(window.apply_config_button.isEnabled())
@@ -843,6 +961,13 @@ class MainWindowTests(unittest.TestCase):
         self.assertIn("Mod ID: RepeatedDescription", window.details.toPlainText())
 
         window.main_tabs.setCurrentWidget(window.main_tabs.widget(1))
+        deadline = time.monotonic() + 10
+        while (
+            window._worker is not None or window._scan_again_after_current
+        ) and time.monotonic() < deadline:
+            self.app.processEvents()
+            QTest.qWait(10)
+        self.assertIsNone(window._worker)
         window.manage_search.setText("RepeatedDescription")
         matching_row = next(
             i
@@ -863,6 +988,16 @@ class MainWindowTests(unittest.TestCase):
         self.assertEqual(config_path.read_bytes(), original_config)
 
         self.assertEqual(config_path.read_bytes(), original_config)
+        deadline = time.monotonic() + 10
+        while (
+            any(worker.isRunning() for worker in window._background_workers())
+            and time.monotonic() < deadline
+        ):
+            self.app.processEvents()
+            QTest.qWait(10)
+        self.assertFalse(
+            any(worker.isRunning() for worker in window._background_workers())
+        )
         window.close()
 
     def test_suggested_order_is_staged_only_after_confirmation(self) -> None:
@@ -890,13 +1025,24 @@ class MainWindowTests(unittest.TestCase):
             profile_store=ProfileStore(root / "profiles"),
         )
         deadline = time.monotonic() + 5
-        while (
-            "scan complete" not in window.status.text().casefold()
-            and time.monotonic() < deadline
-        ):
+        stable_since = None
+        while time.monotonic() < deadline:
             self.app.processEvents()
+            worker = window._worker
+            settled = (
+                "scan complete" in window.status.text().casefold()
+                and not window._scan_again_after_current
+                and (worker is None or not worker.isRunning())
+            )
+            if settled:
+                stable_since = stable_since or time.monotonic()
+                if time.monotonic() - stable_since >= 0.05:
+                    break
+            else:
+                stable_since = None
             QTest.qWait(10)
         self.assertIn("scan complete", window.status.text().casefold())
+        self.assertIsNone(window._worker)
 
         with patch(
             "zomboid_mod_manager.ui.main_window.QMessageBox.question",
@@ -933,14 +1079,29 @@ class MainWindowTests(unittest.TestCase):
                 active_config_path=FIXTURES / "config" / "default.txt",
                 profile_store=ProfileStore(Path(temporary.name) / "profiles"),
             )
-        deadline = time.monotonic() + 5
-        while (
-            "scan complete" not in window.status.text().casefold()
-            and time.monotonic() < deadline
-        ):
+        deadline = time.monotonic() + 20
+        stable_since = None
+        while time.monotonic() < deadline:
             self.app.processEvents()
+            worker = window._worker
+            settled = (
+                "scan complete" in window.status.text().casefold()
+                and not window._scan_again_after_current
+                and (worker is None or not worker.isRunning())
+            )
+            if settled:
+                stable_since = stable_since or time.monotonic()
+                if time.monotonic() - stable_since >= 0.05:
+                    break
+            else:
+                stable_since = None
             QTest.qWait(10)
-        self.assertIn("scan complete", window.status.text().casefold())
+        self.assertIn(
+            "scan complete",
+            window.status.text().casefold(),
+            f"worker={window._worker!r}; rescan={window._scan_again_after_current}",
+        )
+        self.assertIsNone(window._worker)
 
         window._staged_mod_ids = ["Unsorted", "Other"]
         window._user_order_rules = ()

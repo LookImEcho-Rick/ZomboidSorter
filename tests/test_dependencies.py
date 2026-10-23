@@ -64,6 +64,41 @@ class DependencyTests(unittest.TestCase):
         )
         self.assertFalse(report.cycles)
 
+    def test_exact_game_build_uses_only_the_selected_metadata_candidate(self) -> None:
+        before_version_update = analyze_dependencies(
+            self.entries, ("Variant",), target_build="42.19.0"
+        )
+        self.assertTrue(
+            any(
+                finding.kind == "inactive-dependency" and "Core" in finding.message
+                for finding in before_version_update.findings
+            )
+        )
+        self.assertFalse(
+            any(
+                finding.kind == "missing-dependency"
+                and "NeverInstalled" in finding.message
+                for finding in before_version_update.findings
+            )
+        )
+
+        at_version_update = analyze_dependencies(
+            self.entries, ("Variant",), target_build="42.20.0"
+        )
+        self.assertTrue(
+            any(
+                finding.kind == "missing-dependency"
+                and "NeverInstalled" in finding.message
+                for finding in at_version_update.findings
+            )
+        )
+        self.assertFalse(
+            any(
+                finding.kind == "inactive-dependency" and "Core" in finding.message
+                for finding in at_version_update.findings
+            )
+        )
+
     def test_unsupported_separator_is_reported_without_guessing(self) -> None:
         parsed = parse_mod_references("One;Two", field_name="require")
         self.assertFalse(parsed.identifiers)

@@ -11,6 +11,9 @@ from zomboid_mod_manager.diagnostics.dependencies import (
     _strongly_connected_components,
     parse_mod_references,
 )
+from zomboid_mod_manager.discovery.version_selection import (
+    resolve_entry_metadata,
+)
 from zomboid_mod_manager.domain import ModEntry
 from zomboid_mod_manager.sorting.user_rules import (
     UserOrderRule,
@@ -43,12 +46,14 @@ def propose_dependency_order(
     entries: Iterable[ModEntry],
     active_mod_ids: Iterable[str],
     user_rules: Iterable[UserOrderRule] = (),
+    *,
+    target_build: str = "all",
 ) -> SortProposal:
     """Topologically order active IDs, retaining current order for ready ties.
 
-    Only dependencies and load-before/after declarations identical across all
-    metadata candidates for a Mod ID are used. Candidate-specific constraints
-    are reported and skipped rather than guessed.
+    With no target build, only declarations identical across all metadata
+    candidates are used. When a build is selected, only its resolved candidate
+    contributes metadata constraints.
     """
     original = tuple(active_mod_ids)
     if len(original) != len(set(original)):
@@ -74,10 +79,16 @@ def propose_dependency_order(
         if not entry.candidates:
             continue
 
+        selection = resolve_entry_metadata(entry, target_build)
+        if not selection.candidates:
+            if target_build != "all":
+                unresolved.append(f"'{mod_id}': {selection.message}")
+            continue
+
         parsed_by_candidate: list[
             tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]
         ] = []
-        for candidate in entry.candidates:
+        for candidate in selection.candidates:
             parsed_fields = tuple(
                 parse_mod_references(candidate.fields.get(key, ""), field_name=key)
                 for key in ("require", "loadmodafter", "loadmodbefore")
@@ -118,7 +129,7 @@ def propose_dependency_order(
                     related_id,
                     mod_id,
                     f"{mod_id} {reason} {related_id}",
-                    entry.candidates[0].path,
+                    selection.candidates[0].path,
                 )
             )
         for related_id in before:
@@ -137,7 +148,7 @@ def propose_dependency_order(
                     mod_id,
                     related_id,
                     f"{mod_id} declares loadModBefore {related_id}",
-                    entry.candidates[0].path,
+                    selection.candidates[0].path,
                 )
             )
 

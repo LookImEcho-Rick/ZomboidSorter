@@ -39,6 +39,14 @@ Application license: GPL-3.0-or-later (root LICENSE)
 - GitHub Actions run [39898572140](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/39898572140) completed successfully, including tests, lint/format, and the tagged Windows build. Published installer: `ZomboidSorter-0.1.2-windows-setup.exe`; SHA-256 `aec28de48a59659f845be8cbbf0ab28ef5a1b38c09dabc3e05fbe8c37d67afd8`; 120,090,071 bytes. The attached `.sha256` asset and downloaded installer were verified using the updater module. Release page: https://github.com/LookImEcho-Rick/ZomboidSorter/releases/tag/v0.1.2.
 - The updater verifies the advertised installer size, SHA-256 sidecar, and Windows executable header before opening the standard per-user installer. An isolated install/upgrade/uninstall smoke test of this v0.1.2 installer has not been run.
 
+## Version 0.1.3 release preparation (2026-10-23)
+
+- This release adds exact Build 42 metadata selection using the user's game version. The selected metadata drives names/details, dependency findings, and order proposals. This selects metadata; it does not verify mod content compatibility or reproduce every loader rule. No runtime dependencies, Qt modules, bundled assets, or license-delivery changes were made, so the reviewed Qt/PySide6/WebEngine pins and source offer above still apply.
+- Local validation installer: `ZomboidSorter-0.1.3-windows-setup.exe`; SHA-256 `f2d68bddbe9da1092de26b02beedebdd3ecb00c4b9537a4e340b9b32e108fd60`; 120,145,953 bytes. It compiled on Windows 11 with CPython 3.14.7, PyInstaller 6.22.3, and Inno Setup 6.7.3. The full component manifest is embedded at `licenses/BUILD_COMPONENTS.txt`.
+- Validation: 93 tests ran; all passed except one environment-only symlink skip. Ruff check, Ruff format check, compileall, and `git diff --check` passed.
+- An isolated direct-installer upgrade from the local v0.1.2 installer to v0.1.3 in a temporary install directory succeeded; the registered version changed to 0.1.3 and the executable hash changed. Silent uninstall removed the temporary executable. The actual app settings registry export and both app-owned profile file hashes were unchanged across upgrade and uninstall. The v0.1.3 app was not launched, the Workshop page was not checked, and the updater-launched installer path was not exercised.
+- Hosted tagged workflow and publication have not yet been verified.
+
 ## Evidence shipped with the installer
 
 - `THIRD_PARTY_NOTICES.md` identifies the open-source terms and source request procedure.

@@ -9,6 +9,9 @@ from html import escape
 from pathlib import Path
 
 from zomboid_mod_manager.diagnostics.dependencies import parse_mod_references
+from zomboid_mod_manager.discovery.version_selection import (
+    resolve_entry_metadata,
+)
 from zomboid_mod_manager.domain import MetadataCandidate, ModEntry
 
 _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
@@ -46,20 +49,8 @@ def find_preview(entry: ModEntry) -> PreviewChoice | None:
 def candidates_for_build(
     entry: ModEntry, target_build: str
 ) -> tuple[MetadataCandidate, ...]:
-    """Filter by observed metadata layout; this is not a runtime compatibility test."""
-    if target_build == "41":
-        return tuple(
-            candidate
-            for candidate in entry.candidates
-            if candidate.layout == "root (Build 41 style)"
-        )
-    if target_build == "42":
-        return tuple(
-            candidate
-            for candidate in entry.candidates
-            if candidate.layout == "common (shared)" or candidate.version_folder
-        )
-    return entry.candidates
+    """Return candidates selected for a target build or preview mode."""
+    return resolve_entry_metadata(entry, target_build).candidates
 
 
 def find_preview_for_candidates(
@@ -93,6 +84,8 @@ def find_preview_for_candidates(
 def format_entry_description(entry: ModEntry, target_build: str = "all") -> str:
     """Return candidate descriptions as readable plain text, preserving paragraphs."""
     candidates = candidates_for_build(entry, target_build)
+    if target_build != "all" and not candidates:
+        return resolve_entry_metadata(entry, target_build).message
     sections = []
     for candidate in candidates:
         description = _clean_description(candidate.fields.get("description", ""))
@@ -109,6 +102,12 @@ def format_entry_description(entry: ModEntry, target_build: str = "all") -> str:
 def format_entry_description_html(entry: ModEntry, target_build: str = "all") -> str:
     """Render descriptions as escaped, readable HTML for a rich-text view."""
     candidates = candidates_for_build(entry, target_build)
+    if target_build != "all" and not candidates:
+        message = resolve_entry_metadata(entry, target_build).message
+        return (
+            '<p style="margin:4px 0; color:#9cadbd; font-style:italic;">'
+            f"{escape(message)}</p>"
+        )
     descriptions: dict[str, list[str]] = {}
     for candidate in candidates:
         cleaned = _clean_description(candidate.fields.get("description", ""))
@@ -312,8 +311,9 @@ def format_entry_details(
     target_build: str = "all",
     include_description: bool = True,
 ) -> str:
-    """Render details for all candidates or a filter based on observed build layout."""
-    candidates = candidates_for_build(entry, target_build)
+    """Render all candidates, a broad layout preview, or the selected build candidate."""
+    selection = resolve_entry_metadata(entry, target_build)
+    candidates = selection.candidates
     representative_candidate = candidates[0] if candidates else None
     representative_fields = (
         representative_candidate.fields if representative_candidate else {}
@@ -371,11 +371,18 @@ def format_entry_details(
         except OSError, OverflowError, ValueError:
             pass
     if target_build != "all":
-        build_name = "Build 41" if target_build == "41" else "Build 42"
+        build_name = (
+            "Build 41"
+            if selection.status == "build-41"
+            else "Build 42"
+            if target_build == "42"
+            else f"game build {target_build}"
+        )
         lines.extend(
             (
                 "",
-                f"{build_name} preview uses observed metadata layout only; it does not verify compatibility or select a runtime candidate.",
+                f"{selection.message}",
+                f"This {build_name} metadata selection does not verify that the mod's content is compatible with the game.",
             )
         )
     elif len(candidates) > 1:
@@ -385,20 +392,31 @@ def format_entry_details(
                 "Metadata candidates are shown separately; no active build candidate has been selected.",
             )
         )
-    if target_build != "all" and not candidates:
-        build_name = (
-            "Build 41 root-style"
-            if target_build == "41"
-            else "Build 42 shared/versioned"
-        )
-        lines.extend(("", f"No {build_name} metadata candidate was found."))
     if installed.get(entry.mod_id or "", 0) > 1:
         lines.extend(
             ("", "Warning: this Mod ID appears in multiple installed entries.")
         )
-    if entry.diagnostics:
+    entry_diagnostics = list(entry.diagnostics)
+    if selection.status in {
+        "build-41",
+        "selected-version",
+        "selected-common",
+    }:
+        selected_paths = {candidate.path for candidate in candidates}
+        entry_diagnostics = [
+            message
+            for message in entry_diagnostics
+            if message
+            != "Metadata candidates have different names; no active build was selected."
+            and not any(
+                message.startswith(f"{candidate.path}:")
+                and candidate.path not in selected_paths
+                for candidate in entry.candidates
+            )
+        ]
+    if entry_diagnostics:
         lines.extend(("", "Entry warnings:"))
-        lines.extend(f"  ! {warning}" for warning in entry.diagnostics)
+        lines.extend(f"  ! {warning}" for warning in entry_diagnostics)
 
     for candidate in candidates:
         fields = candidate.fields

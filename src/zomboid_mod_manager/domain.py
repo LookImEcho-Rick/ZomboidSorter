@@ -45,6 +45,7 @@ class ModEntry:
     workshop_id: str | None
     candidates: tuple[MetadataCandidate, ...]
     diagnostics: tuple[str, ...] = ()
+    directory_candidates: tuple[MetadataCandidate, ...] = ()
 
     @property
     def layout_summary(self) -> str:

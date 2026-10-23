@@ -49,12 +49,26 @@ class ModDetailsTests(unittest.TestCase):
             [candidate.layout for candidate in candidates_for_build(entry, "42")],
             ["common (shared)", "versioned (42.21)"],
         )
+        self.assertEqual(
+            [
+                candidate.version_folder
+                for candidate in candidates_for_build(entry, "42.21.0")
+            ],
+            ["42.21"],
+        )
         self.assertEqual(len(candidates_for_build(entry, "all")), 3)
         self.assertEqual(format_entry_description(entry, "41"), "Build 41 description")
         self.assertEqual(
             format_entry_description(entry, "42"),
             "common (shared)\n\nShared description\n\n"
             "versioned (42.21)\n\nBuild 42 description",
+        )
+        self.assertEqual(
+            format_entry_description(entry, "42.21.0"), "Build 42 description"
+        )
+        self.assertIn(
+            "Using version folder 42.21",
+            format_entry_details(entry, (entry,), [], "42.21.0"),
         )
 
     def test_workshop_description_renders_allowed_tags_and_escapes_html(self) -> None:

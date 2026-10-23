@@ -1,5 +1,17 @@
 # Progress
 
+## Version 0.1.3 release preparation (2026-10-23)
+
+- Added exact Build 42 metadata selection using the user-entered game version. The selected candidate drives mod names/details, active-list labels, dependency diagnostics, and sort proposals. Selection does not prove mod content compatibility or reproduce every game loader rule.
+- Local Windows 11 installer: `ZomboidSorter-0.1.3-windows-setup.exe`, 120,145,953 bytes, SHA-256 `f2d68bddbe9da1092de26b02beedebdd3ecb00c4b9537a4e340b9b32e108fd60`; built with CPython 3.14.7, PyInstaller 6.22.3, and Inno Setup 6.7.3. No runtime dependencies, Qt modules, bundled assets, or license-delivery changes were made.
+- Validation: 93 tests ran with one environment-only symlink skip; Ruff check/format, compileall, and `git diff --check` passed. An isolated direct installer upgrade from v0.1.2 to v0.1.3 and silent uninstall succeeded in a temporary directory. The actual app settings export and profile hashes stayed identical. The v0.1.3 app was not launched; Workshop loading and the updater-launched installer path remain unverified.
+
+## Build-aware metadata selection (2026-10-22)
+
+- The exact-build selector now follows The Indie Stone's published examples: choose the newest numeric version folder at or below the entered game build. Build 41 uses root metadata; Build 42+ uses a compatible versioned candidate or shared `common/mod.info` when no compatible versioned metadata exists. If version folders change the Mod ID within one physical mod entry, only the selected ID is treated as the active metadata entry.
+- The selected candidate drives details and poster previews, dependency diagnostics, active/inactive labels, and sort proposals. The Build 42 target version is user-entered and saved in settings because the app has no reliable installed-game version detector. File-overlap analysis remains candidate-wide. Selection does not validate content compatibility or reproduce every loader rule.
+- Validation: focused fixture tests cover numeric version ordering, shared metadata fallback, versioned Mod ID changes, dependency findings, sorting constraints, and UI selection. These checks are fixture-based; actual candidate loading was not verified in-game.
+
 ## Cancellable discovery scans and shutdown (2026-10-22)
 
 - Discovery now reports scan stages and periodic local-folder / Workshop-item counts. The status bar offers **Cancel scan**; cancellation is checked while enumerating directories, reading metadata candidates, and building discovery diagnostics, and keeps the previous scan results intact.

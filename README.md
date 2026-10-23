@@ -36,6 +36,7 @@ If there is no Release with a downloadable installer yet, use the source instruc
 1. Install and launch Project Zomboid through Steam at least once. Open its Mods screen to let the game create the global list if `default.txt` is missing.
 2. In **Paths Settings**, confirm the detected local mods folder, Workshop folder, and global `Zomboid/mods/default.txt` path. Use **Refresh** to scan; the scan is read-only and can be cancelled while it runs.
 3. In **Mod Workspace**, select entries under **Discover** and enable them into **Active Order**. Drag or use the move buttons to stage an order. Warnings identify missing and duplicate IDs; an order suggestion is a proposal, not a guarantee of the game's runtime order.
+   Under **Target metadata**, choose Build 41 or Build 42. For Build 42, enter the exact game version shown on the game's main menu (for example, `42.21.0`). The app selects the newest compatible version folder at or below that version; this chooses metadata for details, dependency checks, and order suggestions, but does not prove the mod's content is compatible.
 4. Use **Save as Pack…** to keep the staged list as an app-owned Mod Pack. **Mod Packs…** can import, export, recover, and apply packs. Applying a pack updates the same global list with a backup.
 5. Select **Apply To Project Zomboid…** to confirm a global-list write. **Apply & Launch…** applies staged changes first and asks Windows to hand the game link to Steam; successful handoff does not prove that the game started.
 

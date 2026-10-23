@@ -6,6 +6,9 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+from zomboid_mod_manager.discovery.version_selection import (
+    resolve_entry_metadata,
+)
 from zomboid_mod_manager.domain import MetadataCandidate, ModEntry
 
 
@@ -128,9 +131,12 @@ def _strongly_connected_components(
 
 
 def analyze_dependencies(
-    entries: Iterable[ModEntry], active_mod_ids: Iterable[str]
+    entries: Iterable[ModEntry],
+    active_mod_ids: Iterable[str],
+    *,
+    target_build: str = "all",
 ) -> DependencyReport:
-    """Report candidate-scoped missing dependencies, incompatibilities, and cycles."""
+    """Report dependency issues for all candidates or the selected game build."""
     all_entries = tuple(entries)
     active_ids = tuple(dict.fromkeys(active_mod_ids))
     active = set(active_ids)
@@ -152,9 +158,21 @@ def analyze_dependencies(
         if not entry.candidates:
             continue
 
+        selection = resolve_entry_metadata(entry, target_build)
+        if not selection.candidates:
+            if target_build != "all":
+                findings.append(
+                    DependencyFinding(
+                        "candidate-selection",
+                        selection.message,
+                        mod_id,
+                    )
+                )
+            continue
+
         requirement_sets: list[tuple[str, ...]] = []
         incompatible_sets: list[tuple[str, ...]] = []
-        for candidate in entry.candidates:
+        for candidate in selection.candidates:
             location = candidate.path
             requirements = _candidate_field(candidate, "require")
             incompatible = _candidate_field(candidate, "incompatible")

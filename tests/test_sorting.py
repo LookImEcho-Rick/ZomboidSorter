@@ -54,6 +54,37 @@ class DependencyOrderTests(unittest.TestCase):
             )
         )
 
+    def test_exact_game_build_orders_from_its_selected_candidate(self) -> None:
+        before_version_update = propose_dependency_order(
+            self.entries,
+            ("Variant", "Core"),
+            target_build="42.19.0",
+        )
+        self.assertEqual(
+            before_version_update.suggested,
+            ("Core", "Variant"),
+        )
+        self.assertTrue(
+            any(
+                edge.before == "Core"
+                and edge.after == "Variant"
+                and edge.source.name == "mod.info"
+                and edge.source.parent.name == "common"
+                for edge in before_version_update.constraints
+            )
+        )
+
+        at_version_update = propose_dependency_order(
+            self.entries,
+            ("Variant", "Core"),
+            target_build="42.20.0",
+        )
+        self.assertEqual(at_version_update.suggested, ("Variant", "Core"))
+        self.assertFalse(at_version_update.constraints)
+        self.assertTrue(
+            any("NeverInstalled" in message for message in at_version_update.unresolved)
+        )
+
     def test_order_cycle_does_not_change_the_original_list(self) -> None:
         original = ("OrderCycleA", "OrderCycleB")
         proposal = propose_dependency_order(self.entries, original)

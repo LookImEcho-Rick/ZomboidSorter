@@ -80,6 +80,9 @@ from zomboid_mod_manager.diagnostics.file_overlaps import (
 )
 from zomboid_mod_manager.discovery.paths import detect_paths
 from zomboid_mod_manager.discovery.scanner import ScanCancelled, scan_mods
+from zomboid_mod_manager.discovery.version_selection import (
+    resolve_entry_metadata,
+)
 from zomboid_mod_manager.domain import DetectedPaths, ModEntry, ScanResult
 from zomboid_mod_manager.gameio.active_mods import (
     ActiveModConfigError,
@@ -97,7 +100,6 @@ from zomboid_mod_manager.sorting.user_rules import (
     serialize_user_order_rules,
 )
 from zomboid_mod_manager.ui.mod_details import (
-    candidates_for_build,
     find_preview_for_candidates,
     format_entry_description_html,
     format_entry_details,
@@ -579,6 +581,7 @@ class MainWindow(QMainWindow):
         self._detected = detected or detect_paths()
         self._worker: ScanWorker | None = None
         self._scan_again_after_current = False
+        self._scan_result_received = False
         self._shutdown_requested = False
         self._shutdown_workers: tuple[QThread, ...] = ()
         self._shutdown_timer = QTimer(self)
@@ -725,20 +728,50 @@ class MainWindow(QMainWindow):
         self.preview_caption.setWordWrap(True)
         details_layout.addWidget(self.preview_caption)
         target_row = QHBoxLayout()
-        target_row.addWidget(QLabel("Metadata preview:"))
+        target_row.addWidget(QLabel("Target metadata:"))
         self.metadata_preview_target = QComboBox()
         self.metadata_preview_target.addItem("All candidates", "all")
         self.metadata_preview_target.addItem("Build 41", "41")
         self.metadata_preview_target.addItem("Build 42", "42")
-        self.metadata_preview_target.setAccessibleName("Metadata preview target build")
+        saved_metadata_target = (
+            str(self._settings.value("metadata/target", "all"))
+            if use_saved_paths
+            else "all"
+        )
+        saved_target_index = self.metadata_preview_target.findData(
+            saved_metadata_target
+        )
+        if saved_target_index >= 0:
+            self.metadata_preview_target.setCurrentIndex(saved_target_index)
+        self.metadata_preview_target.setAccessibleName("Metadata target build")
         self.metadata_preview_target.setToolTip(
-            "Filters the displayed metadata and poster by observed root or shared/versioned layout. "
-            "This preview does not verify compatibility or select a runtime candidate."
+            "Build 41 uses root metadata. For Build 42, enter the exact game version to select the newest compatible version folder. "
+            "This selects metadata only; it does not verify mod content compatibility."
         )
         self.metadata_preview_target.currentIndexChanged.connect(
             self._metadata_preview_target_changed
         )
         target_row.addWidget(self.metadata_preview_target, 1)
+        saved_metadata_build = (
+            self._settings.value("metadata/build_version", "")
+            if use_saved_paths
+            else ""
+        )
+        self.metadata_build_version = QLineEdit(str(saved_metadata_build))
+        self.metadata_build_version.setAccessibleName("Exact Build 42 game version")
+        self.metadata_build_version.setPlaceholderText("e.g. 42.21.0")
+        self.metadata_build_version.setMaxLength(32)
+        self.metadata_build_version.setMaximumWidth(120)
+        self.metadata_build_version.setToolTip(
+            "Enter the exact Project Zomboid version shown in the game's main menu, such as 42.21.0."
+        )
+        self.metadata_build_version.textChanged.connect(
+            self._metadata_preview_target_changed
+        )
+        self.metadata_build_version.setVisible(
+            self.metadata_preview_target.currentData() == "42"
+        )
+        target_row.addWidget(self.metadata_build_version)
         details_layout.addLayout(target_row)
         description_panel = QWidget()
         description_layout = QVBoxLayout(description_panel)
@@ -1450,7 +1483,7 @@ class MainWindow(QMainWindow):
         for mod_id in self._staged_mod_ids:
             matches = entries_by_id.get(mod_id, [])
             if len(matches) == 1:
-                label = f"{matches[0].name}  ·  {mod_id}"
+                label = f"{self._entry_display_name(matches[0])}  ·  {mod_id}"
             elif len(matches) > 1:
                 label = f"Duplicate installation  ·  {mod_id}"
             else:
@@ -1464,9 +1497,11 @@ class MainWindow(QMainWindow):
                 item.setToolTip(
                     f"{label}\n\nThe configured Mod ID is missing or has multiple installed copies."
                 )
-            elif matches[0].diagnostics:
+            elif self._entry_issue_messages(matches[0]):
                 item.setText("⚠  " + label)
-                item.setToolTip(label + "\n\n" + "\n".join(matches[0].diagnostics))
+                item.setToolTip(
+                    label + "\n\n" + "\n".join(self._entry_issue_messages(matches[0]))
+                )
             self._mark_recently_added_workshop_entry(item, matches)
             self.active_list.addItem(item)
 
@@ -1474,7 +1509,9 @@ class MainWindow(QMainWindow):
         inactive_entries = sorted(
             entries_by_id.items(),
             key=lambda pair: (
-                pair[0].casefold() if sort_mode >= 2 else pair[1][0].name.casefold(),
+                pair[0].casefold()
+                if sort_mode >= 2
+                else self._entry_display_name(pair[1][0]).casefold(),
                 pair[0].casefold(),
             ),
             reverse=sort_mode in (1, 3),
@@ -1483,13 +1520,17 @@ class MainWindow(QMainWindow):
             if mod_id in staged:
                 continue
             if len(matches) == 1:
-                label = f"{matches[0].name}  ·  {mod_id}"
+                label = f"{self._entry_display_name(matches[0])}  ·  {mod_id}"
                 item = QListWidgetItem(label)
                 item.setData(Qt.ItemDataRole.UserRole, mod_id)
                 item.setToolTip(label)
-                if matches[0].diagnostics:
+                if self._entry_issue_messages(matches[0]):
                     item.setText("⚠  " + label)
-                    item.setToolTip(label + "\n\n" + "\n".join(matches[0].diagnostics))
+                    item.setToolTip(
+                        label
+                        + "\n\n"
+                        + "\n".join(self._entry_issue_messages(matches[0]))
+                    )
             else:
                 label = f"Duplicate installation  ·  {mod_id}"
                 item = QListWidgetItem(label)
@@ -1546,15 +1587,15 @@ class MainWindow(QMainWindow):
             item.toolTip() + "\n\nNew Workshop content found on the latest scan."
         )
 
-    @staticmethod
     def _set_list_item_metadata(
-        item: QListWidgetItem, mod_id: str, matches: list[ModEntry]
+        self, item: QListWidgetItem, mod_id: str, matches: list[ModEntry]
     ) -> None:
+        target_build = self._metadata_target_build()
         item.setData(
             SEARCH_ROLE,
             " ".join(
                 [mod_id]
-                + [entry.name for entry in matches]
+                + [self._entry_display_name(entry) for entry in matches]
                 + [entry.workshop_id or "" for entry in matches]
             ).casefold(),
         )
@@ -1563,11 +1604,61 @@ class MainWindow(QMainWindow):
             ISSUE_ROLE,
             len(matches) != 1
             or any(
-                entry.diagnostics
-                or any(candidate.diagnostics for candidate in entry.candidates)
+                bool(self._entry_issue_messages(entry))
+                or any(
+                    candidate.diagnostics
+                    for candidate in resolve_entry_metadata(
+                        entry, target_build
+                    ).candidates
+                )
                 for entry in matches
             ),
         )
+
+    def _metadata_target_build(self) -> str:
+        target = self.metadata_preview_target.currentData()
+        if target == "42":
+            return self.metadata_build_version.text().strip() or "42"
+        return target
+
+    def _entry_display_name(self, entry: ModEntry) -> str:
+        target_build = self._metadata_target_build()
+        selected = resolve_entry_metadata(entry, target_build)
+        candidate = selected.candidates[0] if selected.candidates else None
+        if candidate is not None:
+            name = candidate.fields.get("name", "").strip()
+            if name:
+                return name
+        if target_build != "all" and not selected.candidates:
+            return "No matching metadata"
+        return entry.name
+
+    def _entry_diagnostics_for_target(self, entry: ModEntry) -> tuple[str, ...]:
+        selection = resolve_entry_metadata(entry, self._metadata_target_build())
+        messages = list(entry.diagnostics)
+        if selection.status in {
+            "build-41",
+            "selected-version",
+            "selected-common",
+        }:
+            selected_paths = {candidate.path for candidate in selection.candidates}
+            messages = [
+                message
+                for message in messages
+                if message
+                != "Metadata candidates have different names; no active build was selected."
+                and not any(
+                    message.startswith(f"{candidate.path}:")
+                    and candidate.path not in selected_paths
+                    for candidate in entry.candidates
+                )
+            ]
+        if selection.status in {"invalid", "missing", "ambiguous"}:
+            messages.append(selection.message)
+        return tuple(messages)
+
+    def _entry_issue_messages(self, entry: ModEntry) -> tuple[str, ...]:
+        return self._entry_diagnostics_for_target(entry)
 
     @staticmethod
     def _matches_list_filter(item: QListWidgetItem, query: str, mode: str) -> bool:
@@ -1879,6 +1970,7 @@ class MainWindow(QMainWindow):
                 self._last_result.entries,
                 self._staged_mod_ids,
                 self._user_order_rules,
+                target_build=self._metadata_target_build(),
             )
         except ValueError as exc:
             QMessageBox.warning(self, "Could not suggest order", str(exc))
@@ -1928,7 +2020,8 @@ class MainWindow(QMainWindow):
             if original_positions[mod_id] != index
         ]
         reasons = [
-            f"{constraint.before} before {constraint.after}: {constraint.reason}"
+            f"{constraint.before} before {constraint.after}: {constraint.reason} "
+            f"[from {constraint.source}]"
             for constraint in proposal.constraints[:12]
         ]
         message = "Stage this deterministic order? It keeps the current order as the tie-breaker.\n\n"
@@ -2267,6 +2360,7 @@ class MainWindow(QMainWindow):
         if self._worker is not None and self._worker.isRunning():
             return
         local_roots, workshop_roots = self._selected_roots()
+        self._scan_result_received = False
         self.scan_button.setEnabled(False)
         self.workspace_scan_button.setEnabled(False)
         self.status.setText("Scanning selected folders…")
@@ -2288,6 +2382,7 @@ class MainWindow(QMainWindow):
         worker = self._worker
         if (
             self._shutdown_requested
+            or self._scan_result_received
             or worker is None
             or worker.isInterruptionRequested()
         ):
@@ -2306,6 +2401,7 @@ class MainWindow(QMainWindow):
     def _scan_cancelled(self) -> None:
         if self._shutdown_requested:
             return
+        self._scan_result_received = True
         self._scan_again_after_current = False
         if self._last_result is None:
             self.available_list.empty_text = (
@@ -2365,6 +2461,7 @@ class MainWindow(QMainWindow):
         if self._worker is not None and self._worker.isInterruptionRequested():
             self._scan_cancelled()
             return
+        self._scan_result_received = True
         self.scan_button.setEnabled(True)
         self.workspace_scan_button.setEnabled(True)
         self.import_workshop_collection_button.setEnabled(True)
@@ -2406,7 +2503,7 @@ class MainWindow(QMainWindow):
         self.table_model.removeRows(0, self.table_model.rowCount())
         for entry in result.entries:
             values = (
-                entry.name,
+                self._entry_display_name(entry),
                 entry.mod_id or "(missing ID)",
                 entry.workshop_id or "—",
                 "Workshop" if entry.source == "workshop" else "Local",
@@ -2483,8 +2580,9 @@ class MainWindow(QMainWindow):
                         elif diagnostic.level == "error":
                             error_count += 1
             for entry in result.entries:
-                lines.extend(f"WARNING: {message}" for message in entry.diagnostics)
-                warning_count += len(entry.diagnostics)
+                messages = self._entry_diagnostics_for_target(entry)
+                lines.extend(f"WARNING: {message}" for message in messages)
+                warning_count += len(messages)
 
             installed_workshop_ids = {
                 item.workshop_id for item in result.workshop_items
@@ -2502,7 +2600,11 @@ class MainWindow(QMainWindow):
                 warning_count += 1
 
             if self._active_config is not None:
-                report = analyze_dependencies(result.entries, self._staged_mod_ids)
+                report = analyze_dependencies(
+                    result.entries,
+                    self._staged_mod_ids,
+                    target_build=self._metadata_target_build(),
+                )
                 for finding in report.findings:
                     level = "INFO" if finding.kind == "normalization" else "WARNING"
                     lines.append(
@@ -2604,9 +2706,14 @@ class MainWindow(QMainWindow):
             return
         self._display_entry(entry)
 
-    def _metadata_preview_target_changed(self, _index: int) -> None:
+    def _metadata_preview_target_changed(self, _value=None) -> None:
+        self.metadata_build_version.setVisible(
+            self.metadata_preview_target.currentData() == "42"
+        )
         if self._selected_entry is not None:
             self._display_entry(self._selected_entry)
+        if self._last_result is not None:
+            self._refresh_management_lists()
 
     def _display_entry(self, entry: ModEntry) -> None:
         self._selected_entry = entry
@@ -2615,8 +2722,9 @@ class MainWindow(QMainWindow):
         self.open_folder_button.setProperty("entryPath", str(entry.entry_path))
         self.open_folder_button.setEnabled(True)
         entries = self._last_result.entries if self._last_result else (entry,)
-        target_build = self.metadata_preview_target.currentData()
-        candidates = candidates_for_build(entry, target_build)
+        target_build = self._metadata_target_build()
+        selection = resolve_entry_metadata(entry, target_build)
+        candidates = selection.candidates
         self.details.setPlainText(
             format_entry_details(
                 entry,
@@ -2636,15 +2744,9 @@ class MainWindow(QMainWindow):
             )
         choice = find_preview_for_candidates(entry, candidates)
         if choice is None:
-            if target_build == "41":
-                description = "Build 41 root-style"
-            elif target_build == "42":
-                description = "Build 42 shared/versioned"
-            else:
-                description = "selected"
             self._clear_preview(
                 "NO PREVIEW AVAILABLE",
-                f"No local poster or icon was found in {description} metadata.",
+                f"{selection.message} No local poster or icon was found.",
             )
             return
         self._preview_requested = str(choice.path)
@@ -2653,10 +2755,17 @@ class MainWindow(QMainWindow):
                 f"Illustration from {choice.candidate.layout}; "
                 "this does not select a game build."
             )
+        elif (
+            selection.status == "selected-version"
+            or selection.status == "selected-common"
+        ):
+            caption = (
+                f"{selection.message} This selects metadata only; it does not "
+                "verify the mod's content is compatible."
+            )
         else:
             caption = (
-                f"Illustration from {choice.candidate.layout}; "
-                "layout-filtered preview only, not a compatibility check."
+                f"Illustration from {choice.candidate.layout}; {selection.message}"
             )
         self.preview_caption.setText(f"{caption} Click the image to enlarge it.")
         cached = self._preview_cache.get(self._preview_requested)
@@ -2730,7 +2839,7 @@ class MainWindow(QMainWindow):
             return
         self._show_loaded_workshop_description(
             self._selected_entry,
-            self.metadata_preview_target.currentData(),
+            self._metadata_target_build(),
             title,
             description,
         )
@@ -2758,7 +2867,7 @@ class MainWindow(QMainWindow):
         ):
             self._show_local_description(
                 self._selected_entry,
-                self.metadata_preview_target.currentData(),
+                self._metadata_target_build(),
                 "Workshop description unavailable; showing local metadata.",
             )
             self.description_source.setToolTip(message)
@@ -2974,6 +3083,7 @@ class MainWindow(QMainWindow):
     def _show_failure(self, message: str) -> None:
         if self._shutdown_requested:
             return
+        self._scan_result_received = True
         self.scan_button.setEnabled(True)
         self.workspace_scan_button.setEnabled(True)
         self.status.setText(message)
@@ -2989,6 +3099,12 @@ class MainWindow(QMainWindow):
                 "window/workspace_splitter", self.workspace_splitter.saveState()
             )
             self._settings.setValue("paths/game", self.game_path.text())
+            self._settings.setValue(
+                "metadata/build_version", self.metadata_build_version.text().strip()
+            )
+            self._settings.setValue(
+                "metadata/target", self.metadata_preview_target.currentData()
+            )
             self._settings.setValue("paths/local", self.local_path.text())
             self._settings.setValue("paths/workshop", self.workshop_paths.text())
             self._settings.setValue(
