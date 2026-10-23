@@ -2,7 +2,7 @@
 
 ## Technology
 
-- **Python 3.11+ and PySide6/Qt 6.** RimSort already uses this UI stack and layered Python structure; it gives a native desktop UI and avoids introducing a second implementation language. The `pyproject.toml` sets the initial dependency boundary.
+- **Python 3.14+ and PySide6/Qt 6.** RimSort already uses this UI stack and layered Python structure; it gives a native desktop UI and avoids introducing a second implementation language. The `pyproject.toml` sets the dependency boundary.
 - **Windows first, portable core.** Use `pathlib` and isolated platform path discovery so filesystem parsing and domain logic remain portable. Keep Windows/Steam detection behind a service.
 - **No runtime database for the first milestone.** Discovery can operate on filesystem paths and in-memory records. Add persistence only when a milestone needs it.
 

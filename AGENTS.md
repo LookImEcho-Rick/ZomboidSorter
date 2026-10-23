@@ -1,6 +1,6 @@
 # Project guidance
 
-This is a Windows-first Project Zomboid desktop mod manager. The current stack is Python 3.11+ and PySide6. Read `docs/ARCHITECTURE.md` before changing the structure.
+This is a Windows-first Project Zomboid desktop mod manager. The current stack is Python 3.14+ and PySide6. Read `docs/ARCHITECTURE.md` before changing the structure.
 
 ## Workflow
 

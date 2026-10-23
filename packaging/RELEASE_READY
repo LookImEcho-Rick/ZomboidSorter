@@ -20,7 +20,7 @@ Application license: GPL-3.0-or-later (root LICENSE)
 - SHA-256: `3ea0ea57e6a5eac9ce32b8f5dd17e49e8d783bf2b2f523f699e7e2aff0473265`
 - Size: 119,892,820 bytes.
 - Build components: CPython 3.14.7, PyInstaller 6.22.3, OpenSSL 3.5.7, Inno Setup 6.7.3; see the installed `licenses/BUILD_COMPONENTS.txt` for the complete list.
-- The tagged-release workflow uses CPython 3.11 and Inno Setup 6.7.1; the Qt package versions are pinned in `pyproject.toml`. The release workflow's Python 3.11 build remains to be verified.
+- The tagged-release workflow uses CPython 3.14 and Inno Setup 6.7.1; the Qt package versions are pinned in `pyproject.toml`. The workflow build remains to be verified.
 
 ## Evidence shipped with the installer
 
@@ -52,4 +52,4 @@ This record is a technical inventory and notice review, not legal advice. It cov
 - The installer was silently installed into a new temporary directory. The installed copy contained the 19 Qt DLLs, 57 Qt attribution pages, all 125 WebEngine/Chromium pages, and the required license texts.
 - Launched the installed executable with `PATH` restricted to Windows system directories. The main window appeared, the Steam Workshop tab opened, and the bundled `QtWebEngineProcess.exe` started. Silent uninstall removed the installed executable. The existing app settings registry key was exported before the test and restored byte-for-byte afterward.
 - 69 unit tests passed with one environment-only symlink skip; Ruff check, Ruff format check, and compileall passed.
-- This was an isolated install and restricted-environment check on the build host, not a clean Windows VM. A VM run, Windows 10 coverage, the release workflow's Python 3.11 build, a previous-version upgrade of this optimized installer, and a real-game apply/launch check remain outstanding. This host is Windows Home with no installed VM runner; enabling one requires administrator access.
+- This was an isolated install and restricted-environment check on the build host, not a clean Windows VM. A VM run, Windows 10 coverage, the release workflow's Python 3.14 build, a previous-version upgrade of this optimized installer, and a real-game apply/launch check remain outstanding. This host is Windows Home with no installed VM runner; enabling one requires administrator access.

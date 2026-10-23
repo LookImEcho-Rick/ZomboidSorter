@@ -65,7 +65,7 @@ An upgrade replaces application files in the same per-user install directory and
 
 ## Run or build from source
 
-Use Python 3.11+ on Windows:
+Use Python 3.14+ on Windows:
 
 ```powershell
 python -m venv .venv

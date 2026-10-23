@@ -4,7 +4,7 @@ The Windows build has two stages: PyInstaller creates a complete `dist/ZomboidSo
 
 ## Local build
 
-Use Windows 11/10 x64, Python 3.11, and Inno Setup 6. The CI build uses the versions in `constraints-windows.txt` and Inno Setup 6.7.1. Python 3.11 is the release build interpreter even if newer versions work locally.
+Use Windows 11/10 x64, Python 3.14+, and Inno Setup 6. The release workflow builds with CPython 3.14 and uses the package versions in `constraints-windows.txt` with Inno Setup 6.7.1.
 
 ```powershell
 python -m venv .venv

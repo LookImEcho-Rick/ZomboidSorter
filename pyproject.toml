@@ -7,7 +7,7 @@ name = "project-zomboid-mod-manager"
 version = "0.1.0"
 description = "A Windows-first desktop mod manager for Project Zomboid."
 license = "GPL-3.0-or-later"
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 dependencies = ["PySide6>=6.8,<7"]
 
 [project.gui-scripts]

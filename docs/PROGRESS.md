@@ -1,5 +1,9 @@
 # Progress
 
+## Python 3.14 requirement (2026-10-22)
+
+- Set Python 3.14 as the minimum supported version in package metadata and aligned the release workflow, development instructions, architecture notes, and project guidance with it. Existing local Python 3.14.7 build and test results are recorded below; the updated hosted release workflow has not run yet.
+
 ## Public-source preparation and Windows installer (2026-10-22)
 
 - Chose GPL-3.0-or-later for original code. Created an independent wordmark/icon, fixture screenshots, end-user README, pinned Windows packaging constraints, Inno Setup script, checksum builder, and tagged-release GitHub Actions workflow. The workflow blocks binary publication until a documented Qt/WebEngine redistribution review is committed as `packaging/RELEASE_READY`.
@@ -98,7 +102,7 @@ Updated 2026-10-22 after the desktop UX refresh.
 
 ## Completed implementation
 
-- **Research/foundation:** Python 3.11+ and PySide6, Windows first, modular discovery/game I/O/profile/diagnostic/sorting services. RimSort source was inspected for architecture and workflow; no code or assets were copied. See `docs/research/`.
+- **Initial research/foundation:** Python 3.11+ and PySide6, Windows first, modular discovery/game I/O/profile/diagnostic/sorting services. RimSort source was inspected for architecture and workflow; no code or assets were copied. See `docs/research/`.
 - **Discovery:** Steam/game path detection, local and Workshop scanning, Build 41 root and Build 42 common/version candidates, multiple Mod IDs per Workshop item, duplicate-ID reporting, defensive metadata parsing, search/details/diagnostics. Repeated `description=` and documented repeatable `poster=` values are preserved.
 - **Mod management:** staged global `default.txt` list, ordered enable/disable and move/drag actions, maps preservation, explicit apply confirmation, timestamp backup, atomic write/readback, concurrent-change check, and strict rejection of unsupported/save-scoped targets.
 - **Profiles:** app-owned JSON profiles with stable order, unavailable Mod IDs and Workshop IDs, v1→v2 schema compatibility, import/export, overwrite backups, reversible deletion, and restore.
@@ -133,14 +137,14 @@ Updated 2026-10-22 after the desktop UX refresh.
 - Completed the pinned Qt redistribution inventory: offline appendices include all 138 Qt 6.12.0 attribution pages and 125 unique Qt WebEngine 6.140.0/Chromium 140 license pages, including their copyright lines and license texts. Added LGPL-2.1/3.0 and FDL-1.3 texts, runtime OpenSSL Apache-2.0, build-copied CPython/PyInstaller/Inno license texts, and a per-build component/version manifest. Added official source archive locations and recorded the source-offer commitment in `packaging/RELEASE_READY`.
 - The original Windows PyInstaller build excluded parallel Qt WebEngine debug resource copies after checking their release counterparts. It retained the full QML tree pending a dependency-backed trim; the Qt bundle minimization below supersedes that bundle.
 - Validation: 69 unit tests passed with one environment symlink skip; Ruff check/format and compileall passed. The trimmed-resource WebEngine smoke loaded a local HTML data page successfully from the development Python environment using the packaged resource path. The Inno installer compiled, installed to an isolated directory, launched for five seconds, and silently uninstalled; the installed executable was removed. Earlier installer-only 0.1.0→0.1.1 upgrade testing preserved an isolated Mod Pack fixture byte-for-byte, but the rebuilt optimized 0.1.0 installer was not separately upgrade-tested.
-- The latest local installer is `dist/installer/ZomboidSorter-0.1.0-windows-setup.exe` with SHA-256 `6df0be0963b9008db427f1607b31e3226dc1011f59380f262f8dbb5b1ea5a905` (142,621,063 bytes). It was built with CPython 3.14.7, PyInstaller 6.22.3, OpenSSL 3.5.7, and Inno Setup 6.7.3 on Windows 11; the release workflow is configured for CPython 3.11 and Inno Setup 6.7.1. No GitHub Release exists yet.
+- The latest local installer is `dist/installer/ZomboidSorter-0.1.0-windows-setup.exe` with SHA-256 `6df0be0963b9008db427f1607b31e3226dc1011f59380f262f8dbb5b1ea5a905` (142,621,063 bytes). It was built with CPython 3.14.7, PyInstaller 6.22.3, OpenSSL 3.5.7, and Inno Setup 6.7.3 on Windows 11; at that point the release workflow was configured for CPython 3.11 and Inno Setup 6.7.1. No GitHub Release exists yet.
 
 ## Isolated installer checks (2026-10-22)
 
 - A fresh temporary Python 3.14.7 environment installed `.[dev,windows]` under the pinned Windows constraints. All 69 unit tests passed with one environment-only symlink skip; Ruff check, Ruff format check, and compileall passed.
 - Rebuilt the 0.1.0 onedir app and Inno installer. An isolated per-user install into a temporary directory launched and stayed open for eight seconds. A same-version reinstall preserved a temporary Mod Pack and the app settings registry key; silent uninstall removed the executable and preserved both. The temporary registry changes were restored to their original values, and the test install was removed.
 - The app's `MainWindow` created its embedded `QWebEngineView` in the fresh Qt environment and loaded the live Project Zomboid Steam Workshop page (`The Steam Workshop for Project Zomboid`, document ready state `complete`).
-- This non-elevated Windows Home session had no ready-to-use VM tooling (Hyper-V cmdlets, Windows Sandbox executable, VirtualBox, or QEMU were unavailable), so the full clean-OS VM/account pass was not possible. Only Python 3.14.7 is installed; the release workflow's Python 3.11 build remains unverified here. The remote has no tags or GitHub Releases, so this pass could not test an upgrade from a previous installer; the earlier installer-only 0.1.0→0.1.1 simulation remains the only upgrade evidence.
+- This non-elevated Windows Home session had no ready-to-use VM tooling (Hyper-V cmdlets, Windows Sandbox executable, VirtualBox, or QEMU were unavailable), so the full clean-OS VM/account pass was not possible. Only Python 3.14.7 is installed; the release workflow's Python 3.11 build (the configured version at that point) was not verified here. The remote has no tags or GitHub Releases, so this pass could not test an upgrade from a previous installer; the earlier installer-only 0.1.0→0.1.1 simulation remains the only upgrade evidence.
 
 ## Qt bundle minimization (2026-10-22)
 
