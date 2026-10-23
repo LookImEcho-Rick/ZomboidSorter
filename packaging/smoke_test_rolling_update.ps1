@@ -131,6 +131,25 @@ function Find-Button {
     )
 }
 
+function Close-Window {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Windows.Automation.AutomationElement]$Window
+    )
+    try {
+        $Pattern = $Window.GetCurrentPattern(
+            [System.Windows.Automation.WindowPattern]::Pattern
+        )
+        ([System.Windows.Automation.WindowPattern]$Pattern).Close()
+        return $true
+    } catch [System.Windows.Automation.ElementNotAvailableException] {
+        return $true
+    } catch {
+        Write-Verbose "Could not close UI Automation window: $($_.Exception.Message)"
+        return $false
+    }
+}
+
 function Invoke-Button {
     param(
         [Parameter(Mandatory = $true)]
@@ -386,6 +405,17 @@ try {
     $MainWindow = Wait-ForProcessWindow -Process $NewProcess `
         -Pattern "ZomboidSorter v$([regex]::Escape($ExpectedVersion))" -TimeoutSeconds 45
     Invoke-Button -Window $UpdateDialog -Name 'OK'
+    $DialogCloseDeadline = [DateTime]::UtcNow.AddSeconds(8)
+    while ([DateTime]::UtcNow -lt $DialogCloseDeadline) {
+        $VisibleUpdateDialog = Find-WindowByName -ProcessId $NewProcess.Id `
+            -Pattern '^Update Complete$'
+        if ($null -eq $VisibleUpdateDialog) { break }
+        [void](Close-Window -Window $VisibleUpdateDialog)
+        Start-Sleep -Milliseconds 250
+    }
+    if ($null -ne (Find-WindowByName -ProcessId $NewProcess.Id -Pattern '^Update Complete$')) {
+        throw 'The update success dialog did not close after confirmation.'
+    }
 
     if (-not (Test-Path -LiteralPath $ProfilePath -PathType Leaf) -or
         [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($ProfilePath)) -cne
@@ -402,7 +432,10 @@ try {
     }
 
     $NewProcess.Refresh()
-    if (-not $NewProcess.CloseMainWindow() -or -not $NewProcess.WaitForExit(15000)) {
+    if (-not $NewProcess.CloseMainWindow()) {
+        [void](Close-Window -Window $MainWindow)
+    }
+    if (-not $NewProcess.WaitForExit(30000)) {
         throw 'The updated app did not close cleanly after the success dialog was dismissed.'
     }
     if ($NewProcess.ExitCode -ne 0) {
