@@ -23,11 +23,11 @@ Discovery is read-only. It skips symbolic links and junctions and limits each `m
 
 ## Download and install
 
-1. Open [Releases](https://github.com/LookImEcho-Rick/ZomboidSorter/releases) and download `ZomboidSorter-<version>-windows-setup.exe` from the latest release. The adjacent `.sha256` file contains its SHA-256 checksum.
+1. Open [Releases](https://github.com/LookImEcho-Rick/ZomboidSorter/releases) and download `ZomboidSorter-windows-setup.exe` from the latest stable release. The app version appears in the window title and installer details. The adjacent `.sha256` file contains its SHA-256 checksum.
 2. Run the installer. It installs for the current Windows user and adds a Start menu shortcut. If SmartScreen warns you, see [Windows SmartScreen warning](#windows-smartscreen-warning) below.
 3. Launch **ZomboidSorter** from Start. The PySide6/Qt runtime and embedded Workshop browser are included; Python is not required.
 
-Use **Check for Updates** in the app header to check GitHub for a newer stable release. If one is available, the app asks before downloading, verifies its size and SHA-256, then opens the normal Windows installer to finish the upgrade.
+Use **Check for Updates** in the app header to check for a new build published from pushed changes. The app downloads the installer only after GitHub's tests and install smoke checks pass, verifies the build ID, size, and SHA-256, then closes, applies the update, and relaunches. Stable releases use the same versionless installer filename.
 
 If there is no Release with a downloadable installer yet, use the source instructions below. Do not download an installer from an unofficial mirror.
 
@@ -35,20 +35,20 @@ If there is no Release with a downloadable installer yet, use the source instruc
 
 ![Windows SmartScreen warning for the ZomboidSorter installer](assets/smartscreen-warning.png)
 
-The screenshot shows v0.1.0; current downloads show their own version in the filename. Windows may display **“Windows protected your PC”** and **“Unknown publisher”** because the ZomboidSorter installer is not digitally signed, so SmartScreen cannot verify its publisher. SmartScreen also considers the reputation of the publisher and the specific file, including its download history. This warning is expected for this project and does not by itself mean the installer is malware. See Microsoft's [SmartScreen reputation guidance](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation).
+The screenshot shows v0.1.0; the current version appears in the app title and installer details. Windows may display **“Windows protected your PC”** and **“Unknown publisher”** because the ZomboidSorter installer is not digitally signed, so SmartScreen cannot verify its publisher. SmartScreen also considers the reputation of the publisher and the specific file, including its download history. This warning is expected for this project and does not by itself mean the installer is malware. See Microsoft's [SmartScreen reputation guidance](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation).
 
 It is okay to continue when you downloaded the installer from the official [ZomboidSorter Releases page](https://github.com/LookImEcho-Rick/ZomboidSorter/releases) and its SHA-256 matches the adjacent `.sha256` file. If Windows shows **More info**, select it, then select **Run anyway**. If Windows does not offer that option, or the filename or checksum differs, choose **Don’t run**; for a managed PC, ask its administrator rather than trying to bypass its policy. Download the installer again only from the official Releases page.
 
 For releases built by the attestation-enabled workflow, GitHub CLI can also verify the installer's signed build provenance. In the download folder, run:
 
 ```powershell
-$installer = Get-ChildItem .\ZomboidSorter-*-windows-setup.exe | Select-Object -First 1
+$installer = Get-Item .\ZomboidSorter-windows-setup.exe
 gh attestation verify $installer.FullName --repo LookImEcho-Rick/ZomboidSorter --signer-workflow LookImEcho-Rick/ZomboidSorter/.github/workflows/release-windows.yml
 ```
 
 The attestation identifies the repository and workflow that built the exact file. It does not Authenticode-sign the installer or suppress SmartScreen. Releases published before the attestation workflow was added do not have this attestation.
 
-To compare the hash in PowerShell, run `Get-FileHash .\ZomboidSorter-0.1.4-windows-setup.exe -Algorithm SHA256` in the download folder and compare its `Hash` value with the `.sha256` file. Replace `0.1.4` with the downloaded version if it changes.
+To compare the hash in PowerShell, run `Get-FileHash .\ZomboidSorter-windows-setup.exe -Algorithm SHA256` in the download folder and compare its `Hash` value with the `.sha256` file.
 
 ## First launch and basic use
 

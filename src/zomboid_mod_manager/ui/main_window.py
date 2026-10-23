@@ -13,6 +13,7 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QMainWindow
 
+from zomboid_mod_manager import __version__
 from zomboid_mod_manager.discovery.paths import detect_paths
 from zomboid_mod_manager.domain import (
     DetectedPaths,
@@ -64,7 +65,7 @@ class MainWindow(
         profile_store: ProfileStore | None = None,
     ) -> None:
         super().__init__()
-        self.setWindowTitle("ZomboidSorter")
+        self.setWindowTitle(f"ZomboidSorter v{__version__}")
         self.resize(1440, 850)
         self.setMinimumSize(980, 620)
         portable_settings = portable_settings_path()

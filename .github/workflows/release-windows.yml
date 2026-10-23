@@ -90,7 +90,13 @@ jobs:
             exit 0
           }
           $previousVersion = $previousTag.Substring(1)
-          $installerName = "ZomboidSorter-$previousVersion-windows-setup.exe"
+          $assetNames = @(gh release view $previousTag --repo $env:GITHUB_REPOSITORY --json assets --jq '.assets[].name')
+          if ($LASTEXITCODE -ne 0) { throw "Could not list assets for previous release $previousTag." }
+          $installerName = if ($assetNames -contains 'ZomboidSorter-windows-setup.exe') {
+            'ZomboidSorter-windows-setup.exe'
+          } else {
+            "ZomboidSorter-$previousVersion-windows-setup.exe"
+          }
           $downloadDirectory = Join-Path $env:RUNNER_TEMP 'zomboid-sorter-previous-release'
           New-Item -ItemType Directory -Path $downloadDirectory -Force | Out-Null
           gh release download $previousTag --repo $env:GITHUB_REPOSITORY --pattern $installerName --dir $downloadDirectory
@@ -110,7 +116,7 @@ jobs:
         env:
           PREVIOUS_INSTALLER_PATH: ${{ steps.previous-release.outputs.installer_path }}
         run: |
-          $installers = @(Get-ChildItem -LiteralPath 'dist/installer' -File -Filter 'ZomboidSorter-*-windows-setup.exe')
+          $installers = @(Get-ChildItem -LiteralPath 'dist/installer' -File -Filter 'ZomboidSorter-windows-setup.exe')
           if ($installers.Count -ne 1) { throw "Expected exactly one current installer, found $($installers.Count)." }
           $arguments = @{ InstallerPath = $installers[0].FullName }
           if ($env:PREVIOUS_INSTALLER_PATH) { $arguments.PreviousInstallerPath = $env:PREVIOUS_INSTALLER_PATH }
@@ -127,8 +133,8 @@ jobs:
         uses: actions/attest@v4
         with:
           subject-path: |
-            dist/installer/ZomboidSorter-*-windows-setup.exe
-            dist/installer/ZomboidSorter-*-windows-setup.exe.sha256
+            dist/installer/ZomboidSorter-windows-setup.exe
+            dist/installer/ZomboidSorter-windows-setup.exe.sha256
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:

@@ -4,6 +4,8 @@ $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $PythonExe = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
 $EntryPoint = Join-Path $ProjectRoot "src\zomboid_mod_manager\__main__.py"
 $OriginalPath = $env:PATH
+$GitExecutable = Get-Command git -CommandType Application -ErrorAction SilentlyContinue |
+    Select-Object -First 1 -ExpandProperty Source
 
 if (-not (Test-Path -LiteralPath $PythonExe -PathType Leaf)) {
     throw "Create the project virtual environment first: python -m venv .venv"
@@ -38,6 +40,18 @@ try {
         --specpath (Join-Path $ProjectRoot "build") `
         $EntryPoint
     if ($LASTEXITCODE -ne 0) { throw "Windows packaging failed. See the deployment output above." }
+
+    $BuildId = $env:GITHUB_SHA
+    if ($BuildId -notmatch '^[0-9a-fA-F]{40}$') {
+        if ($GitExecutable) {
+            $BuildId = (& $GitExecutable -C $ProjectRoot rev-parse HEAD 2>$null).Trim()
+        }
+        if (-not $GitExecutable -or $LASTEXITCODE -ne 0 -or $BuildId -notmatch '^[0-9a-fA-F]{40}$') {
+            $BuildId = 'local'
+        }
+    }
+    Set-Content -LiteralPath (Join-Path $ProjectRoot 'dist\ZomboidSorter\BUILD_ID') `
+        -Value $BuildId.ToLowerInvariant() -Encoding ascii -NoNewline
 
     # Qt's WebEngine wheel ships parallel release/debug resources. The release
     # executable uses the regular files; carrying debug copies adds ~75 MB.

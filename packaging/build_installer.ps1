@@ -44,10 +44,10 @@ Push-Location $ProjectRoot
 try {
     & $IsccPath "/DAppVersion=$Version" (Join-Path $PSScriptRoot 'installer.iss')
     if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
-    $Installer = Join-Path $ProjectRoot "dist\installer\ZomboidSorter-$Version-windows-setup.exe"
+    $Installer = Join-Path $ProjectRoot 'dist\installer\ZomboidSorter-windows-setup.exe'
     if (-not (Test-Path -LiteralPath $Installer -PathType Leaf)) { throw 'Installer output is missing.' }
     $Hash = (Get-FileHash -LiteralPath $Installer -Algorithm SHA256).Hash.ToLowerInvariant()
-    $Checksum = Join-Path $ProjectRoot "dist\installer\ZomboidSorter-$Version-windows-setup.exe.sha256"
+    $Checksum = Join-Path $ProjectRoot 'dist\installer\ZomboidSorter-windows-setup.exe.sha256'
     Set-Content -LiteralPath $Checksum -Value "$Hash  $(Split-Path $Installer -Leaf)" -Encoding ascii
 
     Write-Host "Installer: $Installer"

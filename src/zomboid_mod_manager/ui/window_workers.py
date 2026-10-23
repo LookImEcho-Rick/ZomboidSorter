@@ -27,6 +27,7 @@ from zomboid_mod_manager.updates import (
     UpdateRelease,
     check_for_update,
     download_update,
+    installed_build_id,
 )
 from zomboid_mod_manager.workshop import fetch_item_metadata
 
@@ -86,7 +87,7 @@ class UpdateCheckWorker(QThread):
 
     def run(self) -> None:
         try:
-            self.result_ready.emit(check_for_update(__version__))
+            self.result_ready.emit(check_for_update(__version__, installed_build_id()))
         except Exception as exc:  # noqa: BLE001 - Surface update check failures in the UI.
             self.failed.emit(str(exc))
 

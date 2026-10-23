@@ -17,7 +17,7 @@ if (-not (Test-Path -LiteralPath $InstallerPath -PathType Leaf)) {
     throw "Installer file does not exist: $InstallerPath"
 }
 $InstallerPath = (Resolve-Path -LiteralPath $InstallerPath).Path
-if ((Split-Path -Leaf $InstallerPath) -notmatch '^ZomboidSorter-\d+\.\d+\.\d+-windows-setup\.exe$') {
+if ((Split-Path -Leaf $InstallerPath) -notmatch '^ZomboidSorter(?:-\d+\.\d+\.\d+)?-windows-setup\.exe$') {
     throw "Unexpected installer filename: $InstallerPath"
 }
 if ($PreviousInstallerPath) {
@@ -25,7 +25,7 @@ if ($PreviousInstallerPath) {
         throw "Previous installer file does not exist: $PreviousInstallerPath"
     }
     $PreviousInstallerPath = (Resolve-Path -LiteralPath $PreviousInstallerPath).Path
-    if ((Split-Path -Leaf $PreviousInstallerPath) -notmatch '^ZomboidSorter-\d+\.\d+\.\d+-windows-setup\.exe$') {
+    if ((Split-Path -Leaf $PreviousInstallerPath) -notmatch '^ZomboidSorter(?:-\d+\.\d+\.\d+)?-windows-setup\.exe$') {
         throw "Unexpected previous installer filename: $PreviousInstallerPath"
     }
 }

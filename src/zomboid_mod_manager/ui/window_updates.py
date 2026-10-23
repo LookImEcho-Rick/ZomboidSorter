@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QApplication,
     QMessageBox,
 )
 
 from zomboid_mod_manager import __version__
-from zomboid_mod_manager.updates import UpdateRelease
+from zomboid_mod_manager.updates import (
+    UpdateError,
+    UpdateRelease,
+    launch_update_helper,
+)
 
 from .window_workers import (
     UpdateCheckWorker,
@@ -56,27 +58,10 @@ class UpdateActionsMixin:
             )
             return
 
-        message = QMessageBox(self)
-        message.setIcon(QMessageBox.Icon.Information)
-        message.setWindowTitle("Update Available")
-        message.setTextFormat(Qt.TextFormat.PlainText)
-        message.setText(f"ZomboidSorter {release.version} is available.")
-        message.setInformativeText(
-            f"Installed version: {__version__}\n"
-            "The verified Windows installer will open to complete the update."
+        self.status.setText(
+            f"New pushed build {release.build_id[:8]} found; downloading update…"
         )
-        message.setStandardButtons(
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        message.setDefaultButton(QMessageBox.StandardButton.No)
-        message.button(QMessageBox.StandardButton.Yes).setText("Download and Install")
-        answer = message.exec()
-        if self._shutdown_requested:
-            return
-        if answer == QMessageBox.StandardButton.Yes:
-            self._download_update(release)
-        else:
-            self.status.setText(f"ZomboidSorter {release.version} is available.")
+        self._download_update(release)
 
     def _update_check_failed(self, error: str) -> None:
         if self._shutdown_requested:
@@ -143,8 +128,8 @@ class UpdateActionsMixin:
                 pass
             return
         try:
-            subprocess.Popen([str(installer)], close_fds=True, cwd=installer.parent)
-        except OSError as exc:
+            launch_update_helper(installer)
+        except (OSError, UpdateError) as exc:
             self.update_button.setEnabled(True)
             self.update_button.setText("Check for Updates")
             self.status.setText("Could not launch the update installer.")
@@ -154,9 +139,7 @@ class UpdateActionsMixin:
                 f"The installer was downloaded and verified, but Windows could not open it:\n{exc}",
             )
             return
-        self.status.setText(
-            "Installer opened. Follow its prompts to complete the update."
-        )
+        self.status.setText("Applying update. ZomboidSorter will relaunch when ready.")
         QApplication.quit()
 
     def _show_failure(self, message: str) -> None:

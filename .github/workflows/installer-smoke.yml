@@ -1,14 +1,6 @@
 name: Windows installer smoke
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/installer-smoke.yml"
-      - "packaging/**"
-      - "pyproject.toml"
-      - "src/**"
   pull_request:
     paths:
       - ".github/workflows/installer-smoke.yml"
@@ -46,10 +38,7 @@ jobs:
       - name: Smoke-test install, launch, upgrade mode, and uninstall
         shell: pwsh
         run: |
-          $python = Join-Path (Get-Location) '.venv\Scripts\python.exe'
-          $version = (& $python -c 'import pathlib,tomllib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"])').Trim()
-          if ($LASTEXITCODE -ne 0 -or -not $version) { throw 'Could not read the packaged app version.' }
-          $installer = Join-Path (Get-Location) "dist\installer\ZomboidSorter-$version-windows-setup.exe"
+          $installer = Join-Path (Get-Location) 'dist\installer\ZomboidSorter-windows-setup.exe'
           if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) { throw "Installer output is missing: $installer" }
           .\packaging\smoke_test_installer.ps1 -InstallerPath $installer
       - name: Upload installer smoke logs on failure

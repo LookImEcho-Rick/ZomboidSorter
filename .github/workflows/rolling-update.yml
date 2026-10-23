@@ -1,0 +1,143 @@
+name: Rolling Windows update
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/rolling-update.yml"
+      - "assets/**"
+      - "LICENSE"
+      - "packaging/build_installer.ps1"
+      - "packaging/build_windows.ps1"
+      - "packaging/constraints-windows.txt"
+      - "packaging/generate_qt_notices.py"
+      - "packaging/hooks/**"
+      - "packaging/installer.iss"
+      - "packaging/licenses/**"
+      - "packaging/portable.flag"
+      - "packaging/smoke_test_installer.ps1"
+      - "packaging/SOURCE_OFFER.md"
+      - "packaging/THIRD_PARTY_NOTICES.md"
+      - "pyproject.toml"
+      - "src/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rolling-windows-update
+  cancel-in-progress: true
+
+jobs:
+  rolling-windows-update:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          architecture: x64
+      - name: Install pinned dependencies
+        shell: pwsh
+        run: python -m pip install -e ".[dev,windows]" -c packaging\constraints-windows.txt
+      - name: Test and lint
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = Join-Path (Get-Location) 'src'
+          python -m unittest discover -s tests -v
+          ruff check src tests
+          ruff format --check src tests
+          python -m compileall -q src tests
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --version=6.7.1 --yes --no-progress
+      - name: Build app and versionless installer
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\python.exe -m pip install -e ".[dev,windows]" -c packaging\constraints-windows.txt
+          .\packaging\build_windows.ps1
+          .\packaging\build_installer.ps1 -SkipAppBuild
+      - name: Smoke-test packaged install and launch
+        shell: pwsh
+        run: .\packaging\smoke_test_installer.ps1 -InstallerPath (Join-Path (Get-Location) 'dist\installer\ZomboidSorter-windows-setup.exe')
+      - name: Prepare rolling update assets
+        id: update-assets
+        shell: pwsh
+        run: |
+          $installer = Join-Path (Get-Location) 'dist\installer\ZomboidSorter-windows-setup.exe'
+          if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) { throw 'Installer output is missing.' }
+          $output = Join-Path (Get-Location) 'dist\rolling'
+          New-Item -ItemType Directory -Path $output -Force | Out-Null
+          $rollingInstaller = Join-Path $output 'ZomboidSorter-windows-setup.exe'
+          Copy-Item -LiteralPath $installer -Destination $rollingInstaller -Force
+          $hash = (Get-FileHash -LiteralPath $rollingInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
+          $checksum = "$rollingInstaller.sha256"
+          [System.IO.File]::WriteAllText($checksum, "$hash  ZomboidSorter-windows-setup.exe`n", [System.Text.Encoding]::ASCII)
+          $version = (& .\.venv\Scripts\python.exe -c 'import pathlib,tomllib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"])').Trim()
+          if ($LASTEXITCODE -ne 0 -or -not $version) { throw 'Could not read the app version.' }
+          $manifest = [ordered]@{
+            schema = 1
+            version = $version
+            build_id = $env:GITHUB_SHA.ToLowerInvariant()
+            installer_name = 'ZomboidSorter-windows-setup.exe'
+            installer_size = (Get-Item -LiteralPath $rollingInstaller).Length
+            sha256 = $hash
+          } | ConvertTo-Json -Compress
+          $manifestPath = Join-Path $output 'ZomboidSorter-update.json'
+          [System.IO.File]::WriteAllText($manifestPath, $manifest, [System.Text.UTF8Encoding]::new($false))
+          "installer=$rollingInstaller" >> $env:GITHUB_OUTPUT
+          "checksum=$checksum" >> $env:GITHUB_OUTPUT
+          "manifest=$manifestPath" >> $env:GITHUB_OUTPUT
+      - name: Attest rolling update provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            ${{ steps.update-assets.outputs.installer }}
+            ${{ steps.update-assets.outputs.checksum }}
+            ${{ steps.update-assets.outputs.manifest }}
+      - name: Publish or refresh the rolling update release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $remoteMain = (& git ls-remote origin refs/heads/main).Split("`t")[0]
+          if ($LASTEXITCODE -ne 0 -or -not $remoteMain) { throw 'Could not confirm the current main branch head.' }
+          if ($remoteMain -ne $env:GITHUB_SHA) {
+            Write-Host "Skipping stale build $env:GITHUB_SHA because main is now $remoteMain."
+            exit 0
+          }
+          $installer = '${{ steps.update-assets.outputs.installer }}'
+          $checksum = '${{ steps.update-assets.outputs.checksum }}'
+          $manifest = '${{ steps.update-assets.outputs.manifest }}'
+          $notes = Join-Path $env:RUNNER_TEMP 'rolling-update-notes.md'
+          [System.IO.File]::WriteAllText($notes, "Automatically built from commit $env:GITHUB_SHA after tests and installer smoke checks passed.`n", [System.Text.UTF8Encoding]::new($false))
+          gh release view rolling --repo $env:GITHUB_REPOSITORY *> $null
+          $releaseExists = $LASTEXITCODE -eq 0
+          if (-not $releaseExists) {
+            gh release create rolling $installer $checksum --repo $env:GITHUB_REPOSITORY `
+              --title 'ZomboidSorter Rolling Update' --notes-file $notes --prerelease --target $env:GITHUB_SHA
+            if ($LASTEXITCODE -ne 0) { throw 'Could not create the rolling update release.' }
+          } else {
+            gh release upload rolling $installer $checksum --repo $env:GITHUB_REPOSITORY --clobber
+            if ($LASTEXITCODE -ne 0) { throw 'Could not upload the rolling installer and checksum.' }
+            gh release edit rolling --repo $env:GITHUB_REPOSITORY --title 'ZomboidSorter Rolling Update' --notes-file $notes --prerelease
+            if ($LASTEXITCODE -ne 0) { throw 'Could not update rolling release details.' }
+          }
+          gh release upload rolling $manifest --repo $env:GITHUB_REPOSITORY --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish the rolling update manifest.' }
+          if ($releaseExists) {
+            $refspec = "+$($env:GITHUB_SHA):refs/tags/rolling"
+            git push origin $refspec
+            if ($LASTEXITCODE -ne 0) { throw 'Could not move the rolling tag to the verified commit.' }
+          }

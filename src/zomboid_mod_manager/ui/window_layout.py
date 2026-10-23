@@ -320,7 +320,7 @@ class WindowLayoutMixin:
         header = QHBoxLayout()
         identity = QVBoxLayout()
         identity.setSpacing(0)
-        title = QLabel("ZOMBOID  /  MOD CONTROL")
+        title = QLabel(f"ZOMBOID  /  MOD CONTROL  ·  v{__version__}")
         title.setObjectName("appTitle")
         identity.addWidget(title)
         subtitle = QLabel("Build your global load order, then apply it when ready")
