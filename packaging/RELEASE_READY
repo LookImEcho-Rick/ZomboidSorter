@@ -14,13 +14,20 @@ Application license: GPL-3.0-or-later (root LICENSE)
 - CPython and Inno Setup versions are recorded per build in the installed `licenses/BUILD_COMPONENTS.txt`.
 - Qt libraries are dynamically loaded from the install directory; compatible library replacement is not blocked.
 
-## Current local installer (technical review, 2026-10-22)
+## Previously reviewed local installer (technical review, 2026-10-22)
 
 - Installer: `ZomboidSorter-0.1.0-windows-setup.exe`
 - SHA-256: `3ea0ea57e6a5eac9ce32b8f5dd17e49e8d783bf2b2f523f699e7e2aff0473265`
 - Size: 119,892,820 bytes.
 - Build components: CPython 3.14.7, PyInstaller 6.22.3, OpenSSL 3.5.7, Inno Setup 6.7.3; see the installed `licenses/BUILD_COMPONENTS.txt` for the complete list.
 - The tagged-release workflow uses CPython 3.14 and Inno Setup 6.7.1; the Qt package versions are pinned in `pyproject.toml`. The workflow build remains to be verified.
+
+## Version 0.1.1 release preparation (2026-10-22)
+
+- The source release version is 0.1.1. This update adds no runtime dependencies, Qt modules, bundled assets, or license-delivery changes; the reviewed Qt/PySide6/WebEngine pins and source offer above still apply.
+- Local validation installer: `ZomboidSorter-0.1.1-windows-setup.exe`; SHA-256 `2b6d7c160497891e3fcf1b22ef13327ec955b9488778a6277ab3fa1d9577f22c`; 119,908,429 bytes. It compiled successfully on Windows 11 with CPython 3.14.7, PyInstaller 6.22.3, and Inno Setup 6.7.3. Its full component manifest is embedded at `licenses/BUILD_COMPONENTS.txt`.
+- The tagged workflow will independently build the 0.1.1 installer with CPython 3.14 and Inno Setup 6.7.1. Record the published installer checksum and workflow build component manifest here after the workflow completes.
+- The local Build 42.21.0 global-list apply/launch acceptance and byte-for-byte restoration are recorded in `docs/PROGRESS.md`.
 
 ## Evidence shipped with the installer
 
