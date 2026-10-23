@@ -109,7 +109,7 @@ class ModDetailsTests(unittest.TestCase):
             entry = scan_mods(local_roots=[root]).entries[0]
             choice = find_preview(entry)
             self.assertIsNotNone(choice)
-            self.assertEqual(choice.path, common / "art.png")
+            self.assertEqual(choice.path, (common / "art.png").resolve())
             self.assertEqual(choice.candidate.version_folder, "42.20")
             text = format_entry_details(entry, (entry,), ["Example"])
             self.assertIn("Author (first metadata candidate)", text)

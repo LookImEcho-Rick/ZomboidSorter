@@ -482,7 +482,21 @@ try {
         $ResolvedRunnerTempPrefix = [System.IO.Path]::GetFullPath($RunnerTemp).TrimEnd('\') + '\'
         if ($ResolvedRunRoot.StartsWith($ResolvedRunnerTempPrefix, [StringComparison]::OrdinalIgnoreCase) -and
             (Split-Path -Leaf $ResolvedRunRoot).StartsWith('ZomboidSorter-update-smoke-', [StringComparison]::OrdinalIgnoreCase)) {
-            Remove-Item -LiteralPath $ResolvedRunRoot -Recurse -Force
+            $CleanupDeadline = [DateTime]::UtcNow.AddSeconds(15)
+            $CleanupError = $null
+            do {
+                try {
+                    Remove-Item -LiteralPath $ResolvedRunRoot -Recurse -Force -ErrorAction Stop
+                    $CleanupError = $null
+                    break
+                } catch {
+                    $CleanupError = $_
+                    Start-Sleep -Milliseconds 500
+                }
+            } while ([DateTime]::UtcNow -lt $CleanupDeadline)
+            if ((Test-Path -LiteralPath $ResolvedRunRoot) -and $CleanupError) {
+                Write-Warning "The updater checks passed, but runner temp cleanup could not remove $ResolvedRunRoot`: $CleanupError"
+            }
         }
     } else {
         Write-Host "Updater smoke-test data and logs retained for diagnosis: $RunRootFull"

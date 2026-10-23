@@ -227,7 +227,7 @@ class UpdateCheckTests(unittest.TestCase):
                 self.assertIn("Write-UpdateResult 'success'", helper_script)
                 self.assertIn("Write-UpdateResult 'failed'", helper_script)
                 self.assertIn("Start-Process -FilePath $AppPath", helper_script)
-                self.assertEqual(popen.call_args.kwargs["cwd"], app_directory)
+                self.assertEqual(popen.call_args.kwargs["cwd"], app_directory.resolve())
             finally:
                 helper_path.unlink(missing_ok=True)
 

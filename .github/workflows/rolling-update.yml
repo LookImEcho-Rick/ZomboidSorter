@@ -89,9 +89,13 @@ jobs:
         run: |
           $env:PYTHONPATH = Join-Path (Get-Location) 'src'
           python -m unittest discover -s tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'Unit tests failed.' }
           ruff check src tests
+          if ($LASTEXITCODE -ne 0) { throw 'Ruff check failed.' }
           ruff format --check src tests
+          if ($LASTEXITCODE -ne 0) { throw 'Ruff format check failed.' }
           python -m compileall -q src tests
+          if ($LASTEXITCODE -ne 0) { throw 'Python compilation failed.' }
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup --version=6.7.1 --yes --no-progress
@@ -249,11 +253,6 @@ jobs:
           }
           gh release upload rolling $manifest --repo $env:GITHUB_REPOSITORY --clobber
           if ($LASTEXITCODE -ne 0) { throw 'Could not publish the rolling update manifest.' }
-          if ($releaseExists) {
-            $refspec = "+$($env:GITHUB_SHA):refs/tags/rolling"
-            git push origin $refspec
-            if ($LASTEXITCODE -ne 0) { throw 'Could not move the rolling tag to the verified commit.' }
-          }
           'published=true' >> $env:GITHUB_OUTPUT
       - name: Verify in-app update from the previous stable app
         id: update-smoke
@@ -264,8 +263,19 @@ jobs:
             -PreviousInstallerPath '${{ steps.previous-installer.outputs.path }}' `
             -ExpectedVersion '${{ steps.update-assets.outputs.version }}' `
             -ExpectedBuildId $env:GITHUB_SHA
+      - name: Move rolling tag after verified update smoke
+        id: rolling_tag
+        if: steps.publish.outputs.published == 'true' && steps.update-smoke.outcome == 'success'
+        shell: pwsh
+        run: |
+          $remoteMain = (& git ls-remote origin refs/heads/main).Split("`t")[0]
+          if ($LASTEXITCODE -ne 0 -or $remoteMain -ne $env:GITHUB_SHA) {
+            throw "Skipping stale rolling tag update for $env:GITHUB_SHA; main is now $remoteMain."
+          }
+          git push origin "+$($env:GITHUB_SHA):refs/tags/rolling"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not move the rolling tag to the verified commit.' }
       - name: Restore the previous rolling release after a failed update smoke
-        if: ${{ always() && (steps.publish.outcome == 'failure' || steps.publish.outcome == 'cancelled' || (steps.publish.outputs.published == 'true' && steps.update-smoke.outcome != 'success')) }}
+        if: ${{ always() && (steps.publish.outcome == 'failure' || steps.publish.outcome == 'cancelled' || (steps.publish.outputs.published == 'true' && (steps.update-smoke.outcome != 'success' || steps.rolling_tag.outcome == 'failure' || steps.rolling_tag.outcome == 'cancelled'))) }}
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -299,16 +309,16 @@ jobs:
               if ($LASTEXITCODE -ne 0) { throw 'Could not remove the failed rolling release.' }
             }
           }
+          $currentTagLines = & git ls-remote origin refs/tags/rolling
+          if ($LASTEXITCODE -ne 0) { throw 'Could not inspect the rolling tag during rollback.' }
+          $currentTag = if ($currentTagLines) { ($currentTagLines -split "`t")[0] } else { '' }
           if ($state.tag_sha) {
-            & git push origin "+$($state.tag_sha):refs/tags/rolling"
-            if ($LASTEXITCODE -ne 0) { throw 'Could not restore the previous rolling tag.' }
-          } else {
-            $currentTag = & git ls-remote origin refs/tags/rolling
-            if ($LASTEXITCODE -ne 0) { throw 'Could not inspect the rolling tag during rollback.' }
-            if ($currentTag) {
-              & git push origin ':refs/tags/rolling'
-              if ($LASTEXITCODE -ne 0) { throw 'Could not remove the failed rolling tag.' }
+            if ($currentTag -ne $state.tag_sha) {
+              throw 'The rolling tag changed before smoke verification completed.'
             }
+          } elseif ($currentTag) {
+            & git push origin ':refs/tags/rolling'
+            if ($LASTEXITCODE -ne 0) { throw 'Could not remove the failed rolling tag.' }
           }
           Write-Host 'The rolling channel has been restored to its previous verified state.'
       - name: Preserve rolling updater smoke diagnostics

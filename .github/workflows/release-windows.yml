@@ -49,9 +49,13 @@ jobs:
         run: |
           $env:PYTHONPATH = Join-Path (Get-Location) 'src'
           python -m unittest discover -s tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'Unit tests failed.' }
           ruff check src tests
+          if ($LASTEXITCODE -ne 0) { throw 'Ruff check failed.' }
           ruff format --check src tests
+          if ($LASTEXITCODE -ne 0) { throw 'Ruff format check failed.' }
           python -m compileall -q src tests
+          if ($LASTEXITCODE -ne 0) { throw 'Python compilation failed.' }
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup --version=6.7.1 --yes --no-progress

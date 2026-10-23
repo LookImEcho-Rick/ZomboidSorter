@@ -62,6 +62,11 @@ class MainWindowTests(unittest.TestCase):
         ):
             self.app.processEvents()
             QTest.qWait(10)
+        # A worker can finish while qWait pumps events. Drain the queued
+        # finished/result signals once more before callers inspect window state.
+        self.app.processEvents()
+        QTest.qWait(10)
+        self.app.processEvents()
         running = tuple(
             type(worker).__name__
             for worker in window._background_workers()
