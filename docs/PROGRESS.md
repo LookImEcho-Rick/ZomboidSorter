@@ -1,5 +1,18 @@
 # Progress
 
+## Redacted support reports and large-library coverage (2026-10-23)
+
+- Added **Help → Save Support Report…**. It previews a JSON report before saving. The report includes app/runtime versions, OS type, aggregate path health, scan totals, and staged-list counts; it omits path strings, mod names and IDs, Workshop IDs, log text, and file contents. The freeform exact-build field is included only when it parses as a numeric game version.
+- Added synthetic coverage for 1,250 entries (250 local and 1,000 Workshop), including scan timing, overlap-analysis truncation at its pair cap, and cancellation after the first 25 Workshop entries.
+- Validation: all 129 tests passed with two environment-only symlink skips; this includes the support-report privacy/save-preview tests, 1,250-entry scale test, and all 41 UI tests. Ruff check/format, compileall, and `git diff --check` passed. No real game configuration, save, or installed mod was touched.
+
+## Rolling release recovery, Windows target, and UI layout split (2026-10-23)
+
+- The rolling workflow now saves the previous release assets and tag, verifies their manifest/hash/size agree, and restores them if publishing or the old-app update smoke fails. Rolling runs are serialized so a rollback cannot race a newer update. The candidate is still publicly visible during the end-to-end smoke window; rollback is the recovery path if that check fails.
+- Windows 11 x64 is the verified target. Windows 10 Home/Pro is no longer a support target; its Microsoft support ended on October 14, 2025. Another-PC checks remain outside the current acceptance scope. Build 41/42 gameplay and loader behavior remain unverified; no game config or save was accessed for this work.
+- Split the workspace and Workshop collection tab builders out of `window_layout.py` into focused UI modules without changing their behavior.
+- Validation: all 39 UI tests passed; Ruff check/format, compileall, workflow YAML parsing, and the updater smoke script's PowerShell syntax check passed. The updated GitHub workflow and rollback path were not run on Actions.
+
 ## Map-aware Mod Packs, scan reuse, and Build 41/42 config checks (2026-10-23)
 
 - Mod Pack schema v3 stores ordered map IDs alongside Mod IDs and Workshop IDs. Saving from the global workspace captures the global maps; **From Save…** captures the save's explicit map list. Applying a map-aware pack requires a default-No prompt before replacing global maps and writes both lists through the guarded, backed-up atomic writer. Legacy v1/v2 packs have no explicit map list and preserve the currently loaded maps.

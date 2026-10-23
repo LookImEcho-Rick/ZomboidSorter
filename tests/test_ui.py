@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import time
@@ -13,7 +14,14 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QModelIndex, QPoint, QSettings, Qt, QUrl
 from PySide6.QtGui import QColor, QImage
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QDialog, QLabel, QMessageBox, QWidget
+from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QFileDialog,
+    QLabel,
+    QMessageBox,
+    QWidget,
+)
 
 from zomboid_mod_manager import __version__
 from zomboid_mod_manager.__main__ import _show_update_outcome
@@ -34,6 +42,7 @@ from zomboid_mod_manager.ui.file_overlap_dialog import FileOverlapDialog
 from zomboid_mod_manager.ui.main_window import MainWindow
 from zomboid_mod_manager.ui.mod_packs_dialog import ModPacksDialog
 from zomboid_mod_manager.ui.save_mod_pack_dialog import SaveModPackDialog
+from zomboid_mod_manager.ui.support_report_dialog import SupportReportDialog
 from zomboid_mod_manager.ui.workshop_browser import WorkshopBrowserPanel
 from zomboid_mod_manager.updates import UpdateOutcome, UpdateRelease
 
@@ -1171,6 +1180,51 @@ class MainWindowTests(unittest.TestCase):
 
         self.assertFalse(window.isVisible())
         self.assertFalse(window._shutdown_workers)
+
+    def test_support_report_action_opens_a_redacted_preview(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="SupportPrivateUser-") as temporary:
+            window, _config_path = self._make_launch_window(Path(temporary))
+            self._wait_for_background_workers(window)
+
+            with patch(
+                "zomboid_mod_manager.ui.window_support.SupportReportDialog"
+            ) as dialog_class:
+                window.support_report_action.trigger()
+
+            report = dialog_class.call_args.args[0]
+            serialized = json.dumps(report)
+            self.assertNotIn(temporary, serialized)
+            self.assertNotIn(str(FIXTURES), serialized)
+            self.assertEqual(report["discovery"]["scan_completed"], True)
+            self.assertTrue(report["privacy"]["folder_paths_included"] is False)
+            dialog_class.return_value.exec.assert_called_once_with()
+
+        preview = SupportReportDialog(report)
+        self.addCleanup(preview.close)
+        self.assertIn("folder paths", preview.findChild(QLabel).text().casefold())
+        self.assertIn("schema_version", preview.preview.toPlainText())
+
+    def test_support_report_dialog_saves_only_after_user_selects_a_file(self) -> None:
+        report = {"schema_version": 1, "privacy": {"folder_paths_included": False}}
+        dialog = SupportReportDialog(report)
+        self.addCleanup(dialog.close)
+        self.assertFalse(dialog.status.text())
+
+        with tempfile.TemporaryDirectory() as temporary:
+            destination = Path(temporary) / "support-report"
+            with patch.object(
+                QFileDialog,
+                "getSaveFileName",
+                return_value=(str(destination), "JSON support reports (*.json)"),
+            ):
+                dialog._save_report()
+
+            saved_report = destination.with_suffix(".json")
+            self.assertTrue(saved_report.is_file())
+            self.assertEqual(
+                json.loads(saved_report.read_text(encoding="utf-8")), report
+            )
+            self.assertEqual(dialog.status.text(), "Support report saved.")
 
     def test_window_scans_fixtures_and_filters_results(self) -> None:
         temporary = tempfile.TemporaryDirectory()

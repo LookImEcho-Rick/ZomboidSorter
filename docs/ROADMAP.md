@@ -21,7 +21,7 @@ Build 42 is the primary target; Build 41 root metadata remains supported. Metada
 
 ## Remaining release gates
 
-- Testing on another PC is unavailable in this setup. The v0.1.7 rolling workflow verified the update from the previous stable app on a hosted Windows 2022 runner; Windows 10 and another-PC behavior still need direct verification.
+- Windows 11 x64 is the current verified target. Windows 10 Home/Pro is not a support target; Microsoft ended support on October 14, 2025. The v0.1.7 rolling workflow verified the update from the previous stable app on a hosted Windows 2022 runner. Another-PC checks are outside the current acceptance scope.
 - The Qt/PySide6/WebEngine technical inventory, installer notices, and written source offer are prepared and recorded in `packaging/RELEASE_READY`; keep the offer available and re-review if bundled components or versions change. The original code is GPL-3.0-or-later.
 - Releases are intentionally unsigned. Explain the expected SmartScreen warning in the README, and direct users to the official Releases page and the published checksum before running an installer.
 - Keep per-save/server writes, Workshop subscription/download actions, and build-specific conflict guarantees out of scope until their formats and runtime behavior are independently verified.

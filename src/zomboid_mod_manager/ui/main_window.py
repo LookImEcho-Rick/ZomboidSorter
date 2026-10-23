@@ -34,6 +34,7 @@ from .window_library import LibraryMixin
 from .window_lifecycle import WindowLifecycleMixin
 from .window_profiles import ProfileActionsMixin
 from .window_staging import StagingMixin
+from .window_support import SupportActionsMixin
 from .window_updates import UpdateActionsMixin
 from .window_workers import (
     DiagnosticWorker,
@@ -54,6 +55,7 @@ class MainWindow(
     DiscoveryMixin,
     DiagnosticsMixin,
     DetailsMixin,
+    SupportActionsMixin,
     UpdateActionsMixin,
     WindowLifecycleMixin,
     QMainWindow,
