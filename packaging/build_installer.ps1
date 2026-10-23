@@ -26,8 +26,8 @@ $IsccPath = (Resolve-Path -LiteralPath $IsccPath).Path
 
 $InnoLicense = Join-Path (Split-Path $IsccPath -Parent) 'license.txt'
 if (-not (Test-Path -LiteralPath $InnoLicense -PathType Leaf)) { throw "Inno Setup license file was not found: $InnoLicense" }
-$AppLicenseDir = Join-Path $ProjectRoot 'dist\ZomboidSorter\licenses'
-if (-not (Test-Path -LiteralPath $AppLicenseDir -PathType Container)) { throw 'Packaged license directory is missing. Build the application first.' }
+$AppLicenseDir = Join-Path $ProjectRoot 'build\installer_payload\licenses'
+if (-not (Test-Path -LiteralPath $AppLicenseDir -PathType Container)) { throw 'Staged installer license directory is missing. Build the application first.' }
 Copy-Item -LiteralPath $InnoLicense -Destination (Join-Path $AppLicenseDir 'INNO-SETUP-LICENSE.txt') -Force
 $InnoUninstaller = Join-Path (Split-Path $IsccPath -Parent) 'unins000.exe'
 $InnoVersion = if (Test-Path -LiteralPath $InnoUninstaller -PathType Leaf) {

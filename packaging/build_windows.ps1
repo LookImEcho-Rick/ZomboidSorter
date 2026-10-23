@@ -25,12 +25,14 @@ try {
     ) -join [System.IO.Path]::PathSeparator
 
     & $PythonExe -m PyInstaller `
+        --clean `
         --noconfirm `
         --windowed `
         --name ZomboidSorter `
         --icon (Join-Path $ProjectRoot "assets\zomboidsorter.ico") `
         --add-data "$(Join-Path $ProjectRoot 'assets\zomboidsorter-logo.png');assets" `
         --paths (Join-Path $ProjectRoot "src") `
+        --additional-hooks-dir (Join-Path $PSScriptRoot 'hooks') `
         --distpath (Join-Path $ProjectRoot "dist") `
         --workpath (Join-Path $ProjectRoot "build") `
         --specpath (Join-Path $ProjectRoot "build") `
@@ -58,19 +60,23 @@ try {
         }
     }
 
-    $BundledLicenses = Join-Path $ProjectRoot 'dist\ZomboidSorter\licenses'
-    New-Item -ItemType Directory -Path $BundledLicenses -Force | Out-Null
+    $InstallerPayload = Join-Path $ProjectRoot 'build\installer_payload'
+    $InstallerLicenses = Join-Path $InstallerPayload 'licenses'
+    if (Test-Path -LiteralPath $InstallerLicenses -PathType Container) {
+        Remove-Item -LiteralPath $InstallerLicenses -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $InstallerLicenses -Force | Out-Null
     $PythonLicense = Join-Path $PythonBase 'LICENSE.txt'
     if (-not (Test-Path -LiteralPath $PythonLicense -PathType Leaf)) {
         throw "Bundled CPython license was not found: $PythonLicense"
     }
-    Copy-Item -LiteralPath $PythonLicense -Destination (Join-Path $BundledLicenses 'PYTHON.txt')
+    Copy-Item -LiteralPath $PythonLicense -Destination (Join-Path $InstallerLicenses 'PYTHON.txt')
     $PyInstallerLicense = Get-ChildItem (Join-Path (Split-Path $PythonExe) '..\Lib\site-packages') -Directory -Filter 'pyinstaller-*.dist-info' |
         ForEach-Object { Join-Path $_.FullName 'licenses\COPYING.txt' } |
         Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
         Select-Object -First 1
     if (-not $PyInstallerLicense) { throw 'PyInstaller license was not found.' }
-    Copy-Item -LiteralPath $PyInstallerLicense -Destination (Join-Path $BundledLicenses 'PYINSTALLER.txt')
+    Copy-Item -LiteralPath $PyInstallerLicense -Destination (Join-Path $InstallerLicenses 'PYINSTALLER.txt')
 
     $RuntimeVersions = & $PythonExe -c "import importlib.metadata as m, ssl; names=('PySide6','PySide6_Essentials','PySide6_Addons','PySide6_WebEngine','PySide6_Pdf','shiboken6','PyInstaller'); print('\n'.join(f'{n} {m.version(n)}' for n in names)); print(ssl.OPENSSL_VERSION)"
     if ($LASTEXITCODE -ne 0) { throw 'Could not read bundled Qt/PyInstaller package versions.' }
@@ -80,7 +86,18 @@ try {
         "CPython $PythonVersion"
         $RuntimeVersions
         'See THIRD_PARTY_NOTICES.md and the adjacent license texts for license details.'
-    ) | Set-Content -LiteralPath (Join-Path $BundledLicenses 'BUILD_COMPONENTS.txt') -Encoding utf8
+    ) | Set-Content -LiteralPath (Join-Path $InstallerLicenses 'BUILD_COMPONENTS.txt') -Encoding utf8
+
+    & $PythonExe (Join-Path $PSScriptRoot 'generate_qt_notices.py') `
+        (Join-Path $ProjectRoot 'dist\ZomboidSorter') `
+        $InstallerLicenses
+    if ($LASTEXITCODE -ne 0) { throw 'Could not generate bundle-scoped Qt/WebEngine notices.' }
+
+    # The expanded HTML notices belong to the installer payload, not the app bundle.
+    $AppLicenseDir = Join-Path $ProjectRoot 'dist\ZomboidSorter\licenses'
+    if (Test-Path -LiteralPath $AppLicenseDir -PathType Container) {
+        Remove-Item -LiteralPath $AppLicenseDir -Recurse -Force
+    }
 } finally {
     $env:PATH = $OriginalPath
     Pop-Location

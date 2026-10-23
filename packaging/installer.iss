@@ -27,10 +27,10 @@ UninstallDisplayIcon={app}\ZomboidSorter.exe
 
 [Files]
 Source: "..\dist\ZomboidSorter\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "..\build\installer_payload\licenses\*"; DestDir: "{app}\licenses"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "SOURCE_OFFER.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "licenses\*"; DestDir: "{app}\licenses"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\ZomboidSorter"; Filename: "{app}\ZomboidSorter.exe"

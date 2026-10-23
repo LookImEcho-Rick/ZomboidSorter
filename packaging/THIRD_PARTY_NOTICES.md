@@ -7,7 +7,7 @@ Inno Setup installer engine.
 The exact CPython version for each build is recorded in
 `licenses/BUILD_COMPONENTS.txt`; the corresponding CPython license text is
 `licenses/PYTHON.txt`. The exact PySide6, PyInstaller, CPython, OpenSSL, and Inno Setup
-versions are recorded in `licenses/BUILD_COMPONENTS.txt`; Inno Setup's license
+versions and Qt runtime DLL inventory are recorded in `licenses/BUILD_COMPONENTS.txt`; Inno Setup's license
 is `licenses/INNO-SETUP-LICENSE.txt`. The PySide6 modules and Qt libraries are
 dynamically loaded from the install directory. Users may replace compatible
 library files there and run the application with the replacements. No technical
@@ -18,9 +18,11 @@ including LGPL-3.0 and GPL-3.0 (some Qt modules are GPL-only). This application
 is GPL-3.0-or-later. The bundled CPython runtime includes OpenSSL 3 under
 Apache-2.0; its full license text is `licenses/OPENSSL-LICENSE.txt`. Qt WebEngine includes Chromium and other third-party code
 under additional terms, including LGPL-2.1. The installer includes the full
-GPL-3.0, LGPL-3.0, LGPL-2.1, CPython, OpenSSL, PyInstaller, and Inno Setup license texts. It also
-includes offline Qt 6.12.0 and Qt WebEngine 6.140.0 attribution pages with
-component copyright notices and complete license texts in
+GPL-3.0, LGPL-3.0, LGPL-2.1, CPython, OpenSSL, PyInstaller, and Inno Setup license texts. Its Qt 6.12.0
+appendix is generated at build time from the components actually bundled and
+retains those components' copyright and license pages. The Qt WebEngine 6.140.0
+appendix remains complete because the distributed QtWebEngineCore library
+includes Chromium and its third-party components. These documents are
 `licenses/QT-6.12.0-THIRD-PARTY.html` and
 `licenses/QT-WEBENGINE-6.140.0-THIRD-PARTY.html`. The Qt documentation extracts
 are provided under GNU Free Documentation License 1.3; its text is included as
