@@ -1,0 +1,46 @@
+# Qt/PySide6/WebEngine redistribution review
+
+Review date: 2026-10-22
+Technical reviewer: Codex, technical packaging and license-inventory review
+Maintainer source-offer commitment: LookImEcho-Rick confirmed in this conversation that they will honor a written source offer.
+Application license: GPL-3.0-or-later (root LICENSE)
+
+## Reviewed Windows bundle
+
+- PySide6, PySide6 Essentials, PySide6 Addons, and Shiboken6: 6.12.0
+- PySide6 WebEngine and PySide6 PDF: 6.12.0.140
+- Qt WebEngine: 6.140.0; Chromium: 140
+- PyInstaller: 6.22.3
+- CPython and Inno Setup versions are recorded per build in the installed `licenses/BUILD_COMPONENTS.txt`.
+- Qt libraries are dynamically loaded from the install directory; compatible library replacement is not blocked.
+
+## Audited local installer
+
+- Installer: `ZomboidSorter-0.1.0-windows-setup.exe`
+- SHA-256: `2e1ae3309678e04bde16ce9466fdc5941ef41d8a57763a9962c1517e43812a57`
+- Build components: CPython 3.14.7, PyInstaller 6.22.3, OpenSSL 3.5.7, Inno Setup 6.7.3.
+- The tagged-release workflow uses CPython 3.11 and Inno Setup 6.7.1; the Qt package versions are pinned in `pyproject.toml`. Each resulting installer embeds its actual versions in `licenses/BUILD_COMPONENTS.txt`.
+
+## Evidence shipped with the installer
+
+- `THIRD_PARTY_NOTICES.md` identifies the open-source terms and source request procedure.
+- `licenses/QT-6.12.0-THIRD-PARTY.html` includes all 138 component attribution pages linked from Qt's Qt 6.12.0 third-party inventory, with copyright and license texts.
+- `licenses/QT-WEBENGINE-6.140.0-THIRD-PARTY.html` includes all 125 unique component license pages linked from the Qt WebEngine 6.140.0 inventory, including Chromium notices.
+- `licenses/LGPL-3.0.txt`, `licenses/LGPL-2.1.txt`, root `LICENSE` (GPL-3.0-or-later), and `licenses/FDL-1.3.txt` provide the relevant full license texts.
+- The build copies the exact bundled CPython, PyInstaller, and Inno Setup license files into the installer and records their versions in `licenses/BUILD_COMPONENTS.txt`.
+- The build manifest records the bundled OpenSSL version; its Apache-2.0 license text is included as `licenses/OPENSSL-LICENSE.txt`.
+- `SOURCE_OFFER.md` is shown before installation and promises complete corresponding Qt/PySide6/WebEngine source, build scripts, patches, and notices at no charge by electronic download for at least three years after the last distribution. GitHub Issues are the request channel.
+- The offer identifies the official PySide6 6.12.0, Qt 6.12.0 module, and Qt WebEngine 6.140.0 source archives. The WebEngine source archive includes the corresponding Chromium source.
+
+## Primary source references
+
+- Qt LGPL obligations: https://www.qt.io/development/open-source-lgpl-obligations
+- Qt 6.12.0 third-party inventory: https://doc.qt.io/qt-6/licenses-used-in-qt.html
+- Qt WebEngine 6.140.0 licensing and Chromium inventory: https://doc.qt.io/qtwebengine/qtwebengine-licensing.html
+- PySide6 6.12.0 source: https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-6.12.0-src/
+- Qt 6.12.0 module source archives: https://download.qt.io/official_releases/qt/6.12/6.12.0/submodules/
+- Qt WebEngine 6.140.0/Chromium 140 source: https://download.qt.io/online/qtsdkrepository/all_os/extensions/qtwebengine/6120/61400/src_doc_examples/extensions.qtwebengine.6120.61400.src/
+
+## Scope and limits
+
+This record is a technical inventory and notice review, not legal advice. It covers the currently pinned Qt/PySide6/WebEngine build. Re-review if any Qt package version, bundled Qt module, WebEngine/Chromium version, or license delivery method changes. The maintainer remains responsible for fulfilling recipient source requests under the written offer.

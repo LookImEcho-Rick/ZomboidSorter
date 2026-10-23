@@ -22,6 +22,23 @@ if (-not $IsccPath) {
     $IsccPath = $CandidatePaths | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
 }
 if (-not $IsccPath) { throw 'Inno Setup 6 ISCC.exe was not found. Install Inno Setup or pass -IsccPath.' }
+$IsccPath = (Resolve-Path -LiteralPath $IsccPath).Path
+
+$InnoLicense = Join-Path (Split-Path $IsccPath -Parent) 'license.txt'
+if (-not (Test-Path -LiteralPath $InnoLicense -PathType Leaf)) { throw "Inno Setup license file was not found: $InnoLicense" }
+$AppLicenseDir = Join-Path $ProjectRoot 'dist\ZomboidSorter\licenses'
+if (-not (Test-Path -LiteralPath $AppLicenseDir -PathType Container)) { throw 'Packaged license directory is missing. Build the application first.' }
+Copy-Item -LiteralPath $InnoLicense -Destination (Join-Path $AppLicenseDir 'INNO-SETUP-LICENSE.txt') -Force
+$InnoUninstaller = Join-Path (Split-Path $IsccPath -Parent) 'unins000.exe'
+$InnoVersion = if (Test-Path -LiteralPath $InnoUninstaller -PathType Leaf) {
+    (Get-Item -LiteralPath $InnoUninstaller).VersionInfo.ProductVersion
+} else { $null }
+if (-not $InnoVersion) { $InnoVersion = '6.x (see installer build logs)' }
+$ComponentManifest = Join-Path $AppLicenseDir 'BUILD_COMPONENTS.txt'
+if (-not (Test-Path -LiteralPath $ComponentManifest -PathType Leaf)) { throw 'Packaged component manifest is missing. Build the application first.' }
+$ComponentLines = @(Get-Content -LiteralPath $ComponentManifest | Where-Object { $_ -notmatch '^Inno Setup Compiler ' })
+$ComponentLines += "Inno Setup Compiler $InnoVersion"
+Set-Content -LiteralPath $ComponentManifest -Value $ComponentLines -Encoding utf8
 
 Push-Location $ProjectRoot
 try {

@@ -71,6 +71,16 @@ try {
         Select-Object -First 1
     if (-not $PyInstallerLicense) { throw 'PyInstaller license was not found.' }
     Copy-Item -LiteralPath $PyInstallerLicense -Destination (Join-Path $BundledLicenses 'PYINSTALLER.txt')
+
+    $RuntimeVersions = & $PythonExe -c "import importlib.metadata as m, ssl; names=('PySide6','PySide6_Essentials','PySide6_Addons','PySide6_WebEngine','PySide6_Pdf','shiboken6','PyInstaller'); print('\n'.join(f'{n} {m.version(n)}' for n in names)); print(ssl.OPENSSL_VERSION)"
+    if ($LASTEXITCODE -ne 0) { throw 'Could not read bundled Qt/PyInstaller package versions.' }
+    $PythonVersion = (& $PythonExe -c "import sys; print('.'.join(map(str,sys.version_info[:3])))").Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $PythonVersion) { throw 'Could not read the bundled Python version.' }
+    @(
+        "CPython $PythonVersion"
+        $RuntimeVersions
+        'See THIRD_PARTY_NOTICES.md and the adjacent license texts for license details.'
+    ) | Set-Content -LiteralPath (Join-Path $BundledLicenses 'BUILD_COMPONENTS.txt') -Encoding utf8
 } finally {
     $env:PATH = $OriginalPath
     Pop-Location
