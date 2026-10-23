@@ -71,7 +71,8 @@ $PortableProfile = Join-Path $PortableProfiles "CodexSmoke-$RunId.json"
 $PortableProfileBytes = [System.Text.Encoding]::UTF8.GetBytes("portable-profile-$RunId`n")
 [System.IO.File]::WriteAllBytes($PortableProfile, $PortableProfileBytes)
 $PortableSettings = Join-Path $PortableData 'settings.ini'
-$PortableSettingsBytes = [System.Text.Encoding]::UTF8.GetBytes("[smoke]`nvalue=preserve-$RunId`n")
+$PortableSettingsValue = "preserve-$RunId"
+$PortableSettingsBytes = [System.Text.Encoding]::UTF8.GetBytes("[smoke]`nvalue=$PortableSettingsValue`n")
 [System.IO.File]::WriteAllBytes($PortableSettings, $PortableSettingsBytes)
 
 function Assert-BytesEqual {
@@ -96,8 +97,19 @@ function Assert-StandardData {
     }
 }
 
+function Assert-PortableSettingsSentinel {
+    if (-not (Test-Path -LiteralPath $PortableSettings -PathType Leaf)) {
+        throw "Expected portable settings file is missing: $PortableSettings"
+    }
+    $ActualSettingsText = [System.IO.File]::ReadAllText($PortableSettings)
+    if ($ActualSettingsText.IndexOf($PortableSettingsValue, [StringComparison]::Ordinal) -lt 0) {
+        throw 'Packaged application changed the preserved portable settings value.'
+    }
+}
+
 function Assert-PortableData {
     Assert-BytesEqual -Path $PortableProfile -Expected $PortableProfileBytes
+    Assert-PortableSettingsSentinel
     Assert-BytesEqual -Path $PortableSettings -Expected $PortableSettingsBytes
 }
 
@@ -270,6 +282,8 @@ try {
         Assert-PortableData
         if ($InstallVersion.Label -eq 'current') {
             Test-PackagedApplicationLaunch -InstallDirectory $PortableInstall -Label 'portable'
+            Assert-PortableSettingsSentinel
+            $script:PortableSettingsBytes = [System.IO.File]::ReadAllBytes($PortableSettings)
         }
     }
 
