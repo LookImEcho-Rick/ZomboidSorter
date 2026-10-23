@@ -80,13 +80,17 @@ function Invoke-SilentInstaller {
 
 function Get-ProcessWindows {
     param([Parameter(Mandatory = $true)][int]$ProcessId)
-    $Condition = [System.Windows.Automation.PropertyCondition]::new(
+    $ProcessCondition = [System.Windows.Automation.PropertyCondition]::new(
         [System.Windows.Automation.AutomationElement]::ProcessIdProperty,
         $ProcessId
     )
+    $WindowCondition = [System.Windows.Automation.PropertyCondition]::new(
+        [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+        [System.Windows.Automation.ControlType]::Window
+    )
     return [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
-        [System.Windows.Automation.TreeScope]::Children,
-        $Condition
+        [System.Windows.Automation.TreeScope]::Descendants,
+        [System.Windows.Automation.AndCondition]::new($ProcessCondition, $WindowCondition)
     )
 }
 
