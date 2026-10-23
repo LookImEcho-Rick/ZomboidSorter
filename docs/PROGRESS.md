@@ -1,5 +1,13 @@
 # Progress
 
+## v0.1.8 release verification (2026-10-23)
+
+- Published [v0.1.8](https://github.com/LookImEcho-Rick/ZomboidSorter/releases/tag/v0.1.8) from commit `acafaf9e3e29e59bc445eb5360d18ad24a0bb455`. It includes the redacted support report, the UI layout split, larger-library coverage, and rolling-update recovery changes.
+- Local validation passed: 129 tests with two environment-only symlink skips; Ruff check/format, compileall, PowerShell parsing, workflow YAML parsing, and `git diff --check`. No manual second-PC checks were run, as requested. No real game config or save was changed and no game was launched.
+- The first rolling attempt exposed three Windows test assertions hidden by unchecked PowerShell exit codes and a temporary-folder cleanup failure after the updater itself passed. The tests now account for Windows path normalization and queued UI signals; both workflows check each native command's exit code, the smoke cleanup retries, and the rolling tag advances only after the update smoke passes.
+- Final hosted Windows 2022 rolling workflow [40040897509](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/40040897509) passed tests, lint/format, compilation, packaged install/launch, provenance, and an update from the prior stable v0.1.8 build. It verified relaunch, receipt handling, portable profile/settings preservation, uninstall, and cleanup. The manifest identifies commit `acafaf9e3e29e59bc445eb5360d18ad24a0bb455`; the 120,229,538-byte rolling installer SHA-256 is `f709ee6a7197d7265a04779d9ca3caa18f248551ef9982c68b1ff0e1c5e56a83`, matching its checksum sidecar and manifest.
+- Final tagged workflow [40041492180](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/40041492180) passed strict tests, lint/format, compilation, upgrade from v0.1.7, standard/portable install smoke, and provenance. The [stable release](https://github.com/LookImEcho-Rick/ZomboidSorter/releases/tag/v0.1.8) contains the versionless installer (120,175,343 bytes; SHA-256 `4eefa7c83481f867086082f5436d2eecb44b6a22c2c7038e754a50b08af5b4e9`); its checksum sidecar matches GitHub's asset digest.
+
 ## Redacted support reports and large-library coverage (2026-10-23)
 
 - Added **Help → Save Support Report…**. It previews a JSON report before saving. The report includes app/runtime versions, OS type, aggregate path health, scan totals, and staged-list counts; it omits path strings, mod names and IDs, Workshop IDs, log text, and file contents. The freeform exact-build field is included only when it parses as a numeric game version.
