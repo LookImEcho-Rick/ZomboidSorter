@@ -3,7 +3,9 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from zomboid_mod_manager.portable import portable_data_directory, portable_settings_path
 from zomboid_mod_manager.profiles import (
     ModProfile,
     ProfileError,
@@ -14,6 +16,22 @@ from zomboid_mod_manager.profiles import (
 
 
 class ProfileTests(unittest.TestCase):
+    def test_portable_marker_keeps_app_data_beside_application(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            app_directory = Path(temporary)
+            (app_directory / "portable.flag").touch()
+            with patch(
+                "zomboid_mod_manager.portable.application_directory",
+                return_value=app_directory,
+            ):
+                self.assertEqual(portable_data_directory(), app_directory / "data")
+                self.assertEqual(
+                    portable_settings_path(), app_directory / "data" / "settings.ini"
+                )
+                self.assertEqual(
+                    ProfileStore().root, app_directory / "data" / "profiles"
+                )
+
     def test_profile_round_trip_preserves_order_and_unavailable_ids(self) -> None:
         profile = ModProfile(
             "B42 Co-op",

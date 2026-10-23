@@ -1,0 +1,300 @@
+"""Available and active mod list display and filtering."""
+
+from __future__ import annotations
+
+from PySide6.QtCore import (
+    Qt,
+)
+from PySide6.QtGui import (
+    QColor,
+)
+from PySide6.QtWidgets import (
+    QListWidgetItem,
+)
+
+from zomboid_mod_manager.discovery.version_selection import resolve_entry_metadata
+from zomboid_mod_manager.domain import ModEntry
+
+from .window_widgets import (
+    ISSUE_ROLE,
+    NEW_WORKSHOP_ROLE,
+    SEARCH_ROLE,
+    SOURCE_ROLE,
+)
+
+
+class LibraryMixin:
+    def _refresh_management_lists(self) -> None:
+        selected_id = None
+        selected_ids: set[str] = set()
+        for widget in (self.active_list, self.available_list):
+            if widget.currentItem() is not None:
+                selected_id = widget.currentItem().data(Qt.ItemDataRole.UserRole)
+            selected_ids.update(
+                item.data(Qt.ItemDataRole.UserRole) for item in widget.selectedItems()
+            )
+        self.available_list.clear()
+        self.active_list.clear()
+
+        entries_by_id: dict[str, list[ModEntry]] = {}
+        if self._last_result is not None:
+            for entry in self._last_result.entries:
+                if entry.mod_id:
+                    entries_by_id.setdefault(entry.mod_id, []).append(entry)
+
+        staged = set(self._staged_mod_ids)
+        for mod_id in self._staged_mod_ids:
+            matches = entries_by_id.get(mod_id, [])
+            if len(matches) == 1:
+                label = f"{self._entry_display_name(matches[0])}  ·  {mod_id}"
+            elif len(matches) > 1:
+                label = f"Duplicate installation  ·  {mod_id}"
+            else:
+                label = f"Not installed  ·  {mod_id}"
+            item = QListWidgetItem(label)
+            item.setData(Qt.ItemDataRole.UserRole, mod_id)
+            item.setToolTip(label)
+            self._set_list_item_metadata(item, mod_id, matches)
+            if len(matches) != 1:
+                item.setText("⚠  " + label)
+                item.setToolTip(
+                    f"{label}\n\nThe configured Mod ID is missing or has multiple installed copies."
+                )
+            elif self._entry_issue_messages(matches[0]):
+                item.setText("⚠  " + label)
+                item.setToolTip(
+                    label + "\n\n" + "\n".join(self._entry_issue_messages(matches[0]))
+                )
+            self._mark_recently_added_workshop_entry(item, matches)
+            self.active_list.addItem(item)
+
+        sort_mode = self.inactive_sort.currentIndex()
+        inactive_entries = sorted(
+            entries_by_id.items(),
+            key=lambda pair: (
+                pair[0].casefold()
+                if sort_mode >= 2
+                else self._entry_display_name(pair[1][0]).casefold(),
+                pair[0].casefold(),
+            ),
+            reverse=sort_mode in (1, 3),
+        )
+        for mod_id, matches in inactive_entries:
+            if mod_id in staged:
+                continue
+            if len(matches) == 1:
+                label = f"{self._entry_display_name(matches[0])}  ·  {mod_id}"
+                item = QListWidgetItem(label)
+                item.setData(Qt.ItemDataRole.UserRole, mod_id)
+                item.setToolTip(label)
+                if self._entry_issue_messages(matches[0]):
+                    item.setText("⚠  " + label)
+                    item.setToolTip(
+                        label
+                        + "\n\n"
+                        + "\n".join(self._entry_issue_messages(matches[0]))
+                    )
+            else:
+                label = f"Duplicate installation  ·  {mod_id}"
+                item = QListWidgetItem(label)
+                item.setData(Qt.ItemDataRole.UserRole, mod_id)
+                item.setToolTip(
+                    f"{label}\n\nResolve duplicate Mod IDs before activating this entry."
+                )
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+            self._set_list_item_metadata(item, mod_id, matches)
+            self._mark_recently_added_workshop_entry(item, matches)
+            self.available_list.addItem(item)
+        new_inactive_count = sum(
+            bool(self.available_list.item(index).data(NEW_WORKSHOP_ROLE))
+            for index in range(self.available_list.count())
+        )
+        new_active_count = sum(
+            bool(self.active_list.item(index).data(NEW_WORKSHOP_ROLE))
+            for index in range(self.active_list.count())
+        )
+        inactive_new_label = (
+            f"  ·  {new_inactive_count} new" if new_inactive_count else ""
+        )
+        active_new_label = f"  ·  {new_active_count} new" if new_active_count else ""
+        self.inactive_heading.setText(
+            f"DISCOVER  ·  {self.available_list.count()}{inactive_new_label}"
+        )
+        self.active_heading.setText(
+            f"ACTIVE ORDER  ·  {self.active_list.count()}{active_new_label}"
+        )
+        self._filter_available_mods(self.manage_search.text())
+        self._filter_active_mods(self.active_search.text())
+        if selected_id:
+            for widget in (self.active_list, self.available_list):
+                for row in range(widget.count()):
+                    item = widget.item(row)
+                    if item.data(Qt.ItemDataRole.UserRole) == selected_id:
+                        widget.setCurrentItem(item)
+                    if item.data(Qt.ItemDataRole.UserRole) in selected_ids:
+                        item.setSelected(True)
+        self._update_diagnostics()
+
+    def _mark_recently_added_workshop_entry(
+        self, item: QListWidgetItem, matches: list[ModEntry]
+    ) -> None:
+        is_new = any(
+            entry.key in self._recently_added_workshop_entry_keys for entry in matches
+        )
+        item.setData(NEW_WORKSHOP_ROLE, is_new)
+        if not is_new:
+            return
+        item.setText(f"NEW  ·  {item.text()}")
+        item.setForeground(QColor("#8fe0a7"))
+        item.setToolTip(
+            item.toolTip() + "\n\nNew Workshop content found on the latest scan."
+        )
+
+    def _set_list_item_metadata(
+        self, item: QListWidgetItem, mod_id: str, matches: list[ModEntry]
+    ) -> None:
+        target_build = self._metadata_target_build()
+        item.setData(
+            SEARCH_ROLE,
+            " ".join(
+                [mod_id]
+                + [self._entry_display_name(entry) for entry in matches]
+                + [entry.workshop_id or "" for entry in matches]
+            ).casefold(),
+        )
+        item.setData(SOURCE_ROLE, matches[0].source if len(matches) == 1 else "")
+        item.setData(
+            ISSUE_ROLE,
+            len(matches) != 1
+            or any(
+                bool(self._entry_issue_messages(entry))
+                or any(
+                    candidate.diagnostics
+                    for candidate in resolve_entry_metadata(
+                        entry, target_build
+                    ).candidates
+                )
+                for entry in matches
+            ),
+        )
+
+    def _metadata_target_build(self) -> str:
+        target = self.metadata_preview_target.currentData()
+        if target == "42":
+            return self.metadata_build_version.text().strip() or "42"
+        return target
+
+    def _entry_display_name(self, entry: ModEntry) -> str:
+        target_build = self._metadata_target_build()
+        selected = resolve_entry_metadata(entry, target_build)
+        candidate = selected.candidates[0] if selected.candidates else None
+        if candidate is not None:
+            name = candidate.fields.get("name", "").strip()
+            if name:
+                return name
+        if target_build != "all" and not selected.candidates:
+            return "No matching metadata"
+        return entry.name
+
+    def _entry_diagnostics_for_target(self, entry: ModEntry) -> tuple[str, ...]:
+        selection = resolve_entry_metadata(entry, self._metadata_target_build())
+        messages = list(entry.diagnostics)
+        if selection.status in {
+            "build-41",
+            "selected-version",
+            "selected-common",
+        }:
+            selected_paths = {candidate.path for candidate in selection.candidates}
+            messages = [
+                message
+                for message in messages
+                if message
+                != "Metadata candidates have different names; no active build was selected."
+                and not any(
+                    message.startswith(f"{candidate.path}:")
+                    and candidate.path not in selected_paths
+                    for candidate in entry.candidates
+                )
+            ]
+        if selection.status in {"invalid", "missing", "ambiguous"}:
+            messages.append(selection.message)
+        return tuple(messages)
+
+    def _entry_issue_messages(self, entry: ModEntry) -> tuple[str, ...]:
+        return self._entry_diagnostics_for_target(entry)
+
+    @staticmethod
+    def _matches_list_filter(item: QListWidgetItem, query: str, mode: str) -> bool:
+        if query.casefold().strip() not in (item.data(SEARCH_ROLE) or ""):
+            return False
+        if mode in ("Workshop", "Local"):
+            return item.data(SOURCE_ROLE) == mode.casefold()
+        if mode == "Warnings":
+            return bool(item.data(ISSUE_ROLE))
+        if mode == "Missing / duplicate":
+            return not item.data(SOURCE_ROLE)
+        return True
+
+    def _filter_available_mods(self, query: str) -> None:
+        mode = self.inactive_filter.currentText()
+        visible = 0
+        for index in range(self.available_list.count()):
+            item = self.available_list.item(index)
+            match = self._matches_list_filter(item, query, mode)
+            item.setHidden(not match)
+            visible += match
+        self.available_list.visible_count = visible
+        self.available_list.empty_text = (
+            "No mods match this search or filter"
+            if query or mode != "All sources"
+            else "No inactive mods found in the scanned folders"
+        )
+        self.available_list.viewport().update()
+
+    def _filter_active_mods(self, query: str) -> None:
+        mode = self.active_filter.currentText()
+        visible = 0
+        for index in range(self.active_list.count()):
+            item = self.active_list.item(index)
+            match = self._matches_list_filter(item, query, mode)
+            item.setHidden(not match)
+            visible += match
+        self.active_list.visible_count = visible
+        self.active_list.empty_text = (
+            "No active mods match this search or filter"
+            if query or mode != "All active"
+            else "No active Mod IDs in the global list"
+        )
+        self.active_list.viewport().update()
+        unfiltered = not query.strip() and self.active_filter.currentIndex() == 0
+        self.active_list.setDragEnabled(unfiltered)
+        self.move_up_button.setEnabled(unfiltered)
+        self.move_down_button.setEnabled(unfiltered)
+
+    def _show_management_item(self, current, _previous) -> None:
+        if current is None:
+            return
+        mod_id = current.data(Qt.ItemDataRole.UserRole)
+        matches = [
+            entry
+            for entry in (self._last_result.entries if self._last_result else ())
+            if entry.mod_id == mod_id
+        ]
+        if len(matches) == 1:
+            self._display_entry(matches[0])
+        else:
+            self._clear_preview(
+                "NO PREVIEW AVAILABLE", "No unique installed entry is available."
+            )
+            self.open_workshop_button.setProperty("workshopId", None)
+            self.open_workshop_button.setEnabled(False)
+            self.open_folder_button.setProperty("entryPath", None)
+            self.open_folder_button.setEnabled(False)
+            self.details.setPlainText(
+                f"Mod ID: {mod_id}\n"
+                + (
+                    "Multiple installed entries use this ID."
+                    if matches
+                    else "This Mod ID is not installed."
+                )
+            )

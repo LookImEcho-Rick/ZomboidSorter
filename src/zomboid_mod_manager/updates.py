@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import subprocess
+import sys
 import tempfile
 import urllib.error
 import urllib.parse
@@ -26,6 +29,7 @@ _MAX_CHECKSUM_RESPONSE_BYTES = 4_096
 _MAX_INSTALLER_BYTES = 2_000_000_000
 _VERSION_PATTERN = re.compile(r"v?(\d+)\.(\d+)\.(\d+)\Z")
 _CHECKSUM_PATTERN = re.compile(r"([0-9a-fA-F]{64})\s+\*?(.+)")
+_SIGNER_THUMBPRINT_PATTERN = re.compile(r"[0-9a-fA-F]{40,64}\Z")
 
 
 class UpdateError(RuntimeError):
@@ -166,6 +170,76 @@ def _expected_sha256(release: UpdateRelease) -> str:
     return match.group(1).lower()
 
 
+def verify_update_signature(
+    installer_path: Path, *, reference_executable: Path | None = None
+) -> None:
+    """Require a trusted installer signature from the running app's publisher."""
+    if os.name != "nt":
+        raise UpdateError("Signed installer verification is available on Windows only.")
+
+    if reference_executable is None:
+        if not getattr(sys, "frozen", False):
+            raise UpdateError(
+                "Automatic updates require a signed ZomboidSorter installation. "
+                "Download the installer from the official Releases page instead."
+            )
+        reference_executable = Path(sys.executable)
+
+    environment = os.environ.copy()
+    environment["ZOMBOIDSORTER_REFERENCE_EXE"] = str(reference_executable)
+    environment["ZOMBOIDSORTER_UPDATE_INSTALLER"] = str(installer_path)
+    script = """$ErrorActionPreference = 'Stop'
+$reference = Get-AuthenticodeSignature -LiteralPath $env:ZOMBOIDSORTER_REFERENCE_EXE
+$installer = Get-AuthenticodeSignature -LiteralPath $env:ZOMBOIDSORTER_UPDATE_INSTALLER
+if ($reference.Status -ne 'Valid' -or $installer.Status -ne 'Valid') { exit 10 }
+$referenceThumbprint = $reference.SignerCertificate.Thumbprint.Trim()
+$installerThumbprint = $installer.SignerCertificate.Thumbprint.Trim()
+if ($referenceThumbprint -ne $installerThumbprint) { exit 11 }
+Write-Output $referenceThumbprint"""
+    powershell = (
+        Path(os.environ.get("WINDIR", r"C:\Windows"))
+        / "System32"
+        / "WindowsPowerShell"
+        / "v1.0"
+        / "powershell.exe"
+    )
+    try:
+        result = subprocess.run(
+            [
+                str(powershell),
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                script,
+            ],
+            env=environment,
+            capture_output=True,
+            text=True,
+            encoding="ascii",
+            errors="replace",
+            timeout=30,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise UpdateError("Could not verify the Windows installer signature.") from exc
+
+    if result.returncode == 10:
+        raise UpdateError(
+            "The running app or downloaded installer does not have a trusted publisher signature."
+        )
+    if result.returncode == 11:
+        raise UpdateError(
+            "The downloaded installer was signed by a different publisher than this app."
+        )
+    if result.returncode != 0:
+        raise UpdateError("Could not verify the Windows installer signature.")
+    thumbprint = result.stdout.strip()
+    if not _SIGNER_THUMBPRINT_PATTERN.fullmatch(thumbprint):
+        raise UpdateError("Windows returned an invalid installer signer identity.")
+
+
 def download_update(
     release: UpdateRelease,
     *,
@@ -181,7 +255,7 @@ def download_update(
         Path(tempfile.gettempdir())
         / f"ZomboidSorter-update-{release.version}-{uuid.uuid4().hex}.exe"
     )
-    partial_path = installer_path.with_suffix(".exe.part")
+    partial_path = installer_path.with_suffix(".part.exe")
     digest = hashlib.sha256()
     downloaded = 0
     try:
@@ -226,6 +300,7 @@ def download_update(
                 raise UpdateError(
                     "The downloaded file is not a valid Windows installer."
                 )
+        verify_update_signature(partial_path)
         partial_path.replace(installer_path)
         return installer_path
     except UpdateError:

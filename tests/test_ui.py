@@ -72,6 +72,30 @@ class MainWindowTests(unittest.TestCase):
         self.addCleanup(window.close)
         return window, config_path
 
+    def test_portable_mode_writes_qsettings_beside_application(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            app_directory = Path(temporary)
+            (app_directory / "portable.flag").touch()
+            with (
+                patch(
+                    "zomboid_mod_manager.portable.application_directory",
+                    return_value=app_directory,
+                ),
+                patch(
+                    "zomboid_mod_manager.ui.main_window.detect_paths",
+                    return_value=DetectedPaths((), (), (), (), app_directory / "mods"),
+                ),
+            ):
+                window = MainWindow(
+                    profile_store=ProfileStore(app_directory / "data" / "profiles"),
+                )
+                self.addCleanup(window.close)
+                window.show()
+                self._wait_for_background_workers(window)
+                window.close()
+
+            self.assertTrue((app_directory / "data" / "settings.ini").is_file())
+
     def test_update_button_checks_release_and_reports_when_current(self) -> None:
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -86,11 +110,11 @@ class MainWindowTests(unittest.TestCase):
 
         with (
             patch(
-                "zomboid_mod_manager.ui.main_window.check_for_update",
+                "zomboid_mod_manager.ui.window_workers.check_for_update",
                 return_value=None,
             ) as check_for_update,
             patch(
-                "zomboid_mod_manager.ui.main_window.QMessageBox.information"
+                "zomboid_mod_manager.ui.window_updates.QMessageBox.information"
             ) as information,
         ):
             window.update_button.click()
@@ -121,7 +145,7 @@ class MainWindowTests(unittest.TestCase):
 
         with (
             patch(
-                "zomboid_mod_manager.ui.main_window.check_for_update",
+                "zomboid_mod_manager.ui.window_workers.check_for_update",
                 return_value=release,
             ),
             patch.object(
@@ -205,11 +229,11 @@ class MainWindowTests(unittest.TestCase):
         self.assertEqual(window.launch_game_button.text(), "Apply & Launch…")
         with (
             patch(
-                "zomboid_mod_manager.ui.main_window.QMessageBox.question",
+                "zomboid_mod_manager.ui.window_configuration.QMessageBox.question",
                 return_value=QMessageBox.StandardButton.No,
             ) as confirm,
             patch(
-                "zomboid_mod_manager.ui.main_window.QDesktopServices.openUrl"
+                "zomboid_mod_manager.ui.window_configuration.QDesktopServices.openUrl"
             ) as open_url,
         ):
             window._launch_project_zomboid()
@@ -240,9 +264,11 @@ class MainWindowTests(unittest.TestCase):
         self.assertEqual(window.launch_readiness.text(), "Reload changed list")
 
         with (
-            patch("zomboid_mod_manager.ui.main_window.QMessageBox.warning") as warning,
             patch(
-                "zomboid_mod_manager.ui.main_window.QDesktopServices.openUrl"
+                "zomboid_mod_manager.ui.window_configuration.QMessageBox.warning"
+            ) as warning,
+            patch(
+                "zomboid_mod_manager.ui.window_configuration.QDesktopServices.openUrl"
             ) as open_url,
         ):
             window._launch_project_zomboid()
@@ -261,16 +287,18 @@ class MainWindowTests(unittest.TestCase):
 
         with (
             patch(
-                "zomboid_mod_manager.ui.main_window.QMessageBox.question",
+                "zomboid_mod_manager.ui.window_configuration.QMessageBox.question",
                 return_value=QMessageBox.StandardButton.Yes,
             ),
             patch(
                 "zomboid_mod_manager.configuration.write_active_mods",
                 side_effect=OSError("fixture write failure"),
             ),
-            patch("zomboid_mod_manager.ui.main_window.QMessageBox.warning") as warning,
             patch(
-                "zomboid_mod_manager.ui.main_window.QDesktopServices.openUrl"
+                "zomboid_mod_manager.ui.window_configuration.QMessageBox.warning"
+            ) as warning,
+            patch(
+                "zomboid_mod_manager.ui.window_configuration.QDesktopServices.openUrl"
             ) as open_url,
         ):
             window._launch_project_zomboid()
@@ -285,7 +313,7 @@ class MainWindowTests(unittest.TestCase):
         window, _config_path = self._make_launch_window(Path(temporary.name))
 
         with patch(
-            "zomboid_mod_manager.ui.main_window.QDesktopServices.openUrl",
+            "zomboid_mod_manager.ui.window_configuration.QDesktopServices.openUrl",
             return_value=True,
         ) as open_url:
             window._launch_project_zomboid()
@@ -295,10 +323,12 @@ class MainWindowTests(unittest.TestCase):
 
         with (
             patch(
-                "zomboid_mod_manager.ui.main_window.QDesktopServices.openUrl",
+                "zomboid_mod_manager.ui.window_configuration.QDesktopServices.openUrl",
                 return_value=False,
             ),
-            patch("zomboid_mod_manager.ui.main_window.QMessageBox.warning") as warning,
+            patch(
+                "zomboid_mod_manager.ui.window_configuration.QMessageBox.warning"
+            ) as warning,
         ):
             window._launch_project_zomboid()
 
@@ -392,7 +422,7 @@ class MainWindowTests(unittest.TestCase):
         self.assertTrue(window.workspace_page.isAncestorOf(window.save_profile_button))
         saved_order = tuple(window._staged_mod_ids)
         with patch(
-            "zomboid_mod_manager.ui.main_window.QInputDialog.getText",
+            "zomboid_mod_manager.ui.window_profiles.QInputDialog.getText",
             return_value=("Weekend Pack", True),
         ):
             window.save_profile_button.click()
@@ -449,7 +479,7 @@ class MainWindowTests(unittest.TestCase):
             return dialog.result()
 
         with patch(
-            "zomboid_mod_manager.ui.main_window.ModPacksDialog.exec",
+            "zomboid_mod_manager.ui.window_profiles.ModPacksDialog.exec",
             new=select_weekend_pack,
         ):
             window.load_pack_button.click()
@@ -514,7 +544,7 @@ class MainWindowTests(unittest.TestCase):
         actions["Copy Workshop ID"].trigger()
         self.assertEqual(self.app.clipboard().text(), "111111111")
         with patch(
-            "zomboid_mod_manager.ui.main_window.QDesktopServices.openUrl"
+            "zomboid_mod_manager.ui.window_staging.QDesktopServices.openUrl"
         ) as open_url:
             actions["Open mod folder"].trigger()
         self.assertEqual(
@@ -685,7 +715,7 @@ class MainWindowTests(unittest.TestCase):
             0,
         )
         with patch(
-            "zomboid_mod_manager.ui.main_window.QDesktopServices.openUrl"
+            "zomboid_mod_manager.ui.window_details.QDesktopServices.openUrl"
         ) as open_url:
             window.open_folder_button.click()
         self.assertEqual(Path(open_url.call_args.args[0].toLocalFile()), entry_root)
@@ -861,7 +891,7 @@ class MainWindowTests(unittest.TestCase):
             raise ScanCancelled
 
         with patch(
-            "zomboid_mod_manager.ui.main_window.scan_mods",
+            "zomboid_mod_manager.ui.window_workers.scan_mods",
             side_effect=wait_until_cancelled,
         ):
             window._start_scan()
@@ -891,7 +921,7 @@ class MainWindowTests(unittest.TestCase):
             return ScanResult((), (), ())
 
         with patch(
-            "zomboid_mod_manager.ui.main_window.scan_mods",
+            "zomboid_mod_manager.ui.window_workers.scan_mods",
             side_effect=delayed_scan,
         ):
             window, _ = self._make_launch_window(Path(temporary.name))
@@ -1045,7 +1075,7 @@ class MainWindowTests(unittest.TestCase):
         self.assertIsNone(window._worker)
 
         with patch(
-            "zomboid_mod_manager.ui.main_window.QMessageBox.question",
+            "zomboid_mod_manager.ui.window_staging.QMessageBox.question",
             return_value=QMessageBox.StandardButton.Yes,
         ):
             window._suggest_dependency_order()
@@ -1106,7 +1136,9 @@ class MainWindowTests(unittest.TestCase):
         window._staged_mod_ids = ["Unsorted", "Other"]
         window._user_order_rules = ()
         with (
-            patch("zomboid_mod_manager.ui.main_window.SortRulesDialog") as dialog_type,
+            patch(
+                "zomboid_mod_manager.ui.window_staging.SortRulesDialog"
+            ) as dialog_type,
             patch.object(
                 QMessageBox,
                 "question",
@@ -1133,7 +1165,9 @@ class MainWindowTests(unittest.TestCase):
         window._staged_mod_ids = ["Core", "Consumer"]
         window._user_order_rules = (UserOrderRule("Consumer", "Core"),)
         original_order = list(window._staged_mod_ids)
-        with patch("zomboid_mod_manager.ui.main_window.QMessageBox.warning") as warning:
+        with patch(
+            "zomboid_mod_manager.ui.window_staging.QMessageBox.warning"
+        ) as warning:
             window._suggest_dependency_order()
         warning.assert_called_once()
         self.assertEqual(window._staged_mod_ids, original_order)
@@ -1207,7 +1241,7 @@ class MainWindowTests(unittest.TestCase):
         initial = list(window._staged_mod_ids)
         window._staged_mod_ids.append("StagedOnly")
         with patch(
-            "zomboid_mod_manager.ui.main_window.ModPacksDialog.exec",
+            "zomboid_mod_manager.ui.window_profiles.ModPacksDialog.exec",
             return_value=QDialog.DialogCode.Rejected,
         ):
             window.load_pack_button.click()
@@ -1221,7 +1255,7 @@ class MainWindowTests(unittest.TestCase):
         )
         window.active_config_path.setText(str(alternate_path))
         with patch(
-            "zomboid_mod_manager.ui.main_window.QMessageBox.question",
+            "zomboid_mod_manager.ui.window_profiles.QMessageBox.question",
             return_value=QMessageBox.StandardButton.No,
         ):
             window.load_config_button.click()
@@ -1261,14 +1295,14 @@ class MainWindowTests(unittest.TestCase):
         window._update_apply_enabled()
         self.assertTrue(window.apply_config_button.isEnabled())
         with patch(
-            "zomboid_mod_manager.ui.main_window.QMessageBox.question",
+            "zomboid_mod_manager.ui.window_configuration.QMessageBox.question",
             return_value=QMessageBox.StandardButton.No,
         ):
             window._apply_active_configuration()
         self.assertEqual(config_path.read_bytes(), original)
 
         with patch(
-            "zomboid_mod_manager.ui.main_window.QMessageBox.question",
+            "zomboid_mod_manager.ui.window_configuration.QMessageBox.question",
             return_value=QMessageBox.StandardButton.Yes,
         ):
             window._apply_active_configuration()
@@ -1317,7 +1351,7 @@ class MainWindowTests(unittest.TestCase):
         )
         self.assertTrue(window.open_workshop_button.isEnabled())
         with patch(
-            "zomboid_mod_manager.ui.main_window.QDesktopServices.openUrl"
+            "zomboid_mod_manager.ui.window_details.QDesktopServices.openUrl"
         ) as open_url:
             window._open_selected_workshop_page()
         open_url.assert_called_once()
@@ -1431,7 +1465,7 @@ class MainWindowTests(unittest.TestCase):
             encoding="utf-8",
         )
         with patch(
-            "zomboid_mod_manager.ui.main_window.QFileDialog.getOpenFileName",
+            "zomboid_mod_manager.ui.window_diagnostics.QFileDialog.getOpenFileName",
             return_value=(str(log_path), ""),
         ):
             window.console_log_button.click()

@@ -1,0 +1,252 @@
+"""Path selection, mod scanning, and scan-result handling."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from PySide6.QtCore import (
+    Qt,
+    QThread,
+)
+from PySide6.QtGui import QStandardItem
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QLineEdit,
+)
+
+from zomboid_mod_manager.domain import ScanResult
+
+from .window_workers import (
+    ScanWorker,
+)
+
+
+class DiscoveryMixin:
+    @staticmethod
+    def _browse_into(field: QLineEdit) -> None:
+        selected = QFileDialog.getExistingDirectory(
+            field.window(), "Choose folder", field.text()
+        )
+        if selected:
+            field.setText(selected)
+
+    def _add_workshop_folder(self) -> None:
+        selected = QFileDialog.getExistingDirectory(
+            self,
+            "Choose Project Zomboid Workshop content folder",
+            self.workshop_paths.text(),
+        )
+        if not selected:
+            return
+        current = [
+            part.strip()
+            for part in self.workshop_paths.text().split(";")
+            if part.strip()
+        ]
+        if selected not in current:
+            current.append(selected)
+        self.workshop_paths.setText(";".join(current))
+
+    def _selected_roots(self) -> tuple[list[Path], list[Path]]:
+        local_text = self.local_path.text().strip()
+        local_roots = [Path(local_text).expanduser()] if local_text else []
+        workshop_roots = [
+            Path(part.strip()).expanduser()
+            for part in self.workshop_paths.text().split(";")
+            if part.strip()
+        ]
+        return local_roots, workshop_roots
+
+    def _start_scan(self) -> None:
+        if self._shutdown_requested:
+            return
+        if self._worker is not None and self._worker.isRunning():
+            return
+        local_roots, workshop_roots = self._selected_roots()
+        self._scan_result_received = False
+        self.scan_button.setEnabled(False)
+        self.workspace_scan_button.setEnabled(False)
+        self.status.setText("Scanning selected folders…")
+        if self._last_result is None:
+            self.available_list.empty_text = "Scanning installed mods…"
+            self.available_list.viewport().update()
+        self.progress.show()
+        self._worker = ScanWorker(local_roots, workshop_roots)
+        self._worker.result_ready.connect(self._show_result)
+        self._worker.failed.connect(self._show_failure)
+        self._worker.progress.connect(self._scan_progress)
+        self._worker.cancelled.connect(self._scan_cancelled)
+        self._worker.finished.connect(self._finish_scan)
+        self.cancel_scan_button.setEnabled(True)
+        self.cancel_scan_button.show()
+        self._worker.start()
+
+    def _scan_progress(self, message: str) -> None:
+        worker = self._worker
+        if (
+            self._shutdown_requested
+            or self._scan_result_received
+            or worker is None
+            or worker.isInterruptionRequested()
+        ):
+            return
+        self.status.setText(message)
+
+    def _cancel_scan(self) -> None:
+        worker = self._worker
+        if worker is None or not worker.isRunning():
+            return
+        self._scan_again_after_current = False
+        self.cancel_scan_button.setEnabled(False)
+        self.status.setText("Cancelling scan…")
+        worker.requestInterruption()
+
+    def _scan_cancelled(self) -> None:
+        if self._shutdown_requested:
+            return
+        self._scan_result_received = True
+        self._scan_again_after_current = False
+        if self._last_result is None:
+            self.available_list.empty_text = (
+                "Scan cancelled · select Refresh to try again"
+            )
+            self.available_list.viewport().update()
+        self.status.setText("Scan cancelled; previous results are unchanged.")
+
+    def _finish_scan(self) -> None:
+        self._worker = None
+        self.cancel_scan_button.hide()
+        self.cancel_scan_button.setEnabled(True)
+        if self._shutdown_requested:
+            return
+        self.scan_button.setEnabled(True)
+        self.workspace_scan_button.setEnabled(True)
+        self._update_busy_indicator()
+        if self._scan_again_after_current:
+            self._scan_again_after_current = False
+            self._start_scan()
+
+    def _update_busy_indicator(self) -> None:
+        scan_busy = self._worker is not None and self._worker.isRunning()
+        diagnostic_busy = (
+            self._diagnostic_worker is not None and self._diagnostic_worker.isRunning()
+        )
+        self.progress.setVisible(scan_busy or diagnostic_busy)
+
+    def _background_workers(self) -> tuple[QThread, ...]:
+        return tuple(
+            worker
+            for worker in (
+                self._worker,
+                self._diagnostic_worker,
+                self._workshop_description_worker,
+                self._preview_worker,
+                self._update_check_worker,
+                self._update_download_worker,
+            )
+            if worker is not None
+        )
+
+    def _continue_shutdown(self) -> None:
+        if not self._shutdown_requested:
+            return
+        if any(worker.isRunning() for worker in self._shutdown_workers):
+            if not self._shutdown_timer.isActive():
+                self._shutdown_timer.start(25)
+            return
+        self._shutdown_timer.stop()
+        self._shutdown_workers = ()
+        self.close()
+
+    def _show_result(self, result: ScanResult) -> None:
+        if self._shutdown_requested:
+            return
+        if self._worker is not None and self._worker.isInterruptionRequested():
+            self._scan_cancelled()
+            return
+        self._scan_result_received = True
+        self.scan_button.setEnabled(True)
+        self.workspace_scan_button.setEnabled(True)
+        self.import_workshop_collection_button.setEnabled(True)
+        previous_result = self._last_result
+        previous_workshop_ids = (
+            {item.workshop_id for item in previous_result.workshop_items}
+            if previous_result is not None
+            else set()
+        )
+        previous_entry_keys = (
+            {entry.key for entry in previous_result.entries}
+            if previous_result is not None
+            else set()
+        )
+        new_workshop_ids = (
+            {item.workshop_id for item in result.workshop_items} - previous_workshop_ids
+            if previous_result is not None
+            else set()
+        )
+        self._recently_added_workshop_item_count = len(new_workshop_ids)
+        self._recently_added_workshop_entry_keys = {
+            entry.key
+            for entry in result.entries
+            if entry.source == "workshop"
+            and previous_result is not None
+            and (
+                entry.key not in previous_entry_keys
+                or entry.workshop_id in new_workshop_ids
+            )
+        }
+        self.collection_import_status.setText(
+            f"Library ready: {len(result.workshop_items)} Workshop items and "
+            f"{len(result.entries)} mod entries."
+        )
+        self._preview_generation += 1
+        self._preview_cache.clear()
+        self._last_result = result
+        self._entries = {entry.key: entry for entry in result.entries}
+        self.table_model.removeRows(0, self.table_model.rowCount())
+        for entry in result.entries:
+            values = (
+                self._entry_display_name(entry),
+                entry.mod_id or "(missing ID)",
+                entry.workshop_id or "—",
+                "Workshop" if entry.source == "workshop" else "Local",
+                entry.layout_summary,
+                str(len(entry.candidates)),
+                str(entry.entry_path),
+            )
+            row = [QStandardItem(value) for value in values]
+            row[0].setData(entry.key, Qt.ItemDataRole.UserRole)
+            self.table_model.appendRow(row)
+
+        self.details.setPlainText(
+            "Select a mod entry to inspect its metadata candidates.\n\n"
+            f"Workshop items: {len(result.workshop_items)}\n"
+            f"Mod entries: {len(result.entries)}\n"
+            f"Metadata files: {result.metadata_candidate_count}\n"
+            "No active Build 42 metadata candidate was selected."
+        )
+        self._clear_preview(
+            "PROJECT ZOMBOID\nMOD DETAILS", "Select a mod to view its declared poster."
+        )
+        self._refresh_management_lists()
+        self._update_apply_enabled()
+        warning_count = self._update_diagnostics()
+        new_content = []
+        if self._recently_added_workshop_item_count:
+            count = self._recently_added_workshop_item_count
+            new_content.append(f"{count} new Workshop item{'s' if count != 1 else ''}")
+        if self._recently_added_workshop_entry_keys:
+            count = len(self._recently_added_workshop_entry_keys)
+            new_content.append(f"{count} new mod entr{'y' if count == 1 else 'ies'}")
+        addition_summary = (
+            f" New since the previous scan: {', '.join(new_content)}; marked NEW."
+            if new_content
+            else ""
+        )
+        self.status.setText(
+            f"Read-only scan complete — {len(result.entries)} mod entries, "
+            f"{len(result.workshop_items)} Workshop items, "
+            f"{result.metadata_candidate_count} metadata files, "
+            f"{warning_count} warnings, {self._issue_error_count} errors."
+            f"{addition_summary}"
+        )

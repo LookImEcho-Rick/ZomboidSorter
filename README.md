@@ -27,7 +27,7 @@ Discovery is read-only. It skips symbolic links and junctions and limits each `m
 2. Run the installer. It installs for the current Windows user and adds a Start menu shortcut. Windows may warn about an unsigned installer; inspect the checksum before proceeding.
 3. Launch **ZomboidSorter** from Start. The PySide6/Qt runtime and embedded Workshop browser are included; Python is not required.
 
-Use **Check for Updates** in the app header to check GitHub for a newer stable release. If one is available, the app asks before downloading, verifies the installer against the release SHA-256 file, and opens the normal Windows installer to finish the upgrade.
+Use **Check for Updates** in the app header to check GitHub for a newer stable release. If one is available, the app asks before downloading, verifies its size and SHA-256, then checks that Windows trusts its Authenticode signature and that the signer matches the running ZomboidSorter executable. It opens the normal Windows installer to finish the upgrade. Automatic installation is supported from a signed packaged copy; source runs and unsigned builds should download the installer from [Releases](https://github.com/LookImEcho-Rick/ZomboidSorter/releases).
 
 If there is no Release with a downloadable installer yet, use the source instructions below. Do not download an installer from an unofficial mirror.
 
@@ -52,11 +52,12 @@ These screenshots use test fixtures and temporary profile data. The warning rows
 
 ## Data, backups, and uninstall
 
-- Mod Packs: `%APPDATA%\ProjectZomboidModManager\profiles\`. Replaced packs have copies in `backups\`; deleted packs move to `deleted\` for recovery.
-- App settings, chosen paths, ordering rules, and window state: `HKEY_CURRENT_USER\Software\ZomboidSorter\ProjectZomboidModManager` via Qt settings.
+- Standard install Mod Packs: `%APPDATA%\ProjectZomboidModManager\profiles\`. Replaced packs have copies in `backups\`; deleted packs move to `deleted\` for recovery.
+- Standard install app settings, chosen paths, ordering rules, and window state: `HKEY_CURRENT_USER\Software\ZomboidSorter\ProjectZomboidModManager` via Qt settings.
+- Portable install settings and Mod Packs: the `data\` folder beside the application. Choose the installer's **Portable installation** type to enable this mode. Install it in a folder where you can write files; copy the whole folder to move the app and its data.
 - Game-list backups: alongside the selected global file as `Zomboid\mods\default.txt.bak-<timestamp>`.
 
-An upgrade replaces application files in the same per-user install directory and keeps these data locations. Uninstall from **Windows Settings → Apps** or the Start menu shortcut. Uninstall leaves Mod Packs, settings, game-list backups, saves, and installed mods intact. Remove app-owned settings and packs manually only if you want to discard them.
+The installer remembers the selected Standard or Portable mode on upgrades. Changing modes requires an interactive install and displays a warning: the existing settings and Mod Packs stay where they are, and the newly selected mode starts with a separate data location. Export/import Mod Packs to move them; settings are not migrated. Silent upgrades cannot change modes. The installer also lets you choose whether to create a Start menu shortcut or a desktop shortcut. Uninstall from **Windows Settings → Apps** or the Start menu shortcut. Uninstall leaves Mod Packs, settings, game-list backups, saves, and installed mods intact. Remove app-owned settings and packs manually only if you want to discard them.
 
 ## Troubleshooting
 

@@ -1,5 +1,13 @@
 # Progress
 
+## Version 0.1.4 release preparation (2026-10-23)
+
+- Added standard and portable installer modes with optional shortcuts, retained setup type on upgrades, and warned/refused when changing data modes interactively/silently. Portable mode stores settings and Mod Packs next to the app; uninstall and mode changes preserve the old data location.
+- Added Authenticode verification to in-app updates: both the running app and downloaded installer must have a trusted signature from the same publisher. Split `MainWindow` into focused layout, discovery, library, staging, profile, configuration, details, diagnostics, update, worker, widget, and lifecycle modules.
+- Local Windows installer: `ZomboidSorter-0.1.4-windows-setup.exe`, 120,097,642 bytes, SHA-256 `190c70670216f895951ce09a3c410cc21e21efe176e72e4cd3a6810a9cf83cd0`; built with CPython 3.14.7, PyInstaller 6.22.3, and Inno Setup 6.7.3. This local installer is unsigned; signed release publication depends on the hosted signing workflow.
+- Validation: 98 unit tests passed with one environment-only symlink skip; Ruff check/format, compileall, and `git diff --check` passed. Inno Setup compiled successfully. The package has not yet been manually launched as an installed v0.1.4 build; interactive mode-switch prompting and a signed update remain unverified.
+- No game configuration, save files, Workshop subscriptions, or installed mod files were changed.
+
 ## Version 0.1.3 release preparation (2026-10-23)
 
 - Added exact Build 42 metadata selection using the user-entered game version. The selected candidate drives mod names/details, active-list labels, dependency diagnostics, and sort proposals. Selection does not prove mod content compatibility or reproduce every game loader rule.
@@ -205,3 +213,10 @@ Updated 2026-10-22 after the desktop UX refresh.
 - Set the source version to 0.1.2 and added a **Check for Updates** button. It checks the latest stable GitHub Release off the UI thread, compares numeric versions, and only accepts the repository's version-matched Windows installer and checksum assets. After confirmation it downloads the installer, checks its advertised size, SHA-256 sidecar, and Windows executable header, then opens the regular per-user Inno Setup installer and exits the app.
 - Validation: the 82-test suite passed with one environment-only symlink skip; Ruff check, Ruff format check, and `git diff --check` passed. GitHub Actions run [39898572140](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/39898572140) passed and published both release assets. The live updater detected v0.1.2, downloaded the 120,090,071-byte installer, verified its release SHA-256, and removed the temporary download.
 - Release limitation: an isolated install/upgrade/uninstall smoke test and settings/profile preservation through the updater launch path have not been run. Updating opens the standard installer wizard rather than silently replacing files. Release package evidence is recorded in `packaging/RELEASE_READY`.
+
+## Installer modes, shortcut choices, and signing (2026-10-23)
+
+- Added a standard/portable setup type to the Inno installer. Portable mode stores Mod Packs under `data/profiles` and Qt settings in `data/settings.ini` beside the application. The installer offers optional Start menu and desktop shortcuts for standard installs.
+- The setup type selection is part of the installer; no separate portable ZIP is produced. The release workflow signs the app executable and installer with Microsoft Artifact Signing, verifies both signatures, and refreshes the signed installer checksum.
+- Release publication now requires Azure Artifact Signing account/profile configuration and GitHub OIDC settings. Code signing identifies the publisher but Microsoft may still show a SmartScreen reputation prompt until positive reputation builds. No Azure signing account is configured or signed release has been produced in this checkout.
+- Validation: 95 tests passed with the existing symlink-only skip; Ruff check/format, compileall, and `git diff --check` passed. The PyInstaller Windows bundle built and Inno Setup compiled. A silent `/TYPE=portable` install installed the marker and executable and then uninstalled. The Qt UI test verified that closing the app writes `data/settings.ini` in portable mode. A visible launch of the packaged executable was not verified. No Azure signing identity is configured in this checkout, so the local installer is unsigned and SmartScreen behavior could not be checked.

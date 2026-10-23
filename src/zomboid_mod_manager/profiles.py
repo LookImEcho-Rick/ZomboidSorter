@@ -12,6 +12,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .portable import portable_data_directory
+
 
 class ProfileError(ValueError):
     """A profile is invalid or the requested profile operation is unsafe."""
@@ -113,6 +115,9 @@ def serialize_profile(profile: ModProfile) -> bytes:
 
 
 def default_profile_root() -> Path:
+    portable_data = portable_data_directory()
+    if portable_data is not None:
+        return portable_data / "profiles"
     if os.name == "nt":
         base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
     elif os.name == "darwin":

@@ -47,6 +47,12 @@ Application license: GPL-3.0-or-later (root LICENSE)
 - An isolated direct-installer upgrade from the local v0.1.2 installer to v0.1.3 in a temporary install directory succeeded; the registered version changed to 0.1.3 and the executable hash changed. Silent uninstall removed the temporary executable. The actual app settings registry export and both app-owned profile file hashes were unchanged across upgrade and uninstall. The v0.1.3 app was not launched, the Workshop page was not checked, and the updater-launched installer path was not exercised.
 - GitHub Actions run [39904471238](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/39904471238) completed successfully, including hosted tests, lint/format, the Windows installer build, and release publication. Published installer: `ZomboidSorter-0.1.3-windows-setup.exe`; SHA-256 `6b62055b244b7503c1bb25e308ee5310d46a3f61bd076466e96f44b031d2ddf0`; 120,150,804 bytes. Its `.sha256` asset was fetched and matched GitHub's installer asset digest; both release assets returned HTTP 200. Release page: https://github.com/LookImEcho-Rick/ZomboidSorter/releases/tag/v0.1.3.
 
+## Version 0.1.4 release preparation (2026-10-23)
+
+- This release adds standard/portable installer choices, setup-mode retention and cross-mode safeguards, publisher-matched Authenticode verification for in-app updates, and a modular `MainWindow` implementation. It adds no runtime dependencies, Qt modules, bundled assets, or license-delivery changes; the reviewed Qt/PySide6/WebEngine pins and source offer above still apply.
+- Local validation installer: `ZomboidSorter-0.1.4-windows-setup.exe`; SHA-256 `190c70670216f895951ce09a3c410cc21e21efe176e72e4cd3a6810a9cf83cd0`; 120,097,642 bytes. It compiled on Windows 11 with CPython 3.14.7, PyInstaller 6.22.3, and Inno Setup 6.7.3. The local validation installer is unsigned; the tagged workflow must produce the signed release artifact.
+- Validation: 98 tests passed with one environment-only symlink skip; Ruff check/format, compileall, and `git diff --check` passed. The v0.1.4 installed GUI, interactive mode-switch prompt, and signed updater path have not been manually verified.
+
 ## Evidence shipped with the installer
 
 - `THIRD_PARTY_NOTICES.md` identifies the open-source terms and source request procedure.

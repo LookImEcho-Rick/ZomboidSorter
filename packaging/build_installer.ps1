@@ -49,6 +49,7 @@ try {
     $Hash = (Get-FileHash -LiteralPath $Installer -Algorithm SHA256).Hash.ToLowerInvariant()
     $Checksum = Join-Path $ProjectRoot "dist\installer\ZomboidSorter-$Version-windows-setup.exe.sha256"
     Set-Content -LiteralPath $Checksum -Value "$Hash  $(Split-Path $Installer -Leaf)" -Encoding ascii
+
     Write-Host "Installer: $Installer"
     Write-Host "SHA-256: $Hash"
 } finally {
