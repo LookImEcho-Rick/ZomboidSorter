@@ -20,13 +20,16 @@ Application license: GPL-3.0-or-later (root LICENSE)
 - SHA-256: `3ea0ea57e6a5eac9ce32b8f5dd17e49e8d783bf2b2f523f699e7e2aff0473265`
 - Size: 119,892,820 bytes.
 - Build components: CPython 3.14.7, PyInstaller 6.22.3, OpenSSL 3.5.7, Inno Setup 6.7.3; see the installed `licenses/BUILD_COMPONENTS.txt` for the complete list.
-- The tagged-release workflow uses CPython 3.14 and Inno Setup 6.7.1; the Qt package versions are pinned in `pyproject.toml`. The workflow build remains to be verified.
+- The original v0.1.0 tagged-release workflow was not verified. The v0.1.1 workflow verification is recorded below.
 
 ## Version 0.1.1 release preparation (2026-10-22)
 
 - The source release version is 0.1.1. This update adds no runtime dependencies, Qt modules, bundled assets, or license-delivery changes; the reviewed Qt/PySide6/WebEngine pins and source offer above still apply.
 - Local validation installer: `ZomboidSorter-0.1.1-windows-setup.exe`; SHA-256 `2b6d7c160497891e3fcf1b22ef13327ec955b9488778a6277ab3fa1d9577f22c`; 119,908,429 bytes. It compiled successfully on Windows 11 with CPython 3.14.7, PyInstaller 6.22.3, and Inno Setup 6.7.3. Its full component manifest is embedded at `licenses/BUILD_COMPONENTS.txt`.
-- The tagged workflow will independently build the 0.1.1 installer with CPython 3.14 and Inno Setup 6.7.1. Record the published installer checksum and workflow build component manifest here after the workflow completes.
+- GitHub Actions run [39896540529](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/39896540529) completed successfully with CPython 3.14.8, PyInstaller 6.22.3, and Inno Setup 6.7.1. The Qt/PySide6/WebEngine package versions matched the reviewed pins above.
+- Published installer: `ZomboidSorter-0.1.1-windows-setup.exe`; SHA-256 `4c3183586baed839ee8e1837ef18b95b5b80a25a669e9d58a401b517fc4f655e`; 119,934,365 bytes. The attached `.sha256` asset was downloaded and verified against GitHub's asset digest.
+- The published installer's complete build component manifest is embedded at `licenses/BUILD_COMPONENTS.txt`.
+- Release page: https://github.com/LookImEcho-Rick/ZomboidSorter/releases/tag/v0.1.1
 - The local Build 42.21.0 global-list apply/launch acceptance and byte-for-byte restoration are recorded in `docs/PROGRESS.md`.
 
 ## Evidence shipped with the installer
