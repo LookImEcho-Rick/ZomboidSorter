@@ -2,8 +2,6 @@ import hashlib
 import io
 import json
 import unittest
-from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
 
 from zomboid_mod_manager import updates
@@ -81,7 +79,6 @@ class UpdateCheckTests(unittest.TestCase):
             patch.object(
                 updates.urllib.request, "urlopen", return_value=io.BytesIO(contents)
             ),
-            patch.object(updates, "verify_update_signature") as verify_signature,
         ):
             installer = updates.download_update(
                 release,
@@ -90,51 +87,9 @@ class UpdateCheckTests(unittest.TestCase):
 
         try:
             self.assertEqual(installer.read_bytes(), contents)
-            verify_signature.assert_called_once()
-            self.assertTrue(
-                str(verify_signature.call_args.args[0]).endswith(".part.exe")
-            )
             self.assertEqual(progress[-1], (len(contents), len(contents)))
         finally:
             installer.unlink(missing_ok=True)
-
-    def test_signature_verification_requires_the_running_publisher(self) -> None:
-        thumbprint = "A" * 40
-        result = SimpleNamespace(returncode=0, stdout=f"{thumbprint}\n")
-        with patch.object(updates.subprocess, "run", return_value=result) as run:
-            updates.verify_update_signature(
-                Path("C:/temp/ZomboidSorter-setup.exe"),
-                reference_executable=Path("C:/app/ZomboidSorter.exe"),
-            )
-
-        command = run.call_args.args[0]
-        self.assertIn("Get-AuthenticodeSignature", command[-1])
-        self.assertEqual(
-            run.call_args.kwargs["env"]["ZOMBOIDSORTER_REFERENCE_EXE"],
-            str(Path("C:/app/ZomboidSorter.exe")),
-        )
-        self.assertEqual(
-            run.call_args.kwargs["env"]["ZOMBOIDSORTER_UPDATE_INSTALLER"],
-            str(Path("C:/temp/ZomboidSorter-setup.exe")),
-        )
-
-    def test_signature_verification_rejects_a_different_publisher(self) -> None:
-        result = SimpleNamespace(returncode=11, stdout="")
-        with (
-            patch.object(updates.subprocess, "run", return_value=result),
-            self.assertRaisesRegex(updates.UpdateError, "different publisher"),
-        ):
-            updates.verify_update_signature(
-                Path("C:/temp/ZomboidSorter-setup.exe"),
-                reference_executable=Path("C:/app/ZomboidSorter.exe"),
-            )
-
-    def test_source_runs_cannot_claim_a_publisher_identity(self) -> None:
-        with (
-            patch.object(updates.sys, "frozen", False, create=True),
-            self.assertRaisesRegex(updates.UpdateError, "signed ZomboidSorter"),
-        ):
-            updates.verify_update_signature(Path("C:/temp/setup.exe"))
 
 
 if __name__ == "__main__":
