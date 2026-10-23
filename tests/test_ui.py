@@ -5,11 +5,11 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QModelIndex, QPoint, QSettings, Qt
+from PySide6.QtCore import QModelIndex, QPoint, QSettings, Qt, QUrl
 from PySide6.QtGui import QColor, QImage
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
@@ -22,6 +22,7 @@ from zomboid_mod_manager.sorting.user_rules import (
     parse_user_order_rules,
 )
 from zomboid_mod_manager.ui.main_window import MainWindow
+from zomboid_mod_manager.ui.workshop_browser import WorkshopBrowserPanel
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -51,6 +52,38 @@ class MainWindowTests(unittest.TestCase):
         )
         self.addCleanup(window.close)
         return window, config_path
+
+    def test_workshop_browser_panel_starts_without_loading_webengine(self) -> None:
+        panel = WorkshopBrowserPanel()
+        self.addCleanup(panel.deleteLater)
+
+        self.assertIsNone(panel.workshop_browser)
+        self.assertFalse(panel._browser_loaded)
+        self.assertEqual(
+            panel.workshop_search.placeholderText(),
+            "Search Workshop, or enter a page URL / item ID",
+        )
+
+    def test_workshop_browser_panel_routes_item_ids_and_searches(self) -> None:
+        panel = WorkshopBrowserPanel()
+        self.addCleanup(panel.deleteLater)
+        browser = Mock()
+
+        for query, expected_url in (
+            (
+                "123456789",
+                "https://steamcommunity.com/sharedfiles/filedetails/?id=123456789",
+            ),
+            (
+                "map pack",
+                "https://steamcommunity.com/workshop/browse/?appid=108600&searchtext=map+pack",
+            ),
+        ):
+            with self.subTest(query=query):
+                panel.workshop_search.setText(query)
+                with patch.object(panel, "_ensure_browser", return_value=browser):
+                    panel.search()
+                browser.setUrl.assert_called_with(QUrl(expected_url))
 
     def test_launch_button_explains_when_global_list_is_unavailable(self) -> None:
         temporary = tempfile.TemporaryDirectory()
@@ -410,7 +443,23 @@ class MainWindowTests(unittest.TestCase):
         window.active_search.setText("LegacyWorkshop")
         self.assertFalse(window.active_list.dragEnabled())
         self.assertFalse(window.move_up_button.isEnabled())
+        self.assertFalse(window.move_down_button.isEnabled())
+        original_order = list(window._staged_mod_ids)
+        window._handle_mod_list_drop(
+            window.available_list,
+            window.active_list,
+            ["RepeatedDescription"],
+            0,
+        )
+        self.assertEqual(window._staged_mod_ids[: len(original_order)], original_order)
+        self.assertEqual(window._staged_mod_ids[-1], "RepeatedDescription")
         window.active_search.clear()
+        self.assertTrue(window.active_list.dragEnabled())
+        window.active_filter.setCurrentText("Missing / duplicate")
+        self.assertFalse(window.active_list.dragEnabled())
+        self.assertFalse(window.move_up_button.isEnabled())
+        self.assertFalse(window.move_down_button.isEnabled())
+        window.active_filter.setCurrentText("All active")
         self.assertTrue(window.active_list.dragEnabled())
         window.close()
 

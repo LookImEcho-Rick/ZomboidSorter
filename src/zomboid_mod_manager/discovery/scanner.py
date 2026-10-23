@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import stat
 from collections import defaultdict
 from collections.abc import Iterable
 from pathlib import Path
@@ -18,39 +19,79 @@ from zomboid_mod_manager.domain import (
 )
 
 _VERSION_FOLDER = re.compile(r"^\d+(?:\.\d+)*$")
+_MAX_METADATA_BYTES = 1024 * 1024
+_LINK_SKIP_MESSAGE = (
+    "Skipped symbolic link or junction; discovery does not follow linked paths."
+)
 
 
 def _path_key(path: Path) -> str:
     return os.path.normcase(os.path.abspath(os.fspath(path)))
 
 
-def _candidate_paths(entry_path: Path) -> tuple[Path, ...]:
+def _is_link(path: Path) -> bool:
+    """Recognize symlinks and Windows junctions without following them."""
+    if path.is_symlink():
+        return True
+    is_junction = getattr(path, "is_junction", None)
+    return bool(is_junction and is_junction())
+
+
+def _report_link(path: Path, diagnostics: list[Diagnostic] | None) -> None:
+    if diagnostics is None or any(
+        diagnostic.path == path and diagnostic.message == _LINK_SKIP_MESSAGE
+        for diagnostic in diagnostics
+    ):
+        return
+    diagnostics.append(Diagnostic(_LINK_SKIP_MESSAGE, path))
+
+
+def _candidate_paths(
+    entry_path: Path, diagnostics: list[Diagnostic] | None = None
+) -> tuple[Path, ...]:
     candidates: list[Path] = []
+    if _is_link(entry_path):
+        _report_link(entry_path, diagnostics)
+        return ()
+
     root_info = entry_path / "mod.info"
-    if root_info.is_file():
+    if _is_link(root_info):
+        _report_link(root_info, diagnostics)
+    elif root_info.is_file():
         candidates.append(root_info)
 
+    common_dir = entry_path / "common"
     common_info = entry_path / "common" / "mod.info"
-    if common_info.is_file():
+    if _is_link(common_dir):
+        _report_link(common_dir, diagnostics)
+    elif _is_link(common_info):
+        _report_link(common_info, diagnostics)
+    elif common_info.is_file():
         candidates.append(common_info)
 
     try:
-        version_dirs = sorted(
-            (
-                child
-                for child in entry_path.iterdir()
-                if child.is_dir() and _VERSION_FOLDER.fullmatch(child.name)
-            ),
-            key=lambda child: tuple(int(part) for part in child.name.split(".")),
-        )
+        children = tuple(entry_path.iterdir())
     except OSError:
-        version_dirs = []
+        children = ()
 
-    candidates.extend(
-        version_dir / "mod.info"
-        for version_dir in version_dirs
-        if (version_dir / "mod.info").is_file()
+    version_dirs: list[Path] = []
+    for child in children:
+        if not _VERSION_FOLDER.fullmatch(child.name):
+            continue
+        if _is_link(child):
+            _report_link(child, diagnostics)
+        elif child.is_dir():
+            version_dirs.append(child)
+    version_dirs.sort(
+        key=lambda child: tuple(int(part) for part in child.name.split("."))
     )
+
+    for version_dir in version_dirs:
+        metadata_path = version_dir / "mod.info"
+        if _is_link(metadata_path):
+            _report_link(metadata_path, diagnostics)
+        elif metadata_path.is_file():
+            candidates.append(metadata_path)
     return tuple(candidates)
 
 
@@ -65,21 +106,58 @@ def _layout(entry_path: Path, metadata_path: Path) -> tuple[str, str | None]:
 
 def _parse_metadata(metadata_path: Path, entry_path: Path) -> MetadataCandidate:
     diagnostics: list[str] = []
-    try:
-        raw = metadata_path.read_bytes()
-    except OSError as exc:
+    layout, version_folder = _layout(entry_path, metadata_path)
+
+    def failed_candidate(message: str) -> MetadataCandidate:
         return MetadataCandidate(
             path=metadata_path,
-            layout=_layout(entry_path, metadata_path)[0],
-            version_folder=_layout(entry_path, metadata_path)[1],
+            layout=layout,
+            version_folder=version_folder,
             fields={},
-            diagnostics=(f"Could not read mod.info: {exc}",),
+            diagnostics=(message,),
         )
+
+    try:
+        if _is_link(metadata_path):
+            return failed_candidate(
+                "mod.info is a symbolic link or junction; linked paths are skipped."
+            )
+        file_stat = metadata_path.stat(follow_symlinks=False)
+        if not stat.S_ISREG(file_stat.st_mode):
+            return failed_candidate("mod.info is not a regular file; skipped.")
+        if file_stat.st_size > _MAX_METADATA_BYTES:
+            return failed_candidate(
+                "mod.info exceeds the 1 MiB size limit; metadata was skipped."
+            )
+
+        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+        flags |= getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(metadata_path, flags)
+        with os.fdopen(descriptor, "rb") as source_file:
+            opened_stat = os.fstat(source_file.fileno())
+            if not stat.S_ISREG(opened_stat.st_mode):
+                return failed_candidate("mod.info is not a regular file; skipped.")
+            if opened_stat.st_size > _MAX_METADATA_BYTES:
+                return failed_candidate(
+                    "mod.info exceeds the 1 MiB size limit; metadata was skipped."
+                )
+            raw = source_file.read(_MAX_METADATA_BYTES + 1)
+        if len(raw) > _MAX_METADATA_BYTES:
+            return failed_candidate(
+                "mod.info grew beyond the 1 MiB size limit while being read; metadata was skipped."
+            )
+    except OSError as exc:
+        return failed_candidate(f"Could not read mod.info: {exc}")
 
     try:
         text = raw.decode("utf-8-sig")
     except UnicodeDecodeError:
-        text = raw.decode("cp1252")
+        try:
+            text = raw.decode("cp1252")
+        except UnicodeDecodeError:
+            return failed_candidate(
+                "Could not decode mod.info as UTF-8 or Windows-1252; metadata was skipped."
+            )
         diagnostics.append("Metadata is not UTF-8; decoded with Windows-1252 fallback.")
 
     fields: dict[str, str] = {}
@@ -125,7 +203,6 @@ def _parse_metadata(metadata_path: Path, entry_path: Path) -> MetadataCandidate:
     if not fields.get("name"):
         diagnostics.append("Missing display name field 'name'.")
 
-    layout, version_folder = _layout(entry_path, metadata_path)
     return MetadataCandidate(
         path=metadata_path,
         layout=layout,
@@ -201,14 +278,19 @@ def _build_entries(
     return tuple(entries)
 
 
-def _is_entry(entry_path: Path) -> bool:
-    return bool(_candidate_paths(entry_path))
+def _is_entry(entry_path: Path, diagnostics: list[Diagnostic] | None = None) -> bool:
+    return bool(_candidate_paths(entry_path, diagnostics))
 
 
-def _workshop_entry_roots(item_path: Path) -> tuple[Path, ...]:
+def _workshop_entry_roots(
+    item_path: Path, diagnostics: list[Diagnostic]
+) -> tuple[Path, ...]:
     roots: list[Path] = []
     seen: set[str] = set()
     for wrapper in (item_path / "mods", item_path / "Contents" / "mods"):
+        if _is_link(wrapper):
+            _report_link(wrapper, diagnostics)
+            continue
         if not wrapper.is_dir():
             continue
         try:
@@ -216,6 +298,9 @@ def _workshop_entry_roots(item_path: Path) -> tuple[Path, ...]:
         except OSError:
             continue
         for child in children:
+            if _is_link(child):
+                _report_link(child, diagnostics)
+                continue
             if not child.is_dir():
                 continue
             key = _path_key(child)
@@ -223,12 +308,15 @@ def _workshop_entry_roots(item_path: Path) -> tuple[Path, ...]:
                 seen.add(key)
                 roots.append(child)
 
-    if _is_entry(item_path):
+    if _is_entry(item_path, diagnostics):
         roots.insert(0, item_path)
     return tuple(roots)
 
 
 def _scan_local_root(root: Path, diagnostics: list[Diagnostic]) -> list[ModEntry]:
+    if _is_link(root):
+        _report_link(root, diagnostics)
+        return []
     if not root.is_dir():
         diagnostics.append(
             Diagnostic("Local mod folder does not exist or is unreadable.", root)
@@ -237,7 +325,7 @@ def _scan_local_root(root: Path, diagnostics: list[Diagnostic]) -> list[ModEntry
 
     entry_roots: list[Path] = []
     seen: set[str] = set()
-    if _is_entry(root):
+    if _is_entry(root, diagnostics):
         entry_roots.append(root)
         seen.add(_path_key(root))
     try:
@@ -249,13 +337,15 @@ def _scan_local_root(root: Path, diagnostics: list[Diagnostic]) -> list[ModEntry
         return []
 
     for child in children:
-        if child.is_dir() and _path_key(child) not in seen:
+        if _is_link(child):
+            _report_link(child, diagnostics)
+        elif child.is_dir() and _path_key(child) not in seen:
             entry_roots.append(child)
             seen.add(_path_key(child))
 
     entries: list[ModEntry] = []
     for entry_root in entry_roots:
-        metadata_paths = _candidate_paths(entry_root)
+        metadata_paths = _candidate_paths(entry_root, diagnostics)
         if not metadata_paths:
             diagnostics.append(
                 Diagnostic("Local mod entry has no recognized mod.info.", entry_root)
@@ -270,6 +360,9 @@ def _scan_local_root(root: Path, diagnostics: list[Diagnostic]) -> list[ModEntry
 def _scan_workshop_root(
     root: Path, diagnostics: list[Diagnostic]
 ) -> list[WorkshopItem]:
+    if _is_link(root):
+        _report_link(root, diagnostics)
+        return []
     if not root.is_dir():
         diagnostics.append(
             Diagnostic("Workshop content folder does not exist or is unreadable.", root)
@@ -286,10 +379,15 @@ def _scan_workshop_root(
 
     items: list[WorkshopItem] = []
     for item_path in item_paths:
-        if not item_path.is_dir() or not item_path.name.isdecimal():
+        if not item_path.name.isdecimal():
             continue
         item_diags: list[Diagnostic] = []
-        entry_roots = _workshop_entry_roots(item_path)
+        if _is_link(item_path):
+            _report_link(item_path, diagnostics)
+            continue
+        if not item_path.is_dir():
+            continue
+        entry_roots = _workshop_entry_roots(item_path, item_diags)
         if not entry_roots:
             item_diags.append(
                 Diagnostic(
@@ -300,7 +398,7 @@ def _scan_workshop_root(
 
         entries: list[ModEntry] = []
         for entry_root in entry_roots:
-            metadata_paths = _candidate_paths(entry_root)
+            metadata_paths = _candidate_paths(entry_root, item_diags)
             if not metadata_paths:
                 item_diags.append(
                     Diagnostic(

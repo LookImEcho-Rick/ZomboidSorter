@@ -23,7 +23,7 @@ def _registry_steam_root() -> Path | None:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam") as key:
             value, _ = winreg.QueryValueEx(key, "SteamPath")
         return Path(os.path.expandvars(value.replace("/", os.sep)))
-    except (OSError, ImportError):
+    except OSError, ImportError:
         return None
 
 

@@ -19,7 +19,7 @@ ZomboidSorter discovers local and Steam Workshop mods, shows metadata and warnin
 | Project Zomboid Build 42 | Primary target. A local 42.21.0 installation was scanned read-only. |
 | Project Zomboid Build 41 | Root `mod.info` metadata is recognized in fixtures; live B41 behavior is unverified. |
 
-The app changes only the global `Zomboid/mods/default.txt` list after confirmation. It makes a timestamped backup, checks for concurrent edits, writes atomically, and reads the result back. Per-save and server configuration are unsupported. It never deletes installed mods or saves. Global-list writes, Mod Packs, ordering, and UI behavior have been tested mainly against temporary fixtures; applying to a real game installation has **not** been verified.
+Discovery is read-only. It skips symbolic links and junctions and limits each `mod.info` read to 1 MiB; unreadable, oversized, or undecodable files are reported with their path. The app changes only the global `Zomboid/mods/default.txt` list after confirmation. It makes a timestamped backup, checks for concurrent edits, writes atomically, and reads the result back. Per-save and server configuration are unsupported. It never deletes installed mods or saves. A temporary global-list apply and restore was verified with the local Build 42.21.0 installation: the startup log showed the marker Mod ID, and the original list was restored byte-for-byte. The game reached its startup warning screen; no save was opened. Gameplay behavior, clean-machine setup, and Windows 10 remain unverified.
 
 ## Download and install
 

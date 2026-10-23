@@ -10,10 +10,66 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtGui import QColor, QImage
 
 from zomboid_mod_manager.discovery.scanner import scan_mods
-from zomboid_mod_manager.ui.mod_details import find_preview, format_entry_details
+from zomboid_mod_manager.ui.mod_details import (
+    candidates_for_build,
+    find_preview,
+    format_entry_description,
+    format_entry_details,
+    format_workshop_description_html,
+)
 
 
 class ModDetailsTests(unittest.TestCase):
+    def test_build_filter_uses_observed_metadata_layouts(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            entry_root = root / "Example"
+            (entry_root / "common").mkdir(parents=True)
+            (entry_root / "42.21").mkdir()
+            (entry_root / "mod.info").write_text(
+                "name=Example\nid=Example\ndescription=Build 41 description\n",
+                encoding="utf-8",
+            )
+            (entry_root / "common" / "mod.info").write_text(
+                "name=Example\nid=Example\ndescription=Shared description\n",
+                encoding="utf-8",
+            )
+            (entry_root / "42.21" / "mod.info").write_text(
+                "name=Example\nid=Example\ndescription=Build 42 description\n",
+                encoding="utf-8",
+            )
+
+            entry = scan_mods(local_roots=[root]).entries[0]
+
+        self.assertEqual(
+            [candidate.layout for candidate in candidates_for_build(entry, "41")],
+            ["root (Build 41 style)"],
+        )
+        self.assertEqual(
+            [candidate.layout for candidate in candidates_for_build(entry, "42")],
+            ["common (shared)", "versioned (42.21)"],
+        )
+        self.assertEqual(len(candidates_for_build(entry, "all")), 3)
+        self.assertEqual(format_entry_description(entry, "41"), "Build 41 description")
+        self.assertEqual(
+            format_entry_description(entry, "42"),
+            "common (shared)\n\nShared description\n\n"
+            "versioned (42.21)\n\nBuild 42 description",
+        )
+
+    def test_workshop_description_renders_allowed_tags_and_escapes_html(self) -> None:
+        rendered = format_workshop_description_html(
+            "[h1]News[/h1]\n[b]Bold[/b]\n"
+            "<script>alert(1)</script>\n"
+            "[url=javascript:alert(1)]click[/url]"
+        )
+
+        self.assertIn("<h2", rendered)
+        self.assertIn("<strong>Bold</strong>", rendered)
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", rendered)
+        self.assertNotIn("<script>", rendered)
+        self.assertNotIn("javascript:", rendered)
+
     def test_versioned_poster_in_common_and_candidate_details(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

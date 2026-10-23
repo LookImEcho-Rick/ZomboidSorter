@@ -23,6 +23,6 @@ The project's original code uses GPL-3.0-or-later. PySide6 has LGPLv3/GPLv3 and 
 
 ## Initial source layout
 
-`src/zomboid_mod_manager/` is the package root. Keep the existing `discovery/`, `gameio/`, `diagnostics/`, `sorting/`, and `ui/` modules focused, with realistic fixtures under `tests/`. Avoid adding abstraction layers before a concrete milestone requires them.
+`src/zomboid_mod_manager/` is the package root. Keep the existing `discovery/`, `gameio/`, `diagnostics/`, `sorting/`, and `ui/` modules focused, with realistic fixtures under `tests/`. The embedded Steam Workshop tab is isolated in `ui/workshop_browser.py`; it owns its controls, navigation, and lazy WebEngine view. Avoid adding abstraction layers before a concrete milestone requires them.
 
 The discovery records preserve source path/type, Workshop item ID when available, Mod ID, every observed B42 version candidate, raw metadata, and parse warnings. No active B42 candidate is selected yet. A Workshop item is not a mod entry: one item can provide several Mod IDs.

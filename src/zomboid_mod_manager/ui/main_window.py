@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections import OrderedDict
 from collections.abc import Callable
 from pathlib import Path
-from urllib.parse import quote_plus
 
 from PySide6.QtCore import (
     QEvent,
@@ -30,7 +29,6 @@ from PySide6.QtGui import (
     QStandardItem,
     QStandardItemModel,
 )
-from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -98,8 +96,9 @@ from zomboid_mod_manager.ui.mod_details import (
 from zomboid_mod_manager.ui.mod_packs_dialog import ModPacksDialog
 from zomboid_mod_manager.ui.sort_rules_dialog import SortRulesDialog
 from zomboid_mod_manager.ui.theme import apply_theme
+from zomboid_mod_manager.ui.workshop_browser import WorkshopBrowserPanel
 from zomboid_mod_manager.ui.workshop_dialog import WorkshopCollectionDialog
-from zomboid_mod_manager.workshop import fetch_item_metadata, parse_published_file_id
+from zomboid_mod_manager.workshop import fetch_item_metadata
 
 SEARCH_ROLE = int(Qt.ItemDataRole.UserRole) + 1
 SOURCE_ROLE = SEARCH_ROLE + 1
@@ -748,7 +747,7 @@ class MainWindow(QMainWindow):
             active_config_path, details_page
         )
         self.main_tabs.addTab(self.workspace_page, "Mod Workspace")
-        self.workshop_page = self._build_workshop_tab()
+        self.workshop_page = WorkshopBrowserPanel()
         self.main_tabs.addTab(self.workshop_page, "Steam Workshop")
         self.import_collection_page = self._build_import_collection_tab()
         self.main_tabs.addTab(self.import_collection_page, "Import Collection")
@@ -1074,74 +1073,6 @@ class MainWindow(QMainWindow):
         self._update_apply_enabled()
         return page
 
-    def _build_workshop_tab(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(4)
-
-        search_row = QHBoxLayout()
-        search_row.setSpacing(4)
-        self.workshop_back_button = QPushButton("Back")
-        self.workshop_back_button.setEnabled(False)
-        self.workshop_back_button.clicked.connect(
-            lambda: self.workshop_browser and self.workshop_browser.back()
-        )
-        search_row.addWidget(self.workshop_back_button)
-        self.workshop_forward_button = QPushButton("Forward")
-        self.workshop_forward_button.setEnabled(False)
-        self.workshop_forward_button.clicked.connect(
-            lambda: self.workshop_browser and self.workshop_browser.forward()
-        )
-        search_row.addWidget(self.workshop_forward_button)
-        self.workshop_reload_button = QPushButton("Reload")
-        self.workshop_reload_button.clicked.connect(
-            lambda: self.workshop_browser and self.workshop_browser.reload()
-        )
-        search_row.addWidget(self.workshop_reload_button)
-        self.open_workshop_home_button = QPushButton("Home")
-        self.open_workshop_home_button.setToolTip(
-            "Show the Project Zomboid Workshop home page in this tab."
-        )
-        self.open_workshop_home_button.clicked.connect(self._open_workshop_home)
-        search_row.addWidget(self.open_workshop_home_button)
-        self.workshop_search = QLineEdit()
-        self.workshop_search.setPlaceholderText(
-            "Search Workshop, or enter a page URL / item ID"
-        )
-        self.workshop_search.setAccessibleName("Search Workshop or navigate to a page")
-        self.workshop_search.setClearButtonEnabled(True)
-        self.workshop_search.returnPressed.connect(self._search_workshop)
-        search_row.addWidget(self.workshop_search, 1)
-        self.workshop_search_button = QPushButton("Go")
-        self.workshop_search_button.setToolTip(
-            "Search for a title or open the entered Workshop URL or item ID."
-        )
-        self.workshop_search_button.clicked.connect(self._search_workshop)
-        search_row.addWidget(self.workshop_search_button)
-        self.open_workshop_external_button = QPushButton("Open In Browser")
-        self.open_workshop_external_button.setToolTip(
-            "Open the current Workshop page in your default browser."
-        )
-        self.open_workshop_external_button.clicked.connect(
-            self._open_workshop_externally
-        )
-        search_row.addWidget(self.open_workshop_external_button)
-        layout.addLayout(search_row)
-
-        self.workshop_browser: QWebEngineView | None = None
-        self._workshop_browser_loaded = False
-        self.workshop_browser_container = QWidget()
-        self.workshop_browser_layout = QVBoxLayout(self.workshop_browser_container)
-        self.workshop_browser_layout.setContentsMargins(0, 0, 0, 0)
-        self.workshop_browser_placeholder = QLabel(
-            "Opening the Project Zomboid Steam Workshop…"
-        )
-        self.workshop_browser_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.workshop_browser_layout.addWidget(self.workshop_browser_placeholder)
-        layout.addWidget(self.workshop_browser_container, 1)
-        return page
-
     def _build_import_collection_tab(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
@@ -1180,76 +1111,13 @@ class MainWindow(QMainWindow):
         layout.addStretch(1)
         return page
 
-    def _open_workshop_home(self) -> None:
-        browser = self._ensure_workshop_browser()
-        browser.setUrl(QUrl("https://steamcommunity.com/app/108600/workshop/"))
-
-    def _open_workshop_externally(self) -> None:
-        url = self.workshop_browser.url() if self.workshop_browser else QUrl()
-        if not url.isValid() or not url.scheme():
-            url = QUrl("https://steamcommunity.com/app/108600/workshop/")
-        QDesktopServices.openUrl(url)
-
-    def _ensure_workshop_browser(self) -> QWebEngineView:
-        if self.workshop_browser is None:
-            self.workshop_browser_layout.removeWidget(self.workshop_browser_placeholder)
-            self.workshop_browser_placeholder.hide()
-            self.workshop_browser_placeholder.deleteLater()
-            self.workshop_browser = QWebEngineView(self.workshop_browser_container)
-            self.workshop_browser.setAccessibleName("Steam Project Zomboid Workshop")
-            self.workshop_browser.urlChanged.connect(self._sync_workshop_location)
-            self.workshop_browser_layout.addWidget(self.workshop_browser)
-        self._workshop_browser_loaded = True
-        return self.workshop_browser
-
-    def _sync_workshop_location(self, url: QUrl) -> None:
-        self.workshop_search.setText(url.toString())
-        if self.workshop_browser is not None:
-            self.workshop_back_button.setEnabled(
-                self.workshop_browser.history().canGoBack()
-            )
-            self.workshop_forward_button.setEnabled(
-                self.workshop_browser.history().canGoForward()
-            )
-
-    def _search_workshop(self) -> None:
-        query = self.workshop_search.text().strip()
-        if not query:
-            self._open_workshop_home()
-            return
-        if query.isdecimal():
-            try:
-                workshop_id = parse_published_file_id(query)
-            except ValueError as exc:
-                QMessageBox.warning(self, "Invalid Workshop item", str(exc))
-                return
-            url = QUrl(
-                f"https://steamcommunity.com/sharedfiles/filedetails/?id={workshop_id}"
-            )
-        elif query.startswith(("https://", "http://")):
-            url = QUrl.fromUserInput(query)
-            if not url.isValid() or url.scheme() not in ("https", "http"):
-                QMessageBox.warning(
-                    self,
-                    "Invalid Workshop URL",
-                    "Enter a valid HTTP or HTTPS page address.",
-                )
-                return
-        else:
-            url = QUrl(
-                "https://steamcommunity.com/workshop/browse/?appid=108600&searchtext="
-                + quote_plus(query)
-            )
-        self._ensure_workshop_browser().setUrl(url)
-
     def _set_advanced_preview_visible(self, visible: bool) -> None:
         self.main_tabs.setTabVisible(self.library_tab_index, visible)
 
     def _on_main_tab_changed(self, index: int) -> None:
         page = self.main_tabs.widget(index)
-        if page is self.workshop_page and not self._workshop_browser_loaded:
-            self._workshop_browser_loaded = True
-            self._open_workshop_home()
+        if page is self.workshop_page:
+            self.workshop_page.open_home_if_needed()
             return
         if page is not self.workspace_page:
             return
@@ -2095,7 +1963,7 @@ class MainWindow(QMainWindow):
             )
         try:
             current = read_active_mods(snapshot.path)
-        except (OSError, ActiveModConfigError):
+        except OSError, ActiveModConfigError:
             return (
                 "Reload global list",
                 "The loaded global mod list can no longer be read. Load it again before launching.",

@@ -161,7 +161,7 @@ def fetch_collection(
             continue
         try:
             order = int(child.get("sortorder", len(child_ids)))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             order = len(child_ids)
         child_ids.append((order, item_id))
     for _order, item_id in sorted(child_ids):
@@ -206,14 +206,14 @@ def fetch_collection(
             continue
         try:
             consumer_app_id = int(item.get("consumer_appid"))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             consumer_app_id = None
         if consumer_app_id != PZ_APP_ID:
             foreign.append(item_id)
             continue
         try:
             updated_at = int(item.get("time_updated"))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             updated_at = None
         items.append(
             WorkshopItemMetadata(
@@ -259,13 +259,13 @@ def fetch_item_metadata(
         raise WorkshopApiError("This Workshop item is unavailable or not public.")
     try:
         consumer_app_id = int(item.get("consumer_appid"))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         consumer_app_id = None
     if consumer_app_id is not None and consumer_app_id != PZ_APP_ID:
         raise WorkshopApiError("This Workshop item is not for Project Zomboid.")
     try:
         updated_at = int(item.get("time_updated"))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         updated_at = None
     return WorkshopItemMetadata(
         workshop_id=item_id,

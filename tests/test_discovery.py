@@ -1,6 +1,8 @@
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from zomboid_mod_manager.discovery.scanner import scan_mods
 
@@ -124,6 +126,99 @@ class DiscoveryTests(unittest.TestCase):
         self.assertFalse(
             any("Duplicate metadata key 'poster'" in d for d in candidate.diagnostics)
         )
+
+    def test_oversized_and_unreadable_metadata_are_diagnosed_without_stopping_scan(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "mods"
+            oversized = root / "Oversized"
+            unreadable = root / "Unreadable"
+            readable = root / "Readable"
+            for entry in (oversized, unreadable, readable):
+                entry.mkdir(parents=True)
+            oversized_metadata = oversized / "mod.info"
+            oversized_metadata.write_bytes(b"x" * (1024 * 1024 + 1))
+            unreadable_metadata = unreadable / "mod.info"
+            unreadable_metadata.write_text(
+                "name=Unreadable\nid=Unreadable\n", encoding="utf-8"
+            )
+            (readable / "mod.info").write_text(
+                "name=Readable\nid=Readable\n", encoding="utf-8"
+            )
+
+            real_open = os.open
+
+            def open_or_deny(path, *args, **kwargs):
+                if Path(path) == unreadable_metadata:
+                    raise PermissionError("fixture permission denied")
+                return real_open(path, *args, **kwargs)
+
+            with patch(
+                "zomboid_mod_manager.discovery.scanner.os.open",
+                side_effect=open_or_deny,
+            ):
+                result = scan_mods(local_roots=[root])
+
+            self.assertIn("Readable", {entry.mod_id for entry in result.entries})
+            candidates = {
+                entry.entry_path.name: entry.candidates[0] for entry in result.entries
+            }
+            self.assertTrue(
+                any(
+                    "exceeds the 1 MiB size limit" in message
+                    for message in candidates["Oversized"].diagnostics
+                )
+            )
+            self.assertTrue(
+                any(
+                    "Could not read mod.info" in message
+                    for message in candidates["Unreadable"].diagnostics
+                )
+            )
+
+    def test_metadata_invalid_as_utf8_and_windows_1252_is_diagnosed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "mods"
+            entry_path = root / "InvalidEncoding"
+            entry_path.mkdir(parents=True)
+            (entry_path / "mod.info").write_bytes(b"name=Invalid\nid=Bad\x81\n")
+
+            result = scan_mods(local_roots=[root])
+
+            candidate = result.entries[0].candidates[0]
+            self.assertTrue(
+                any(
+                    "UTF-8 or Windows-1252" in message
+                    for message in candidate.diagnostics
+                )
+            )
+
+    def test_linked_mod_metadata_is_skipped_and_reported(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "mods"
+            entry_path = root / "LinkedMetadata"
+            entry_path.mkdir(parents=True)
+            link = entry_path / "mod.info"
+            link.write_text("name=Linked\nid=Linked\n", encoding="utf-8")
+            path_type = type(link)
+            real_is_symlink = path_type.is_symlink
+
+            def mark_metadata_as_link(path: Path) -> bool:
+                if path == link:
+                    return True
+                return real_is_symlink(path)
+
+            with patch.object(path_type, "is_symlink", new=mark_metadata_as_link):
+                result = scan_mods(local_roots=[root])
+
+            self.assertFalse(result.entries)
+            self.assertTrue(
+                any(
+                    diagnostic.path == link and "linked paths" in diagnostic.message
+                    for diagnostic in result.diagnostics
+                )
+            )
 
 
 if __name__ == "__main__":

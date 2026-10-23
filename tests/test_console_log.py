@@ -54,7 +54,7 @@ WARN : Lua f:0> require("Vanilla/Module") failed"""
             link = Path(temporary) / "linked-console.txt"
             try:
                 link.symlink_to(path)
-            except (OSError, NotImplementedError):
+            except OSError, NotImplementedError:
                 self.skipTest("Symlink creation is not available in this environment.")
             with self.assertRaises(ConsoleLogError):
                 analyze_console_log(link)

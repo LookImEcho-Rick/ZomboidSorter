@@ -1,5 +1,22 @@
 # Progress
 
+## Discovery hardening (2026-10-22)
+
+- `mod.info` reads are capped at 1 MiB, including a bounded read if a file changes after its initial size check. Files too large to read, unreadable files, and files invalid as both UTF-8 and Windows-1252 remain visible with path-specific metadata diagnostics; one failure no longer aborts the scan.
+- Discovery skips symbolic links and Windows junctions at configured roots, Workshop items, mod entry folders, version/shared metadata folders, and candidate `mod.info` files. Skips appear as path-specific scan diagnostics.
+- Added focused scanner tests for oversized metadata, unreadable files, invalid UTF-8/Windows-1252 bytes, and skipped linked metadata. The linked-path case simulates link detection because this Windows environment does not permit creating symlinks.
+
+## Focused UI regression checks (2026-10-22)
+
+- Added checks that filtered active-list drops preserve the existing order, text and issue filters disable reorder controls, Build 41/42 previews select the observed root/shared/versioned metadata layouts, and Workshop BBCode renders while raw HTML and unsafe URL attributes stay escaped.
+- Validation: all four `test_mod_details.py` tests and the focused filtered-workspace UI test passed. Ruff check/format and `git diff --check` passed for the changed test files.
+
+## Real-game global-list acceptance (2026-10-22)
+
+- Applied a temporary marker through the installed ZomboidSorter UI to the local Build 42.21.0 global list (`C:\Users\echos\Zomboid\mods\default.txt`). The game log reported `version=42.21.0` and `loading MoreDescriptionForTraits42`, confirming the game read the applied global list at startup.
+- Project Zomboid reached its photosensitivity warning screen. Closed it without opening a save. Removed the marker through the app and restored the original global list byte-for-byte: 747 bytes, 23 Mod IDs, CRLF line endings, no UTF-8 BOM, SHA-256 `d00c9460bf9382b7f3086a69f47155ce17493b8315f8655552f2f39eb3215e40`. Timestamped backups from both applies remain in place.
+- This verifies global-list apply, launch handoff, and startup loading on this local installation. Gameplay behavior and loading a save were not tested; Windows 10 remains unverified.
+
 ## Python 3.14 requirement (2026-10-22)
 
 - Set Python 3.14 as the minimum supported version in package metadata and aligned the release workflow, development instructions, architecture notes, and project guidance with it. Existing local Python 3.14.7 build and test results are recorded below; the updated hosted release workflow has not run yet.
@@ -9,7 +26,7 @@
 - Chose GPL-3.0-or-later for original code. Created an independent wordmark/icon, fixture screenshots, end-user README, pinned Windows packaging constraints, Inno Setup script, checksum builder, and tagged-release GitHub Actions workflow. The workflow blocks binary publication until a documented Qt/WebEngine redistribution review is committed as `packaging/RELEASE_READY`.
 - Removed the unused generated `pysidedeploy.spec`, which contained an absolute developer-machine path. Generated caches, build output, virtual environments, and `.codex-checkpoints/` are Git-ignored. Useful fixtures, tests, and research remain.
 - Windows 11 local checks: 69 unit tests passed with one symlink-environment skip; Ruff check/format and compileall passed. PyInstaller 6.22.3 on Python 3.14.7 built the onedir app; Inno Setup 6.7.3 compiled a 151,796,348-byte installer and SHA-256 checksum. A silent install to a temporary path returned 0, and its GUI process stayed alive for five seconds. An installer-only 0.1.0→0.1.1 upgrade simulation preserved an isolated Mod Pack file byte-for-byte; silent uninstall returned 0, removed the app executable, and left that Mod Pack file intact. This was not an application-code upgrade.
-- A public GitHub repository was created at `LookImEcho-Rick/ZomboidSorter`. No installer has been attached to Releases. The actual Qt/WebEngine license-text, notice, and source-delivery review, clean-account/VM run, Windows 10 test, and real-game write/launch validation remain open. The app's global-list write tests used fixtures only.
+- A public GitHub repository was created at `LookImEcho-Rick/ZomboidSorter`. No installer has been attached to Releases. At this point, the Qt/WebEngine license-text, notice, and source-delivery review, isolated installer checks, Windows 10 test, and real-game write/launch validation remained open. The app's global-list write tests used fixtures only; later results are recorded below.
 
 Updated 2026-10-22 after the desktop UX refresh.
 
@@ -38,7 +55,7 @@ Updated 2026-10-22 after the desktop UX refresh.
 - Reworked Mod Workspace around Discover, Active Order, and selected details. Pack actions sit above the workspace, transfer/order controls sit with their lists, and the footer holds a single Refresh, Launch, Discard, and prominent Apply route. Advanced Preview remains a secondary header toggle; paths stay in Settings.
 - Added a shared Zomboid-inspired dark theme, two-line painted mod rows with issue/new badges, visible selection and focus states, and consistent dialog styling. Empty, scanning, scan-error, and unapplied-change messages remain explicit. The row delegate paints visible items without creating a widget per mod.
 - Native Windows fixture captures at 1440×850, 980×620, and 980×620 with 150% Qt scaling are in `build/ux-*.png`; the compact detail pane was tightened after visual review. These captures used temporary profile storage and fixture config only. No actual game configuration or installed mods were changed.
-- Validation: 16 focused UI tests and the full 65-test suite passed (one environment symlink skip). Ruff check and format passed for source, tests, and the native capture helper. The UI has not been verified against a live game installation or a packaged clean-machine build.
+- Validation: 16 focused UI tests and the full 65-test suite passed (one environment symlink skip). Ruff check and format passed for source, tests, and the native capture helper. At this stage, the UI had not been verified against a live game installation or a packaged installation.
 
 ## Mod Pack load and management window (2026-10-22)
 
@@ -125,14 +142,14 @@ Updated 2026-10-22 after the desktop UX refresh.
 
 ## Release limitations
 
-- The packaged app has been smoke-tested on the development machine. A clean Windows account/VM, Windows 10, and real-game apply/launch checks remain outstanding.
+- The packaged app has been smoke-tested in isolated locations on the development machine. Windows 10 coverage and upgrade from a previous version of the optimized installer remain unverified. Real-game global-list apply/launch acceptance was completed later, as recorded above.
 - Workshop API integration is response-mock tested, not live-tested. Subscription, update, and download flows are absent.
 - Exact Build 42 runtime selection/precedence, duplicate-Mod-ID winner behavior, and resource-specific file override/merge semantics remain unresolved. The UI labels candidate overlaps as potential.
 - Per-save and server configurations are intentionally unsupported. The original code is GPL-3.0-or-later. The technical Qt/WebEngine notice and source review is recorded in `packaging/RELEASE_READY`; the maintainer remains responsible for fulfilling the written source offer.
 
 ## Public release preparation (2026-10-22)
 
-- Created and pushed the public repository at `LookImEcho-Rick/ZomboidSorter`. The project has a GPL-3.0-or-later license, fixture-labeled README screenshots, the ZomboidSorter wordmark/icon, an Inno Setup per-user installer, and a tagged-release Actions workflow. The workflow requires `packaging/RELEASE_READY`, which now records the Qt/WebEngine notice and source review; clean-account and real-game checks remain separate release validation.
+- Created and pushed the public repository at `LookImEcho-Rick/ZomboidSorter`. The project has a GPL-3.0-or-later license, fixture-labeled README screenshots, the ZomboidSorter wordmark/icon, an Inno Setup per-user installer, and a tagged-release Actions workflow. The workflow requires `packaging/RELEASE_READY`, which records the Qt/WebEngine notice and source review. At this stage, isolated installer and real-game checks were still pending; later results are recorded below.
 - Added the maintainer's written source offer for exact bundled Qt/PySide6/WebEngine sources. The installer displays it before installation and includes it with GPL/LGPL, CPython, and PyInstaller license texts. GitHub Issues are the request channel.
 - Completed the pinned Qt redistribution inventory: offline appendices include all 138 Qt 6.12.0 attribution pages and 125 unique Qt WebEngine 6.140.0/Chromium 140 license pages, including their copyright lines and license texts. Added LGPL-2.1/3.0 and FDL-1.3 texts, runtime OpenSSL Apache-2.0, build-copied CPython/PyInstaller/Inno license texts, and a per-build component/version manifest. Added official source archive locations and recorded the source-offer commitment in `packaging/RELEASE_READY`.
 - The original Windows PyInstaller build excluded parallel Qt WebEngine debug resource copies after checking their release counterparts. It retained the full QML tree pending a dependency-backed trim; the Qt bundle minimization below supersedes that bundle.
@@ -144,7 +161,7 @@ Updated 2026-10-22 after the desktop UX refresh.
 - A fresh temporary Python 3.14.7 environment installed `.[dev,windows]` under the pinned Windows constraints. All 69 unit tests passed with one environment-only symlink skip; Ruff check, Ruff format check, and compileall passed.
 - Rebuilt the 0.1.0 onedir app and Inno installer. An isolated per-user install into a temporary directory launched and stayed open for eight seconds. A same-version reinstall preserved a temporary Mod Pack and the app settings registry key; silent uninstall removed the executable and preserved both. The temporary registry changes were restored to their original values, and the test install was removed.
 - The app's `MainWindow` created its embedded `QWebEngineView` in the fresh Qt environment and loaded the live Project Zomboid Steam Workshop page (`The Steam Workshop for Project Zomboid`, document ready state `complete`).
-- This non-elevated Windows Home session had no ready-to-use VM tooling (Hyper-V cmdlets, Windows Sandbox executable, VirtualBox, or QEMU were unavailable), so the full clean-OS VM/account pass was not possible. Only Python 3.14.7 is installed; the release workflow's Python 3.11 build (the configured version at that point) was not verified here. The remote has no tags or GitHub Releases, so this pass could not test an upgrade from a previous installer; the earlier installer-only 0.1.0→0.1.1 simulation remains the only upgrade evidence.
+- Only Python 3.14.7 is installed; the release workflow's Python 3.11 build (the configured version at that point) was not verified here. The remote had no tags or GitHub Releases at the time, so this pass could not test an upgrade from a previous installer; the earlier installer-only 0.1.0→0.1.1 simulation remains the only upgrade evidence.
 
 ## Qt bundle minimization (2026-10-22)
 
@@ -152,4 +169,9 @@ Updated 2026-10-22 after the desktop UX refresh.
 - The clean PyInstaller build now contains 19 Qt6 runtime DLLs, no QML directory, and no generic-touch, platform-input-context, or QML-tooling plugins. The bundle-scoped Qt appendix contains 57 pages (4,047 lines), selected from the 138-page source inventory; the full 125-page WebEngine/Chromium appendix remains (11,518 lines). Full pinned source appendices are stored as gzip files and expanded into readable installer notices at build time.
 - The notice generator checks the expected upstream page counts, inventories the actual runtime DLLs in `licenses/BUILD_COMPONENTS.txt`, and refuses to proceed if excluded QML/plugin groups reappear. The installer uses the generated notice set; readable HTML pages are staged under ignored `build/installer_payload/licenses/`, outside the app bundle.
 - The tracked source now stores the 27,018-line upstream HTML appendices as two gzip files (about 295 KB combined). Only the installer payload expands readable notices; `dist/ZomboidSorter/` contains no generated HTML attribution files.
-- PyInstaller clean build, notice generation, reduced-bundle app/WebEngine smoke, and installer compile passed. The 119,892,820-byte installer (`SHA-256 3ea0ea57e6a5eac9ce32b8f5dd17e49e8d783bf2b2f523f699e7e2aff0473265`) silently installed to a fresh temporary directory, launched under a system-only `PATH`, opened the Workshop tab with its bundled WebEngine process, and silently uninstalled. The preexisting app settings registry values were restored exactly. A full clean-OS VM check remains unavailable on this Windows Home host.
+- PyInstaller clean build, notice generation, reduced-bundle app/WebEngine smoke, and installer compile passed. The 119,892,820-byte installer (`SHA-256 3ea0ea57e6a5eac9ce32b8f5dd17e49e8d783bf2b2f523f699e7e2aff0473265`) silently installed to a fresh temporary directory, launched under a system-only `PATH`, opened the Workshop tab with its bundled WebEngine process, and silently uninstalled. The preexisting app settings registry values were restored exactly. These checks were performed on the build host.
+
+## MainWindow Workshop browser extraction (2026-10-22)
+
+- Moved the Steam Workshop tab controls, navigation, URL parsing, and lazy WebEngine lifecycle into `ui/workshop_browser.py` as `WorkshopBrowserPanel`. `MainWindow` now mounts the panel and opens its home page when the tab is first selected, reducing its Workshop-specific responsibilities while preserving lazy loading.
+- Validation: the two focused panel tests and the existing fixture-based MainWindow tab-switch test passed. The full 76-test suite passed with one environment-only symlink skip; Ruff check, project-wide formatting, and compileall passed. No separate live-page verification was run for this refactor.

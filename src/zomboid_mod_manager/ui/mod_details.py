@@ -368,7 +368,7 @@ def format_entry_details(
                 .astimezone()
                 .strftime("%Y-%m-%d %H:%M:%S %Z")
             )
-        except (OSError, OverflowError, ValueError):
+        except OSError, OverflowError, ValueError:
             pass
     if target_build != "all":
         build_name = "Build 41" if target_build == "41" else "Build 42"

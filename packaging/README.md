@@ -21,7 +21,7 @@ This produces `dist/installer/ZomboidSorter-<version>-windows-setup.exe` and a m
 ## Release
 
 1. Review the source and assets for private data and rights issues. Check the exact PySide6/Qt/WebEngine package versions, their third-party notices, and source availability. Record the reviewer, date, exact bundle version, license/source delivery method, and evidence in `packaging/RELEASE_READY`. The workflow intentionally refuses to publish without it.
-2. Run installer install, launch, same-version reinstall, upgrade from the previous version, and uninstall on a clean Windows VM/account. Check that the embedded Workshop page loads and user settings/Mod Packs remain after upgrade and uninstall. Test a real Project Zomboid global config only with an explicit safe test plan.
+2. Run installer install, launch, same-version reinstall, upgrade from the previous version, and uninstall in an isolated Windows install/account. Check that the embedded Workshop page loads and user settings/Mod Packs remain after upgrade and uninstall. Test a real Project Zomboid global config only with an explicit safe test plan.
 3. Set `project.version` in `pyproject.toml`, update `src/zomboid_mod_manager/__init__.py`, and commit. Push the commit and a matching `v<version>` tag to the GitHub repository. The `release-windows.yml` workflow checks that tag and version agree, runs tests/lint/format, builds the installer and checksum, and creates or updates the tagged GitHub Release with both assets.
 4. Verify both assets are downloadable from the Release page and that the checksum matches the installer.
 
