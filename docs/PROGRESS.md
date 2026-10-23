@@ -1,5 +1,28 @@
 # Progress
 
+## Build-aware overlap triage and packaged launch checks (2026-10-23)
+
+- File-overlap scans now use the selected metadata target and, by default, only Mod IDs in the staged active order. A checkbox includes all discovered mods; selecting **All candidates** includes every metadata version. The report states its scope. It retains every grouped path within existing scan limits, searches the full result set, and loads table rows in pages of 250.
+- Added a pull-request/manual Windows installer smoke workflow that builds a fresh installer and verifies launch plus clean close in standard and portable modes. The tagged-release smoke test now performs the same launch checks in addition to its existing upgrade/reinstall, mode-refusal, uninstall, and data-preservation checks.
+- Validation: all 8 file-overlap fixture tests and all 32 UI tests passed; Ruff checks and formatting, PowerShell parser validation, and `git diff --check` passed. GitHub-hosted workflow execution is pending a push to a branch. Steam reports the installed `legacy41` branch as Build 41.78.21. A read-only scan found 62 entries, 39 Build 41 root metadata candidates, and 12,058 media files; the all-discovered overlap pass found 1,389 differing comparisons across 344 paths. The 23 staged active IDs produced 3 root candidates but no indexable media files, so the active-scope result is inconclusive for runtime conflicts. No game launch, save edit, or Workshop write was performed; the prior Build 42.21 directory was copied to `C:\Games\ProjectZomboid-Build42.21-backup`.
+
+## Repeatable installer smoke workflow (2026-10-23)
+
+- Added a GitHub-hosted Windows smoke test for standard and portable installs, upgrading from the previous stable installer when available, refusing silent cross-mode changes, uninstalling, and checking seeded Mod Pack/settings sentinels survive. The script is restricted to GitHub Actions and retains install logs when it fails.
+- The release workflow now downloads and checksum-verifies the previous release installer before using it, then runs the smoke test before publishing. First-release and rerun cases reinstall the current installer when there is no earlier stable version.
+- Validation: PowerShell parser validation and `git diff --check` passed. The hosted workflow and installer were not executed in this task; no local installer, app settings, game config, or game files were touched. This automated check does not cover the GUI, Workshop browser, updater handoff, interactive cross-mode prompts, Windows 10, or another PC.
+
+## Grouped file-overlap triage (2026-10-23)
+
+- The opt-in overlap report now counts differing and unverified comparisons separately and groups them by shared relative path. A non-modal table shows the paths with the most pairs, Mod IDs, and status counts; search matches paths or Mod IDs, and a status filter narrows groups to different-content or unverified findings. Selecting a path shows bounded source examples.
+- Validation: all five file-overlap fixture tests and all 30 UI tests passed; Ruff checks and formatting passed. Results remain simulated on fixtures, and overlaps still do not establish a runtime conflict.
+
+## GitHub release provenance (2026-10-23)
+
+- The Windows release workflow now creates GitHub artifact attestations for the installer and checksum using GitHub's OIDC-backed signing flow. The README and packaging guide include a GitHub CLI command that verifies the downloaded installer against the repository and release workflow.
+- The installer remains Authenticode-unsigned, so SmartScreen may still warn. The workflow change has not yet run on GitHub; the already published v0.1.4 predates the attestation step and has no attestation from it.
+- Validation: workflow permissions and action syntax were checked against GitHub's current artifact-attestation documentation. Attestation creation and consumer verification await a future tagged workflow run.
+
 ## Version 0.1.4 release preparation (2026-10-23)
 
 - Added standard and portable installer modes with optional shortcuts, retained setup type on upgrades, and warned/refused when changing data modes interactively/silently. Portable mode stores settings and Mod Packs next to the app; uninstall and mode changes preserve the old data location.

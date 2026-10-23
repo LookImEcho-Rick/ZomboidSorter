@@ -16,8 +16,8 @@ ZomboidSorter discovers local and Steam Workshop mods, shows metadata and warnin
 | --- | --- |
 | Windows 11, 64-bit | Development and packaged launch checked on this machine. |
 | Windows 10, 64-bit | Intended target; Windows 10 and other-PC installer tests remain unverified. |
-| Project Zomboid Build 42 | Primary target. A local 42.21.0 installation was scanned read-only. |
-| Project Zomboid Build 41 | Root `mod.info` metadata is recognized in fixtures; live B41 behavior is unverified. |
+| Project Zomboid Build 42 | Primary target. A local 42.21.0 installation was scanned read-only before switching Steam to Build 41; its files were backed up. |
+| Project Zomboid Build 41 | Steam `legacy41` Build 41.78.21 was installed and the local Workshop library was scanned read-only; the game loader behavior remains unverified. |
 
 Discovery is read-only. It skips symbolic links and junctions and limits each `mod.info` read to 1 MiB; unreadable, oversized, or undecodable files are reported with their path. The app changes only the global `Zomboid/mods/default.txt` list after confirmation. It makes a timestamped backup, checks for concurrent edits, writes atomically, and reads the result back. Per-save and server configuration are unsupported. It never deletes installed mods or saves. A temporary global-list apply and restore was verified with the local Build 42.21.0 installation: the startup log showed the marker Mod ID, and the original list was restored byte-for-byte. The game reached its startup warning screen; no save was opened. Gameplay behavior and loading a save were not tested; testing on other PCs and Windows 10 remains unverified.
 
@@ -39,6 +39,15 @@ The screenshot shows v0.1.0; current downloads show their own version in the fil
 
 It is okay to continue when you downloaded the installer from the official [ZomboidSorter Releases page](https://github.com/LookImEcho-Rick/ZomboidSorter/releases) and its SHA-256 matches the adjacent `.sha256` file. If Windows shows **More info**, select it, then select **Run anyway**. If Windows does not offer that option, or the filename or checksum differs, choose **Don’t run**; for a managed PC, ask its administrator rather than trying to bypass its policy. Download the installer again only from the official Releases page.
 
+For releases built by the attestation-enabled workflow, GitHub CLI can also verify the installer's signed build provenance. In the download folder, run:
+
+```powershell
+$installer = Get-ChildItem .\ZomboidSorter-*-windows-setup.exe | Select-Object -First 1
+gh attestation verify $installer.FullName --repo LookImEcho-Rick/ZomboidSorter --signer-workflow LookImEcho-Rick/ZomboidSorter/.github/workflows/release-windows.yml
+```
+
+The attestation identifies the repository and workflow that built the exact file. It does not Authenticode-sign the installer or suppress SmartScreen. Releases published before the attestation workflow was added do not have this attestation.
+
 To compare the hash in PowerShell, run `Get-FileHash .\ZomboidSorter-0.1.4-windows-setup.exe -Algorithm SHA256` in the download folder and compare its `Hash` value with the `.sha256` file. Replace `0.1.4` with the downloaded version if it changes.
 
 ## First launch and basic use
@@ -50,7 +59,7 @@ To compare the hash in PowerShell, run `Get-FileHash .\ZomboidSorter-0.1.4-windo
 4. Use **Save as Pack…** to keep the staged list as an app-owned Mod Pack. **Mod Packs…** can import, export, recover, and apply packs. Applying a pack updates the same global list with a backup.
 5. Select **Apply To Project Zomboid…** to confirm a global-list write. **Apply & Launch…** applies staged changes first and asks Windows to hand the game link to Steam; successful handoff does not prove that the game started.
 
-The Steam collection importer reads public Workshop data and saves a pack; it does not subscribe, download, or update mods. The optional overlap and console-log checks report evidence, not confirmed in-game conflicts.
+The Steam collection importer reads public Workshop data and saves a pack; it does not subscribe, download, or update mods. The optional file-overlap check uses the selected metadata target and staged active Mod IDs by default. Clear **Staged active mods only** to include every discovered mod, or select **All candidates** under Target metadata to inspect every metadata version. Its search covers every analyzed shared path; results load in pages. Overlaps and console-log checks report evidence, not confirmed in-game conflicts.
 
 ## Screenshots
 

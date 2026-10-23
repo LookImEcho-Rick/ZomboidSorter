@@ -66,10 +66,10 @@ class ScanWorker(QThread):
 
 
 class DiagnosticWorker(QThread):
-    result_ready = Signal(str)
+    result_ready = Signal(object)
     failed = Signal(str)
 
-    def __init__(self, operation: Callable[[], str]) -> None:
+    def __init__(self, operation: Callable[[], object]) -> None:
         super().__init__()
         self._operation = operation
 

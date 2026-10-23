@@ -1,6 +1,6 @@
 # Project Zomboid mod-system research
 
-This is the current evidence summary, refreshed for Milestones 6–9 on 2026-10-22. Build 42 is the primary target; the local installation reports 42.21.0. This is not a complete game-format specification. Sources distinguish developer material, community-maintained API references, local source, and unresolved behavior. The global mod list and installed metadata were read-only; no saves or game files were modified.
+This is the current evidence summary, refreshed for Milestones 6–9 on 2026-10-23. Build 42 is the primary target. The local Steam install was first inspected at 42.21.0; Steam is now on its official `legacy41` branch, which reports Build 41.78.21. The prior Build 42 directory was copied to a separate backup before that branch update. This is not a complete game-format specification. Sources distinguish developer material, community-maintained API references, local source, and unresolved behavior. The compatibility scan read local mod and Workshop data; it did not write game configuration, saves, or Workshop content.
 
 ## Verified structure and identities
 
@@ -63,4 +63,9 @@ The local Steam installation and the user's global mod list were inspected read-
 - An opt-in read-only media scan indexed 17,120 files and found 2,732 potential differing/unverified path pairs. It shows 100 source-backed examples and makes no claim that every overlap is an in-game conflict; file-type behavior and candidate selection remain unresolved.
 - The local `console.txt` parser read 2,398 lines and reported zero high-signal findings. Generic engine errors and vanilla `require` warnings are not promoted to mod faults.
 
+## Build 41.78.21 Workshop scan (2026-10-23)
+
+- Steam Properties showed `legacy41` / Build 41.78.21 selected; the appmanifest recorded `BetaKey = legacy41` after the update completed. The prior Build 42.21 install directory was copied outside the repository before changing branches.
+- A read-only scan of the local mods and Workshop roots found 62 entries and 39 root-style Build 41 metadata candidates; the Build 41 overlap analyzer indexed 12,058 media files and reported 1,389 differing comparisons across 344 paths for all discovered mods. The current staged active list has 23 IDs, of which three resolve to root metadata candidates with no indexable media files, so that staged-only result does not establish the absence of conflicts.
+- No game process was launched and no save, Workshop item, game configuration, or installed mod was written. This verifies the app against real local metadata and files, but not the game's runtime loader, active content precedence, or whether a reported path overlap causes an in-game conflict.
 The implementation writes only the global default list after explicit confirmation. It never targets per-save `mods.txt`, `Sandbox Presets`, server `.ini`, or `ActiveMods` directories. Integration writes were tested on temporary fixtures only.

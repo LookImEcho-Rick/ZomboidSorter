@@ -11,11 +11,16 @@ on:
         required: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   windows:
     runs-on: windows-2022
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -59,6 +64,71 @@ jobs:
       - name: Build installer
         shell: pwsh
         run: .\packaging\build_installer.ps1 -SkipAppBuild
+      - name: Check redistribution approval
+        shell: pwsh
+        run: |
+          if (-not (Test-Path packaging/RELEASE_READY -PathType Leaf)) {
+            throw 'Binary release is blocked until packaging/RELEASE_READY is committed after the Qt/WebEngine license and source review.'
+          }
+      - name: Download previous stable installer for upgrade smoke test
+        id: previous-release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $currentVersionText = python -c 'import pathlib,tomllib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"])'
+          $currentVersion = [version]$currentVersionText
+          $releaseTags = @(gh release list --repo $env:GITHUB_REPOSITORY --limit 100 --exclude-drafts --exclude-pre-releases --json tagName --jq '.[].tagName')
+          if ($LASTEXITCODE -ne 0) { throw 'Could not list previous stable GitHub releases.' }
+          $previousTag = $releaseTags |
+            Where-Object { $_ -match '^v\d+\.\d+\.\d+$' -and [version]($_.Substring(1)) -lt $currentVersion } |
+            Sort-Object -Descending { [version]($_.Substring(1)) } |
+            Select-Object -First 1
+          if (-not $previousTag) {
+            Write-Host 'No earlier stable release is available; smoke test will reinstall the current installer.'
+            'installer_path=' >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          $previousVersion = $previousTag.Substring(1)
+          $installerName = "ZomboidSorter-$previousVersion-windows-setup.exe"
+          $downloadDirectory = Join-Path $env:RUNNER_TEMP 'zomboid-sorter-previous-release'
+          New-Item -ItemType Directory -Path $downloadDirectory -Force | Out-Null
+          gh release download $previousTag --repo $env:GITHUB_REPOSITORY --pattern $installerName --dir $downloadDirectory
+          if ($LASTEXITCODE -ne 0) { throw "Could not download previous installer $installerName." }
+          gh release download $previousTag --repo $env:GITHUB_REPOSITORY --pattern "$installerName.sha256" --dir $downloadDirectory
+          if ($LASTEXITCODE -ne 0) { throw "Could not download checksum for $installerName." }
+          $previousInstaller = Join-Path $downloadDirectory $installerName
+          $checksumPath = "$previousInstaller.sha256"
+          $checksumLine = (Get-Content -LiteralPath $checksumPath -Raw -Encoding ascii).Trim()
+          $checksumMatch = [regex]::Match($checksumLine, '^([0-9a-fA-F]{64})\s+\*?' + [regex]::Escape($installerName) + '$')
+          if (-not $checksumMatch.Success) { throw 'Previous installer checksum file has an unexpected format.' }
+          $actualHash = (Get-FileHash -LiteralPath $previousInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualHash -ne $checksumMatch.Groups[1].Value.ToLowerInvariant()) { throw 'Previous installer checksum verification failed.' }
+          "installer_path=$previousInstaller" >> $env:GITHUB_OUTPUT
+      - name: Smoke-test standard and portable installer modes
+        shell: pwsh
+        env:
+          PREVIOUS_INSTALLER_PATH: ${{ steps.previous-release.outputs.installer_path }}
+        run: |
+          $installers = @(Get-ChildItem -LiteralPath 'dist/installer' -File -Filter 'ZomboidSorter-*-windows-setup.exe')
+          if ($installers.Count -ne 1) { throw "Expected exactly one current installer, found $($installers.Count)." }
+          $arguments = @{ InstallerPath = $installers[0].FullName }
+          if ($env:PREVIOUS_INSTALLER_PATH) { $arguments.PreviousInstallerPath = $env:PREVIOUS_INSTALLER_PATH }
+          .\packaging\smoke_test_installer.ps1 @arguments
+      - name: Upload installer smoke logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-smoke-logs
+          path: ${{ runner.temp }}/ZomboidSorter-installer-smoke-*/logs/*.log
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Attest installer provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            dist/installer/ZomboidSorter-*-windows-setup.exe
+            dist/installer/ZomboidSorter-*-windows-setup.exe.sha256
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -66,12 +136,6 @@ jobs:
           path: |
             dist/installer/*.exe
             dist/installer/*.sha256
-      - name: Check redistribution approval
-        shell: pwsh
-        run: |
-          if (-not (Test-Path packaging/RELEASE_READY -PathType Leaf)) {
-            throw 'Binary release is blocked until packaging/RELEASE_READY is committed after the Qt/WebEngine license and source review.'
-          }
       - name: Publish tagged GitHub Release
         shell: pwsh
         env:

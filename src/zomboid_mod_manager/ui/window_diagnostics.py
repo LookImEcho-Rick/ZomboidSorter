@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFileDialog
 
 from zomboid_mod_manager.diagnostics.console_log import (
@@ -13,10 +14,12 @@ from zomboid_mod_manager.diagnostics.console_log import (
 )
 from zomboid_mod_manager.diagnostics.dependencies import analyze_dependencies
 from zomboid_mod_manager.diagnostics.file_overlaps import (
+    FileOverlapReport,
     analyze_file_overlaps,
     format_file_overlap_report,
 )
 
+from .file_overlap_dialog import FileOverlapDialog
 from .window_workers import (
     DiagnosticWorker,
 )
@@ -109,9 +112,19 @@ class DiagnosticsMixin:
             self.status.setText("Scan the mod library before analyzing file overlaps.")
             return
         result = self._last_result
+        target_build = self._metadata_target_build()
+        active_mod_ids = (
+            tuple(self._staged_mod_ids)
+            if self.file_overlap_active_only.isChecked()
+            else None
+        )
         self._start_diagnostic(
             "file-overlaps",
-            lambda: format_file_overlap_report(analyze_file_overlaps(result)),
+            lambda: analyze_file_overlaps(
+                result,
+                target_build=target_build,
+                active_mod_ids=active_mod_ids,
+            ),
         )
 
     def _analyze_console_log(self) -> None:
@@ -132,7 +145,7 @@ class DiagnosticsMixin:
 
         self._start_diagnostic("console-log", operation)
 
-    def _start_diagnostic(self, key: str, operation: Callable[[], str]) -> None:
+    def _start_diagnostic(self, key: str, operation: Callable[[], object]) -> None:
         if self._diagnostic_worker is not None and self._diagnostic_worker.isRunning():
             self.status.setText("A diagnostic analysis is already running.")
             return
@@ -153,7 +166,21 @@ class DiagnosticsMixin:
         worker.finished.connect(self._finish_diagnostic)
         worker.start()
 
-    def _show_extra_diagnostic(self, key: str, text: str) -> None:
+    def _show_extra_diagnostic(self, key: str, result: object) -> None:
+        if key == "file-overlaps" and isinstance(result, FileOverlapReport):
+            text = format_file_overlap_report(result)
+            self._extra_diagnostics[key] = text
+            self._update_diagnostics()
+            dialog = FileOverlapDialog(result, self)
+            dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+            self._file_overlap_dialog = dialog
+            dialog.finished.connect(
+                lambda _result: setattr(self, "_file_overlap_dialog", None)
+            )
+            dialog.show()
+            self.status.setText("Read-only file-overlap report opened.")
+            return
+        text = str(result)
         self._extra_diagnostics[key] = text
         self._update_diagnostics()
         self.status.setText("Read-only diagnostic analysis complete.")

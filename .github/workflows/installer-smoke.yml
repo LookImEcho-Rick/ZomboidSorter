@@ -1,0 +1,54 @@
+name: Windows installer smoke
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/installer-smoke.yml"
+      - "packaging/**"
+      - "pyproject.toml"
+      - "src/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-installer:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          architecture: x64
+      - name: Install pinned build dependencies
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\python.exe -m pip install -e ".[dev,windows]" -c packaging\constraints-windows.txt
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --version=6.7.1 --yes --no-progress
+      - name: Build app bundle and installer
+        shell: pwsh
+        run: |
+          .\packaging\build_windows.ps1
+          .\packaging\build_installer.ps1 -SkipAppBuild
+      - name: Smoke-test install, launch, upgrade mode, and uninstall
+        shell: pwsh
+        run: |
+          $python = Join-Path (Get-Location) '.venv\Scripts\python.exe'
+          $version = (& $python -c 'import pathlib,tomllib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"])').Trim()
+          if ($LASTEXITCODE -ne 0 -or -not $version) { throw 'Could not read the packaged app version.' }
+          $installer = Join-Path (Get-Location) "dist\installer\ZomboidSorter-$version-windows-setup.exe"
+          if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) { throw "Installer output is missing: $installer" }
+          .\packaging\smoke_test_installer.ps1 -InstallerPath $installer
+      - name: Upload installer smoke logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-smoke-logs
+          path: ${{ runner.temp }}/ZomboidSorter-installer-smoke-*/logs/*.log
+          if-no-files-found: ignore
+          retention-days: 7

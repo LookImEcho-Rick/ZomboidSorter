@@ -16,6 +16,11 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from zomboid_mod_manager import __version__
+from zomboid_mod_manager.diagnostics.file_overlaps import (
+    FileOverlap,
+    FileOverlapPathGroup,
+    FileOverlapReport,
+)
 from zomboid_mod_manager.discovery.scanner import ScanCancelled
 from zomboid_mod_manager.domain import DetectedPaths, Diagnostic, ScanResult
 from zomboid_mod_manager.gameio.active_mods import read_active_mods
@@ -24,6 +29,7 @@ from zomboid_mod_manager.sorting.user_rules import (
     UserOrderRule,
     parse_user_order_rules,
 )
+from zomboid_mod_manager.ui.file_overlap_dialog import FileOverlapDialog
 from zomboid_mod_manager.ui.main_window import MainWindow
 from zomboid_mod_manager.ui.workshop_browser import WorkshopBrowserPanel
 from zomboid_mod_manager.updates import UpdateRelease
@@ -1453,6 +1459,8 @@ class MainWindowTests(unittest.TestCase):
         self.assertIn(
             "potential file overlaps", window.diagnostics.toPlainText().casefold()
         )
+        self.assertIsNotNone(window._file_overlap_dialog)
+        window._file_overlap_dialog.close()
         deadline = time.monotonic() + 5
         while not window.console_log_button.isEnabled() and time.monotonic() < deadline:
             self.app.processEvents()
@@ -1478,6 +1486,173 @@ class MainWindowTests(unittest.TestCase):
             QTest.qWait(10)
         self.assertIn("missing-template", window.diagnostics.toPlainText().casefold())
         window.close()
+
+    def test_file_overlap_dialog_filters_by_path_mod_id_and_status(self) -> None:
+        first_example = FileOverlap(
+            "media/scripts/shared.lua",
+            "AlphaMod",
+            "BetaMod",
+            Path("alpha/media/scripts/shared.lua"),
+            Path("beta/media/scripts/shared.lua"),
+            Path("alpha/mod.info"),
+            Path("beta/mod.info"),
+            "different",
+        )
+        second_example = FileOverlap(
+            "media/scripts/shared.lua",
+            "GammaMod",
+            "DeltaMod",
+            Path("gamma/media/scripts/shared.lua"),
+            Path("delta/media/scripts/shared.lua"),
+            Path("gamma/mod.info"),
+            Path("delta/mod.info"),
+            "unverified",
+        )
+        report = FileOverlapReport(
+            candidate_count=4,
+            entry_count=4,
+            target_build="all",
+            staged_only=False,
+            files_scanned=4,
+            overlap_count=3,
+            different_count=2,
+            unverified_count=1,
+            unique_path_count=2,
+            path_groups=(
+                FileOverlapPathGroup(
+                    "media/scripts/shared.lua",
+                    2,
+                    1,
+                    1,
+                    ("AlphaMod", "BetaMod", "GammaMod", "DeltaMod"),
+                    (first_example, second_example),
+                ),
+                FileOverlapPathGroup(
+                    "media/textures/unique.png",
+                    1,
+                    1,
+                    0,
+                    ("AlphaMod", "OmegaMod"),
+                    (first_example,),
+                ),
+            ),
+            path_groups_limited=False,
+            overlaps=(first_example, second_example),
+            skipped_files=0,
+            truncated=False,
+            details_limited=True,
+        )
+        dialog = FileOverlapDialog(report)
+        self.addCleanup(dialog.close)
+
+        self.assertEqual(dialog.table.rowCount(), 2)
+        dialog.status_filter.setCurrentIndex(1)
+        self.assertEqual(dialog.table.rowCount(), 2)
+        dialog.search.setText("OmegaMod")
+        self.assertEqual(dialog.table.rowCount(), 1)
+        self.assertEqual(dialog.table.item(0, 0).text(), "media/textures/unique.png")
+        dialog.status_filter.setCurrentIndex(2)
+        self.assertEqual(dialog.table.rowCount(), 0)
+        dialog.search.clear()
+        self.assertEqual(dialog.table.rowCount(), 1)
+        self.assertIn("content comparison unavailable", dialog.details.toPlainText())
+
+    def test_file_overlap_dialog_searches_all_paths_and_loads_more_rows(self) -> None:
+        groups = []
+        for index in range(300):
+            relative_path = f"media/scripts/shared-{index:03}.lua"
+            mod_id = f"Mod{index:03}"
+            example = FileOverlap(
+                relative_path,
+                mod_id,
+                "OtherMod",
+                Path(f"{mod_id}/{relative_path}"),
+                Path(f"OtherMod/{relative_path}"),
+                Path(f"{mod_id}/mod.info"),
+                Path("OtherMod/mod.info"),
+                "different",
+            )
+            groups.append(
+                FileOverlapPathGroup(
+                    relative_path,
+                    1,
+                    1,
+                    0,
+                    (mod_id, "OtherMod"),
+                    (example,),
+                )
+            )
+        report = FileOverlapReport(
+            candidate_count=2,
+            entry_count=2,
+            target_build="42.21.0",
+            staged_only=True,
+            files_scanned=600,
+            overlap_count=300,
+            different_count=300,
+            unverified_count=0,
+            unique_path_count=300,
+            path_groups=tuple(groups),
+            path_groups_limited=False,
+            overlaps=tuple(group.examples[0] for group in groups[:100]),
+            skipped_files=0,
+            truncated=False,
+            details_limited=True,
+        )
+        dialog = FileOverlapDialog(report)
+        self.addCleanup(dialog.close)
+
+        self.assertEqual(dialog.table.rowCount(), 250)
+        self.assertFalse(dialog.load_more_button.isHidden())
+        self.assertIn(
+            "search covers all 300 analyzed paths", dialog.result_status.text()
+        )
+        dialog.search.setText("Mod299")
+        self.assertEqual(dialog.table.rowCount(), 1)
+        self.assertEqual(dialog.table.item(0, 0).text(), "media/scripts/shared-299.lua")
+        dialog.search.clear()
+        self.assertEqual(dialog.table.rowCount(), 250)
+        dialog.load_more_button.click()
+        self.assertEqual(dialog.table.rowCount(), 300)
+        self.assertTrue(dialog.load_more_button.isHidden())
+
+    def test_file_overlap_analysis_uses_selected_target_and_active_scope(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        window, _config_path = self._make_launch_window(Path(temporary.name))
+        result = ScanResult((), (), ())
+        window._last_result = result
+        window._staged_mod_ids = ["AlphaMod", "BetaMod"]
+        window.metadata_preview_target.setCurrentIndex(
+            window.metadata_preview_target.findData("41")
+        )
+
+        with (
+            patch.object(window, "_start_diagnostic") as start_diagnostic,
+            patch(
+                "zomboid_mod_manager.ui.window_diagnostics.analyze_file_overlaps"
+            ) as analyze,
+        ):
+            window.file_overlap_active_only.setChecked(True)
+            window._analyze_file_overlaps()
+            self.assertEqual(start_diagnostic.call_args.args[0], "file-overlaps")
+            start_diagnostic.call_args.args[1]()
+            analyze.assert_called_once_with(
+                result,
+                target_build="41",
+                active_mod_ids=("AlphaMod", "BetaMod"),
+            )
+
+            start_diagnostic.reset_mock()
+            analyze.reset_mock()
+            window.file_overlap_active_only.setChecked(False)
+            window._analyze_file_overlaps()
+            start_diagnostic.call_args.args[1]()
+            analyze.assert_called_once_with(
+                result,
+                target_build="41",
+                active_mod_ids=None,
+            )
 
 
 if __name__ == "__main__":

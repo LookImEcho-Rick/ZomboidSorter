@@ -266,6 +266,16 @@ class WindowLayoutMixin:
         self.file_overlap_button = QPushButton("Analyze File Overlaps…")
         self.file_overlap_button.clicked.connect(self._analyze_file_overlaps)
         diagnostic_actions.addWidget(self.file_overlap_button)
+        self.file_overlap_active_only = QCheckBox("Staged active mods only")
+        self.file_overlap_active_only.setChecked(True)
+        self.file_overlap_active_only.setAccessibleName(
+            "Limit file overlap analysis to staged active mods"
+        )
+        self.file_overlap_active_only.setToolTip(
+            "Compare only Mod IDs in the staged active order. Clear this to include all discovered mods. "
+            "The selected metadata target controls which candidates are analyzed."
+        )
+        diagnostic_actions.addWidget(self.file_overlap_active_only)
         self.console_log_button = QPushButton("Analyze Console Log…")
         self.console_log_button.clicked.connect(self._analyze_console_log)
         diagnostic_actions.addWidget(self.console_log_button)
