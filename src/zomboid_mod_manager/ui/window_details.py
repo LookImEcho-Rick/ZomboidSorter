@@ -50,6 +50,7 @@ class DetailsMixin:
             self.open_folder_button.setProperty("entryPath", None)
             self.open_folder_button.setEnabled(False)
             return
+        self._library_selected_key = key
         self.inspect_library_button.setEnabled(True)
         self._display_entry(entry)
 

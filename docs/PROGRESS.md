@@ -1,5 +1,11 @@
 # Progress
 
+## Library table selection across scans and search (2026-10-24)
+
+- The Library & Diagnostics table lost its selected entry whenever scan rows were rebuilt, even for an equivalent result. It now tracks the physical entry key, restores the selected row and scroll position when that key remains visible, and keeps the key while search temporarily hides it. Clearing search reselects the entry. If a later scan removes it, the selected key, description, preview, and external actions are cleared with an explanation.
+- A regression first reproduced the lost selection, then covered equivalent results, a hidden search result across another scan, clearing that search, and removal. It also keeps Library Details authoritative when a different workspace row has a current selection. All 59 UI tests passed. This is offscreen fixture verification; no live game files or packaged binary were changed.
+- Next useful gate: build and smoke-test the accumulated source locally on Windows before any push that would publish a rolling update. Build 42 gameplay behavior remains separately unverified.
+
 ## Selected mod removed by a later scan (2026-10-24)
 
 - A changed-scan fixture reproduced a stale Details state: an inactive mod selected in Discover disappeared from the scan, but its description and **Open Folder** action still pointed to the old entry. When the inspected Mod ID no longer exists in either rebuilt list, Details now says the mod is no longer in the scanned folders and clears the old description, preview, selected-entry state, and external actions. A shared Details reset keeps this consistent with missing/duplicate active IDs.

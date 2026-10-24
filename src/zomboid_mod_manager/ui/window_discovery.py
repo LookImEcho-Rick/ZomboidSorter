@@ -32,6 +32,9 @@ from .window_workers import (
 
 _SCAN_CACHE_SECONDS = 30.0
 _SCAN_CACHE_MIN_SECONDS = 0.25
+_HIDDEN_LIBRARY_SELECTION_MESSAGE = (
+    "The selected library entry is hidden by search. Clear the search to inspect it."
+)
 
 
 class DiscoveryMixin:
@@ -434,6 +437,30 @@ class DiscoveryMixin:
         self._shutdown_workers = ()
         self.close()
 
+    def _restore_library_selection(
+        self, _query: str | None = None, *, show_hidden: bool = True
+    ) -> bool:
+        selected_key = self._library_selected_key
+        if selected_key is None or selected_key not in self._entries:
+            return False
+        for row in range(self.table_model.rowCount()):
+            if (
+                self.table_model.item(row, 0).data(Qt.ItemDataRole.UserRole)
+                == selected_key
+            ):
+                index = self._proxy.mapFromSource(self.table_model.index(row, 0))
+                if index.isValid():
+                    self.table.setCurrentIndex(index)
+                    return True
+                break
+        self.table.selectionModel().clearCurrentIndex()
+        self.table.clearSelection()
+        self.inspect_library_button.setEnabled(False)
+        if show_hidden and self.main_tabs.currentWidget() is self.library_page:
+            self._clear_entry_details()
+            self.details.setPlainText(_HIDDEN_LIBRARY_SELECTION_MESSAGE)
+        return False
+
     def _show_result(self, result: ScanResult) -> None:
         if self._shutdown_requested:
             return
@@ -484,6 +511,8 @@ class DiscoveryMixin:
             0.0, self._last_scan_at - self._active_scan_started_at
         )
         self._last_scan_label = datetime.now().astimezone().strftime("%H:%M:%S")
+        selected_table_key = self._library_selected_key
+        table_scroll = self.table.verticalScrollBar().value()
         self._entries = {entry.key: entry for entry in result.entries}
         self.table_model.removeRows(0, self.table_model.rowCount())
         for entry in result.entries:
@@ -500,6 +529,17 @@ class DiscoveryMixin:
             row[0].setData(entry.key, Qt.ItemDataRole.UserRole)
             self.table_model.appendRow(row)
 
+        restored_table = self._restore_library_selection(show_hidden=False)
+        if restored_table:
+            self.table.verticalScrollBar().setValue(table_scroll)
+        else:
+            self.table.selectionModel().clearCurrentIndex()
+            self.table.clearSelection()
+            self.inspect_library_button.setEnabled(False)
+        restored_table_entry = (
+            self._entries[selected_table_key] if restored_table else None
+        )
+
         self.details.setPlainText(
             "Select a mod entry to inspect its metadata candidates.\n\n"
             f"Workshop items: {len(result.workshop_items)}\n"
@@ -510,7 +550,23 @@ class DiscoveryMixin:
         self._clear_preview(
             "PROJECT ZOMBOID\nMOD DETAILS", "Select a mod to view its declared poster."
         )
+        removed_table_selection = (
+            selected_table_key is not None and selected_table_key not in self._entries
+        )
+        if removed_table_selection:
+            self._library_selected_key = None
+            self._clear_entry_details()
         self._refresh_management_lists()
+        if self.main_tabs.currentWidget() is self.library_page:
+            if restored_table:
+                self._display_entry(restored_table_entry)
+            elif selected_table_key is not None:
+                self._clear_entry_details()
+                self.details.setPlainText(
+                    "The selected library entry is no longer in the scanned folders."
+                    if removed_table_selection
+                    else _HIDDEN_LIBRARY_SELECTION_MESSAGE
+                )
         self._update_apply_enabled()
         warning_count = self._update_diagnostics()
         new_content = []

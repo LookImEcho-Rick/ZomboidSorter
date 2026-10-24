@@ -2593,6 +2593,74 @@ class MainWindowTests(unittest.TestCase):
             self.assertIn("no longer", window.details.toPlainText().casefold())
             self.assertIn("No description", window.description.toPlainText())
 
+    def test_library_selection_survives_equivalent_scan_and_clears_when_removed(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            window, _ = self._make_launch_window(Path(temporary))
+            self._wait_for_background_workers(window)
+            other_item = next(
+                window.available_list.item(row)
+                for row in range(window.available_list.count())
+                if window.available_list.item(row).data(Qt.ItemDataRole.UserRole)
+                == "RepeatedDescription"
+            )
+            window.available_list.setCurrentItem(other_item)
+            window.main_tabs.setCurrentWidget(window.library_page)
+            result = window._last_result
+            selected_entry = next(
+                entry for entry in result.local_entries if entry.mod_id == "LocalShared"
+            )
+            source_row = next(
+                row
+                for row in range(window.table_model.rowCount())
+                if window.table_model.item(row, 0).data(Qt.ItemDataRole.UserRole)
+                == selected_entry.key
+            )
+            selected_index = window._proxy.mapFromSource(
+                window.table_model.index(source_row, 0)
+            )
+            window.table.setCurrentIndex(selected_index)
+            self.assertTrue(window.inspect_library_button.isEnabled())
+
+            window._show_result(result)
+            current = window.table.currentIndex()
+            self.assertTrue(current.isValid())
+            self.assertEqual(
+                current.sibling(current.row(), 0).data(Qt.ItemDataRole.UserRole),
+                selected_entry.key,
+            )
+            self.assertIn("Mod ID: LocalShared", window.details.toPlainText())
+
+            window.search.setText("no matching library entry")
+            self.assertFalse(window.table.currentIndex().isValid())
+            self.assertIn("hidden by search", window.details.toPlainText().casefold())
+            window._show_result(result)
+            self.assertIn("hidden by search", window.details.toPlainText().casefold())
+            window.search.clear()
+            current = window.table.currentIndex()
+            self.assertTrue(current.isValid())
+            self.assertEqual(
+                current.sibling(current.row(), 0).data(Qt.ItemDataRole.UserRole),
+                selected_entry.key,
+            )
+
+            removed_result = ScanResult(
+                tuple(
+                    entry
+                    for entry in result.local_entries
+                    if entry.key != selected_entry.key
+                ),
+                result.workshop_items,
+                result.diagnostics,
+            )
+            window._show_result(removed_result)
+            self.assertFalse(window.table.currentIndex().isValid())
+            self.assertFalse(window.inspect_library_button.isEnabled())
+            self.assertIsNone(window._selected_entry)
+            self.assertFalse(window.open_folder_button.isEnabled())
+            self.assertIn("no longer", window.details.toPlainText().casefold())
+
     def test_read_only_file_and_console_diagnostics_are_connected_to_ui(self) -> None:
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)

@@ -265,6 +265,7 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         self._proxy.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         self._proxy.setFilterKeyColumn(-1)
         self.search.textChanged.connect(self._proxy.setFilterFixedString)
+        self.search.textChanged.connect(self._restore_library_selection)
 
         self.table = QTableView()
         self.table.setModel(self._proxy)

@@ -108,6 +108,7 @@ class MainWindow(
         self._shutdown_timer.setSingleShot(True)
         self._shutdown_timer.timeout.connect(self._continue_shutdown)
         self._entries: dict[str, ModEntry] = {}
+        self._library_selected_key: str | None = None
         self._last_result: ScanResult | None = None
         self._recently_added_workshop_entry_keys: set[str] = set()
         self._recently_added_workshop_item_count = 0
