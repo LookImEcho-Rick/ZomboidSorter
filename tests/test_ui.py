@@ -2136,12 +2136,11 @@ class MainWindowTests(unittest.TestCase):
                     profile_store=ProfileStore(root / "profiles"),
                 )
 
-            def close_window_if_needed() -> None:
-                if window.isVisible():
-                    window._persist_settings = False
-                    window.close()
+            def close_window() -> None:
+                window._persist_settings = False
+                window.close()
 
-            self.addCleanup(close_window_if_needed)
+            self.addCleanup(close_window)
 
             saves_root = root / "Zomboid" / "Saves"
             save_directory = saves_root / "Sandbox" / "RememberSave"
