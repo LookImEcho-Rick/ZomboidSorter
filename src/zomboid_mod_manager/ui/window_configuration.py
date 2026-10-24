@@ -29,6 +29,7 @@ from zomboid_mod_manager.gameio.active_mods import (
     ActiveModConfigError,
     ConcurrentConfigChangeError,
 )
+from zomboid_mod_manager.ui.change_preview import format_ordered_list_change
 
 
 class ActiveConfigurationMixin:
@@ -300,6 +301,20 @@ class ActiveConfigurationMixin:
         ):
             return True
         if require_confirmation:
+            resulting_maps = (
+                self._active_config.config.maps if map_ids is None else map_ids
+            )
+            change_lines = format_ordered_list_change(
+                "Mod IDs",
+                self._active_config.config.mods,
+                tuple(self._staged_mod_ids),
+            )
+            change_lines.extend(
+                format_ordered_list_change(
+                    "Maps", self._active_config.config.maps, resulting_maps
+                )
+            )
+            change_text = "\n".join(change_lines)
             title = (
                 "Apply Mod List and Launch"
                 if launch_after_apply
@@ -316,7 +331,7 @@ class ActiveConfigurationMixin:
             answer = QMessageBox.question(
                 self,
                 title,
-                confirmation,
+                f"{confirmation}\n\nChanges:\n{change_text}",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )

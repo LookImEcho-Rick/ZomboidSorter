@@ -41,6 +41,16 @@ class ServerSettingsSnapshot:
     fingerprint: str
 
 
+@dataclass(frozen=True)
+class ServerSettingsBackup:
+    """One validated backup of a selected server settings file."""
+
+    path: Path
+    config: ServerSettingsConfig
+    raw_bytes: bytes
+    fingerprint: str
+
+
 def _split_ids(value: str, label: str, *, workshop: bool) -> tuple[str, ...]:
     if not value.strip():
         return ()
@@ -198,6 +208,122 @@ def read_server_settings(path: Path | str) -> ServerSettingsSnapshot:
     )
 
 
+def _validate_server_snapshot(snapshot: ServerSettingsSnapshot) -> Path:
+    path = _validate_server_path(snapshot.path)
+    if path != snapshot.path:
+        raise ServerSettingsError(
+            "The selected server settings target changed after loading."
+        )
+    return path
+
+
+def list_server_settings_backups(
+    snapshot: ServerSettingsSnapshot,
+) -> tuple[Path, ...]:
+    """List sibling timestamped backups for this exact server settings file."""
+    path = _validate_server_snapshot(snapshot)
+    try:
+        backups = [
+            child
+            for child in path.parent.glob(f"{path.name}.bak-*")
+            if not child.is_symlink()
+            and not getattr(child, "is_junction", lambda: False)()
+            and stat.S_ISREG(child.stat(follow_symlinks=False).st_mode)
+        ]
+    except OSError as exc:
+        raise ServerSettingsError(
+            f"Could not list server settings backups: {exc}"
+        ) from exc
+    return tuple(sorted(backups, key=lambda item: item.name, reverse=True))
+
+
+def read_server_settings_backup(
+    snapshot: ServerSettingsSnapshot, backup_path: Path | str
+) -> ServerSettingsBackup:
+    """Read and validate a backup beside the exact selected server file."""
+    path = _validate_server_snapshot(snapshot)
+    backup = Path(backup_path).expanduser().absolute()
+    if (
+        backup.parent != path.parent
+        or not backup.name.startswith(f"{path.name}.bak-")
+        or backup.is_symlink()
+        or getattr(backup, "is_junction", lambda: False)()
+    ):
+        raise ServerSettingsError(
+            "Choose a timestamped backup beside the selected server settings file."
+        )
+    raw = _read_raw(backup)
+    config = parse_server_settings(_decode(raw)[0])
+    return ServerSettingsBackup(
+        path=backup,
+        config=config,
+        raw_bytes=raw,
+        fingerprint=hashlib.sha256(raw).hexdigest(),
+    )
+
+
+def restore_server_settings_backup(
+    snapshot: ServerSettingsSnapshot, backup: ServerSettingsBackup
+) -> Path | None:
+    """Restore a validated backup after stale-file checks and a fresh backup."""
+    path = _validate_server_snapshot(snapshot)
+    current = _read_raw(path)
+    if hashlib.sha256(current).hexdigest() != snapshot.fingerprint:
+        raise ConcurrentServerSettingsChangeError(
+            "Server settings changed after they were loaded; reload before restoring."
+        )
+
+    selected = read_server_settings_backup(snapshot, backup.path)
+    if (
+        selected.raw_bytes != backup.raw_bytes
+        or selected.fingerprint != backup.fingerprint
+    ):
+        raise ConcurrentServerSettingsChangeError(
+            "The selected server backup changed after it was previewed; choose it again."
+        )
+    if current == backup.raw_bytes:
+        return None
+
+    current_backup = _backup_path(path)
+    try:
+        with current_backup.open("xb") as stream:
+            stream.write(current)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except OSError as exc:
+        raise ServerSettingsError(
+            f"Could not create server settings backup: {exc}"
+        ) from exc
+
+    try:
+        _atomic_replace(path, backup.raw_bytes)
+        written = _read_raw(path)
+        if (
+            written != backup.raw_bytes
+            or parse_server_settings(_decode(written)[0]) != backup.config
+        ):
+            raise ServerSettingsError("Restored server settings did not verify.")
+    except Exception as exc:
+        try:
+            latest = _read_raw(path)
+        except ServerSettingsError:
+            latest = None
+        if latest == backup.raw_bytes:
+            try:
+                _atomic_replace(path, current)
+            except OSError as rollback_error:
+                raise ServerSettingsError(
+                    f"Server-settings restore failed and rollback failed. Backup: {current_backup}"
+                ) from rollback_error
+            raise ServerSettingsError(
+                f"Server-settings restore failed; the previous file was restored. Backup: {current_backup}"
+            ) from exc
+        raise ServerSettingsError(
+            f"Server settings changed during restore and were left untouched. Backup: {current_backup}"
+        ) from exc
+    return current_backup
+
+
 def _render(snapshot: ServerSettingsSnapshot, config: ServerSettingsConfig) -> bytes:
     text, has_bom = _decode(snapshot.raw_bytes)
     _old_config, positions, lines = _locate_settings(text)
@@ -262,11 +388,7 @@ def write_server_settings(
     workshop_items: tuple[str, ...],
 ) -> Path | None:
     """Replace only Mods/WorkshopItems after backup and stale-file checks."""
-    path = _validate_server_path(snapshot.path)
-    if path != snapshot.path:
-        raise ServerSettingsError(
-            "The selected server settings target changed after loading."
-        )
+    path = _validate_server_snapshot(snapshot)
     raw = _read_raw(path)
     if hashlib.sha256(raw).hexdigest() != snapshot.fingerprint:
         raise ConcurrentServerSettingsChangeError(

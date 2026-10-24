@@ -1,5 +1,13 @@
 # Progress
 
+## v0.2.1 apply previews and save/server backup restore (2026-10-24)
+
+- Global, save, and server apply confirmations now preview ordered Mod ID changes; global and save previews include maps, while server previews include Workshop IDs. The Mod Pack manager compares the selected pack with the loaded global list before Apply. Long lists are shortened with counts.
+- Ordered-list previews now show the specific IDs involved in reordering, even when they occur beyond the first 12 entries; long reorder details remain capped.
+- **Apply Elsewhere…** can restore a timestamped backup for one selected save or server settings file. The UI validates and previews the selected sibling backup, asks with default No, and warns to close the game/server. The writer rechecks the current file, backs it up when it exists, restores the original bytes atomically, and verifies the result. Restoring a save backup creates an explicit list when that save currently inherits global settings. Server restore returns the entire `.ini` to the selected backup, including its other settings.
+- **Reset save to inherit global list…** previews and backs up one explicit `mods.txt`, then removes it after default-No confirmation and stale-snapshot checks. This returns the save to global-list inheritance. Save and server target dialogs remember the last valid locations in `QSettings`. Server backup restore previews changed lines across the entire `.ini`; password-, token-, secret-, credential-, and webhook-like values are masked, and the preview is capped at 24 changed lines.
+- Focused validation: 24 tests across save lists, server settings, change previews, and four selected UI flows; 23 passed and one environment-only symlink test was skipped. Ruff check/format and `git diff --check` passed for the changed files. All targets were temporary fixtures; no live save, server settings file, or installed game was changed. Packaged and live-game validation remain separate.
+
 ## v0.2.0 UX and UI polish (2026-10-23)
 
 - Refined the existing dark olive workspace with clearer panel hierarchy, roomier controls, a visible Library & Diagnostics tab, and concise guidance for discovery, staging, settings, and Workshop browsing. On shorter windows, extra guidance collapses, action labels shorten, and the active controls use two rows so the mod lists retain space. The minimum window is 980×680.

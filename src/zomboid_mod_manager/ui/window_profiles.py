@@ -25,6 +25,7 @@ from zomboid_mod_manager.profiles import (
     ModProfile,
     ProfileError,
 )
+from zomboid_mod_manager.ui.change_preview import format_ordered_list_change
 from zomboid_mod_manager.ui.mod_packs_dialog import ModPacksDialog
 from zomboid_mod_manager.ui.workshop_dialog import WorkshopCollectionDialog
 
@@ -68,7 +69,19 @@ class ProfileActionsMixin:
 
     def _open_mod_packs(self) -> None:
         dialog = ModPacksDialog(
-            self._profile_store, self, scan_result=self._last_result
+            self._profile_store,
+            self,
+            scan_result=self._last_result,
+            current_mod_ids=(
+                tuple(self._active_config.config.mods)
+                if self._active_config is not None
+                else None
+            ),
+            current_map_ids=(
+                tuple(self._active_config.config.maps)
+                if self._active_config is not None
+                else None
+            ),
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
@@ -109,12 +122,19 @@ class ProfileActionsMixin:
         )
         maps_changed = desired_maps != latest.config.maps
         if maps_changed:
+            changes = format_ordered_list_change(
+                "Mod IDs", latest.config.mods, profile.mod_ids
+            )
+            changes.extend(
+                format_ordered_list_change("Maps", latest.config.maps, desired_maps)
+            )
+            change_text = "\n".join(changes)
             answer = QMessageBox.question(
                 self,
                 "Replace Global Map List?",
                 f"Apply Mod Pack '{profile.name}' and replace the global map list with "
                 f"{len(profile.map_ids or ())} Map IDs? A timestamped backup will be created. "
-                "Per-save mod lists will not be changed.",
+                f"Per-save mod lists will not be changed.\n\nChanges:\n{change_text}",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )

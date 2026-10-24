@@ -7,8 +7,11 @@ from pathlib import Path
 from zomboid_mod_manager.gameio.server_settings import (
     ConcurrentServerSettingsChangeError,
     ServerSettingsError,
+    list_server_settings_backups,
     parse_server_settings,
     read_server_settings,
+    read_server_settings_backup,
+    restore_server_settings_backup,
     write_server_settings,
 )
 
@@ -104,6 +107,48 @@ class ServerSettingsTests(unittest.TestCase):
                 read_server_settings(path)
 
             self.assertEqual(path.read_bytes(), original)
+
+    def test_restore_backup_restores_exact_bytes_and_backs_up_current_file(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = self._path(Path(temporary))
+            original = path.read_bytes()
+            initial = read_server_settings(path)
+            old_backup = write_server_settings(
+                initial, mods=("Changed",), workshop_items=("999",)
+            )
+            current = path.read_bytes()
+            snapshot = read_server_settings(path)
+            self.assertEqual(list_server_settings_backups(snapshot), (old_backup,))
+            backup = read_server_settings_backup(snapshot, old_backup)
+
+            current_backup = restore_server_settings_backup(snapshot, backup)
+
+            self.assertIsNotNone(current_backup)
+            self.assertEqual(path.read_bytes(), original)
+            self.assertEqual(current_backup.read_bytes(), current)
+            self.assertEqual(
+                read_server_settings(path).config.mods, ("OldMod", "SecondMod")
+            )
+
+    def test_restore_rejects_stale_snapshot_and_foreign_backup(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = self._path(root)
+            initial = read_server_settings(path)
+            backup_path = write_server_settings(
+                initial, mods=("Changed",), workshop_items=("999",)
+            )
+            snapshot = read_server_settings(path)
+            with self.assertRaisesRegex(ServerSettingsError, "beside"):
+                read_server_settings_backup(snapshot, root / "elsewhere.ini.bak-backup")
+            backup = read_server_settings_backup(snapshot, backup_path)
+            path.write_text("external edit", encoding="utf-8")
+
+            with self.assertRaises(ConcurrentServerSettingsChangeError):
+                restore_server_settings_backup(snapshot, backup)
+            self.assertEqual(path.read_text(encoding="utf-8"), "external edit")
 
 
 if __name__ == "__main__":

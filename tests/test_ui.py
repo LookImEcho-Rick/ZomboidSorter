@@ -659,6 +659,9 @@ class MainWindowTests(unittest.TestCase):
             self.assertEqual(dialog.load_apply_button.text(), "Apply")
             self.assertIn("1. ModAlpha", dialog.pack_preview.toPlainText())
             self.assertIn("2. UninstalledMod", dialog.pack_preview.toPlainText())
+            self.assertIn("CHANGES TO GLOBAL LIST", dialog.pack_preview.toPlainText())
+            self.assertIn("OldMod", dialog.pack_preview.toPlainText())
+            self.assertIn("ModAlpha", dialog.pack_preview.toPlainText())
             dialog.load_apply_button.click()
             return dialog.result()
 
@@ -719,6 +722,11 @@ class MainWindowTests(unittest.TestCase):
         ) as confirm:
             window._apply_mod_pack(profile)
         self.assertEqual(confirm.call_count, 1)
+        apply_prompt = confirm.call_args.args[2]
+        self.assertIn("ExistingMod", apply_prompt)
+        self.assertIn("SaveMod", apply_prompt)
+        self.assertIn("ExistingMap", apply_prompt)
+        self.assertIn("Riverside, KY", apply_prompt)
         self.assertEqual(read_active_mods(config_path).config.mods, ("SaveMod",))
         self.assertEqual(
             read_active_mods(config_path).config.maps, ("Riverside, KY", "NorthMap")
@@ -1634,8 +1642,11 @@ class MainWindowTests(unittest.TestCase):
         with patch(
             "zomboid_mod_manager.ui.window_configuration.QMessageBox.question",
             return_value=QMessageBox.StandardButton.Yes,
-        ):
+        ) as confirm:
             window._apply_active_configuration()
+        apply_prompt = confirm.call_args.args[2]
+        self.assertIn("Added: AddedMod", apply_prompt)
+        self.assertIn("Maps: unchanged (1)", apply_prompt)
         self.assertNotEqual(config_path.read_bytes(), original)
         self.assertEqual(
             tuple(window._active_config.config.mods), ("ExistingMod", "AddedMod")
@@ -1862,6 +1873,10 @@ class MainWindowTests(unittest.TestCase):
                 ) as confirm,
             ):
                 window._apply_staged_to_save()
+            save_prompt = confirm.call_args.args[2]
+            self.assertIn("OldSaveMod", save_prompt)
+            self.assertIn("LegacyWorkshop", save_prompt)
+            self.assertIn("Maps: unchanged (1)", save_prompt)
             save_result = read_save_mod_target(save_root, save_directory)
             self.assertEqual(save_result.config.mods, ("LegacyWorkshop",))
             self.assertEqual(save_result.config.maps, ("SaveMap",))
@@ -1882,14 +1897,310 @@ class MainWindowTests(unittest.TestCase):
                 patch(
                     "zomboid_mod_manager.ui.window_game_targets.QMessageBox.question",
                     return_value=QMessageBox.StandardButton.Yes,
-                ),
+                ) as confirm,
             ):
                 window._apply_staged_to_server()
+            server_prompt = confirm.call_args.args[2]
+            self.assertIn("OldServerMod", server_prompt)
+            self.assertIn("999", server_prompt)
+            self.assertIn("111111111", server_prompt)
+            self.assertEqual(confirm.call_args.args[-1], QMessageBox.StandardButton.No)
             server_result = read_server_settings(server_path)
             self.assertEqual(server_result.config.mods, ("LegacyWorkshop",))
             self.assertEqual(server_result.config.workshop_items, ("111111111",))
             self.assertIn("Map=Riverside, KY", server_path.read_text(encoding="utf-8"))
             self.assertEqual(len(list(server_path.parent.glob("*.ini.bak-*"))), 1)
+            self._wait_for_background_workers(window)
+            window.close()
+
+    def test_restore_save_and_server_backups_from_apply_elsewhere_menu(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            detected = DetectedPaths(
+                steam_roots=(),
+                steamapps_libraries=(),
+                game_installations=(),
+                workshop_roots=(FIXTURES / "workshop",),
+                local_mod_root=FIXTURES / "local_mods",
+            )
+            window = MainWindow(
+                detected,
+                active_config_path=FIXTURES / "config" / "default.txt",
+                profile_store=ProfileStore(root / "profiles"),
+            )
+            self._wait_for_background_workers(window)
+
+            save_root = root / "Zomboid" / "Saves"
+            save_directory = save_root / "Sandbox" / "UiSave"
+            save_directory.mkdir(parents=True)
+            save_path = save_directory / "mods.txt"
+            current_save = (
+                b"VERSION = 1,\n\nmods\n{\n    mod = CurrentSaveMod,\n}\n\n"
+                b"maps\n{\n    map = CurrentSaveMap,\n}\n"
+            )
+            old_save = (
+                b"VERSION = 1,\n\nmods\n{\n    mod = PriorSaveMod,\n}\n\n"
+                b"maps\n{\n    map = PriorSaveMap,\n}\n"
+            )
+            save_path.write_bytes(current_save)
+            save_backup = save_path.with_name("mods.txt.bak-20261024-120000-000000")
+            save_backup.write_bytes(old_save)
+
+            with (
+                patch(
+                    "zomboid_mod_manager.ui.window_game_targets.QFileDialog.getExistingDirectory",
+                    side_effect=[str(save_root), str(save_directory)],
+                ),
+                patch(
+                    "zomboid_mod_manager.ui.window_game_targets.QFileDialog.getOpenFileName",
+                    return_value=(str(save_backup), "Save mod-list backups"),
+                ),
+                patch(
+                    "zomboid_mod_manager.ui.window_game_targets.QMessageBox.question",
+                    return_value=QMessageBox.StandardButton.Yes,
+                ) as confirm,
+            ):
+                window._restore_save_backup()
+
+            self.assertEqual(save_path.read_bytes(), old_save)
+            self.assertEqual(
+                [
+                    path.read_bytes()
+                    for path in save_directory.glob("mods.txt.bak-*")
+                    if path != save_backup
+                ],
+                [current_save],
+            )
+            save_prompt = confirm.call_args.args[2]
+            self.assertIn("CurrentSaveMod", save_prompt)
+            self.assertIn("PriorSaveMod", save_prompt)
+            self.assertIn("CurrentSaveMap", save_prompt)
+            self.assertIn("PriorSaveMap", save_prompt)
+            self.assertEqual(confirm.call_args.args[-1], QMessageBox.StandardButton.No)
+
+            server_path = root / "Zomboid" / "Server" / "servertest.ini"
+            server_path.parent.mkdir(parents=True)
+            current_server = (
+                b"Mods=CurrentServerMod\nWorkshopItems=222\nMap=CurrentMap\n"
+                b"PVP=true\nPassword=current-secret\n"
+            )
+            old_server = (
+                b"Mods=PriorServerMod\nWorkshopItems=111\nMap=PriorMap\n"
+                b"PVP=false\nPassword=prior-secret\n"
+            )
+            server_path.write_bytes(current_server)
+            server_backup = server_path.with_name(
+                "servertest.ini.bak-20261024-120000-000000"
+            )
+            server_backup.write_bytes(old_server)
+
+            with (
+                patch(
+                    "zomboid_mod_manager.ui.window_game_targets.QFileDialog.getOpenFileName",
+                    side_effect=[
+                        (str(server_path), "Project Zomboid server settings"),
+                        (str(server_backup), "Server settings backups"),
+                    ],
+                ),
+                patch(
+                    "zomboid_mod_manager.ui.window_game_targets.QMessageBox.question",
+                    return_value=QMessageBox.StandardButton.Yes,
+                ) as confirm,
+            ):
+                window._restore_server_backup()
+
+            self.assertEqual(server_path.read_bytes(), old_server)
+            self.assertEqual(
+                [
+                    path.read_bytes()
+                    for path in server_path.parent.glob("*.ini.bak-*")
+                    if path != server_backup
+                ],
+                [current_server],
+            )
+            server_prompt = confirm.call_args.args[2]
+            self.assertIn("CurrentServerMod", server_prompt)
+            self.assertIn("PriorServerMod", server_prompt)
+            self.assertIn("222", server_prompt)
+            self.assertIn("111", server_prompt)
+            self.assertIn("Map=CurrentMap", server_prompt)
+            self.assertIn("Map=PriorMap", server_prompt)
+            self.assertIn("PVP=true", server_prompt)
+            self.assertIn("PVP=false", server_prompt)
+            self.assertIn("Password=<redacted>", server_prompt)
+            self.assertNotIn("current-secret", server_prompt)
+            self.assertNotIn("prior-secret", server_prompt)
+            self.assertEqual(confirm.call_args.args[-1], QMessageBox.StandardButton.No)
+            self.assertIn("Map=PriorMap", server_path.read_text(encoding="utf-8"))
+
+            action_names = [
+                action.text()
+                for action in window.apply_other_targets_button.menu().actions()
+                if not action.isSeparator()
+            ]
+            self.assertIn("Restore a save backup…", action_names)
+            self.assertIn("Reset save to inherit global list…", action_names)
+            self.assertIn("Restore a server backup…", action_names)
+            self._wait_for_background_workers(window)
+            window.close()
+
+    def test_reset_save_to_global_list_previews_and_backs_up_before_removing(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            detected = DetectedPaths(
+                steam_roots=(),
+                steamapps_libraries=(),
+                game_installations=(),
+                workshop_roots=(FIXTURES / "workshop",),
+                local_mod_root=FIXTURES / "local_mods",
+            )
+            window = MainWindow(
+                detected,
+                active_config_path=FIXTURES / "config" / "default.txt",
+                profile_store=ProfileStore(root / "profiles"),
+            )
+            self._wait_for_background_workers(window)
+
+            saves_root = root / "Zomboid" / "Saves"
+            save_directory = saves_root / "Sandbox" / "ResetSave"
+            save_directory.mkdir(parents=True)
+            save_path = save_directory / "mods.txt"
+            original = (
+                b"VERSION = 1,\n\nmods\n{\n    mod = CurrentSaveMod,\n}\n\n"
+                b"maps\n{\n    map = CurrentSaveMap,\n}\n"
+            )
+            save_path.write_bytes(original)
+
+            for answer in (
+                QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            ):
+                with (
+                    patch(
+                        "zomboid_mod_manager.ui.window_game_targets.QFileDialog.getExistingDirectory",
+                        side_effect=[str(saves_root), str(save_directory)],
+                    ),
+                    patch(
+                        "zomboid_mod_manager.ui.window_game_targets.QMessageBox.question",
+                        return_value=answer,
+                    ) as confirm,
+                ):
+                    window._reset_save_to_inherit()
+                prompt = confirm.call_args.args[2]
+                self.assertIn("CurrentSaveMod", prompt)
+                self.assertIn("CurrentSaveMap", prompt)
+                self.assertIn("inherit the global default list", prompt)
+                self.assertEqual(
+                    confirm.call_args.args[-1], QMessageBox.StandardButton.No
+                )
+                if answer == QMessageBox.StandardButton.No:
+                    self.assertEqual(save_path.read_bytes(), original)
+                    self.assertFalse(list(save_directory.glob("mods.txt.bak-*")))
+
+            self.assertFalse(save_path.exists())
+            backups = list(save_directory.glob("mods.txt.bak-*"))
+            self.assertEqual(len(backups), 1)
+            self.assertEqual(backups[0].read_bytes(), original)
+            self.assertIn("now inherits the global", window.configuration_status.text())
+            self._wait_for_background_workers(window)
+            window.close()
+
+    def test_game_target_dialogs_remember_last_save_and_server_directories(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            settings = QSettings(str(root / "settings.ini"), QSettings.Format.IniFormat)
+            detected = DetectedPaths(
+                steam_roots=(),
+                steamapps_libraries=(),
+                game_installations=(),
+                workshop_roots=(FIXTURES / "workshop",),
+                local_mod_root=FIXTURES / "local_mods",
+            )
+            with (
+                patch(
+                    "zomboid_mod_manager.ui.main_window.QSettings",
+                    return_value=settings,
+                ),
+                patch(
+                    "zomboid_mod_manager.ui.main_window.detect_paths",
+                    return_value=detected,
+                ),
+                patch.object(MainWindow, "_start_scan"),
+            ):
+                window = MainWindow(
+                    active_config_path=FIXTURES / "config" / "default.txt",
+                    profile_store=ProfileStore(root / "profiles"),
+                )
+
+            saves_root = root / "Zomboid" / "Saves"
+            save_directory = saves_root / "Sandbox" / "RememberSave"
+            save_directory.mkdir(parents=True)
+            (save_directory / "mods.txt").write_bytes(
+                b"VERSION = 1,\n\nmods\n{\n}\n\nmaps\n{\n}\n"
+            )
+            with (
+                patch(
+                    "zomboid_mod_manager.ui.window_game_targets.QFileDialog.getExistingDirectory",
+                    side_effect=[str(saves_root), str(save_directory)],
+                ),
+                patch(
+                    "zomboid_mod_manager.ui.window_game_targets.QMessageBox.question",
+                    return_value=QMessageBox.StandardButton.No,
+                ),
+            ):
+                window._apply_staged_to_save()
+            self.assertEqual(settings.value("paths/saves_root"), str(saves_root))
+            self.assertEqual(settings.value("paths/save_target"), str(save_directory))
+
+            with (
+                patch(
+                    "zomboid_mod_manager.ui.window_game_targets.QFileDialog.getExistingDirectory",
+                    side_effect=[str(saves_root), str(save_directory)],
+                ) as choose_save,
+                patch(
+                    "zomboid_mod_manager.ui.window_game_targets.QMessageBox.information"
+                ),
+            ):
+                window._restore_save_backup()
+            self.assertEqual(choose_save.call_args_list[0].args[2], str(saves_root))
+            self.assertEqual(choose_save.call_args_list[1].args[2], str(save_directory))
+
+            server_path = root / "Zomboid" / "Server" / "remember.ini"
+            server_path.parent.mkdir(parents=True)
+            server_path.write_text("Mods=Old\nWorkshopItems=123\n", encoding="utf-8")
+            with (
+                patch.object(
+                    window, "_workshop_ids_for_staged_mods", return_value=("123",)
+                ),
+                patch(
+                    "zomboid_mod_manager.ui.window_game_targets.QFileDialog.getOpenFileName",
+                    return_value=(str(server_path), ""),
+                ),
+                patch(
+                    "zomboid_mod_manager.ui.window_game_targets.QMessageBox.question",
+                    return_value=QMessageBox.StandardButton.No,
+                ),
+            ):
+                window._apply_staged_to_server()
+            self.assertEqual(
+                settings.value("paths/server_settings"), str(server_path.parent)
+            )
+
+            with (
+                patch(
+                    "zomboid_mod_manager.ui.window_game_targets.QFileDialog.getOpenFileName",
+                    return_value=(str(server_path), ""),
+                ) as choose_server,
+                patch(
+                    "zomboid_mod_manager.ui.window_game_targets.QMessageBox.information"
+                ),
+            ):
+                window._restore_server_backup()
+            self.assertEqual(choose_server.call_args.args[2], str(server_path.parent))
             self._wait_for_background_workers(window)
             window.close()
 

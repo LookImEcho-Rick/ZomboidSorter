@@ -360,13 +360,22 @@ class WorkspaceLayoutMixin:
         utility_row.addWidget(self.apply_config_button)
         self.apply_other_targets_button = QPushButton("Apply Elsewhere…")
         self.apply_other_targets_button.setToolTip(
-            "Apply the staged Mod ID order to one selected save or server settings file."
+            "Apply to a save or server, restore a backup, or reset a save to the global list."
         )
         other_targets_menu = QMenu(self.apply_other_targets_button)
         apply_save_action = other_targets_menu.addAction("Apply to a save…")
         apply_save_action.triggered.connect(lambda: self._apply_staged_to_save())
         apply_server_action = other_targets_menu.addAction("Apply to server settings…")
         apply_server_action.triggered.connect(lambda: self._apply_staged_to_server())
+        other_targets_menu.addSeparator()
+        restore_save_action = other_targets_menu.addAction("Restore a save backup…")
+        restore_save_action.triggered.connect(self._restore_save_backup)
+        reset_save_action = other_targets_menu.addAction(
+            "Reset save to inherit global list…"
+        )
+        reset_save_action.triggered.connect(self._reset_save_to_inherit)
+        restore_server_action = other_targets_menu.addAction("Restore a server backup…")
+        restore_server_action.triggered.connect(self._restore_server_backup)
         self.apply_other_targets_button.setMenu(other_targets_menu)
         utility_row.addWidget(self.apply_other_targets_button)
         layout.addLayout(utility_row)

@@ -14,7 +14,7 @@ ZomboidSorter brings local and Steam Workshop mods into one workspace. Inspect w
 
 - **Find and understand your mods.** Search by name or ID, preview descriptions and metadata, and spot missing or duplicate Mod IDs.
 - **Build an order before changing the game.** Enable, disable, drag, and reorder mods in a staged list. Dependency suggestions show a proposed order you can review.
-- **Keep loadouts ready.** Save Mod Packs, import a save's mod list, and turn installed items from a public Workshop collection into a pack.
+- **Keep loadouts ready.** Save Mod Packs, preview their changes against the loaded global list, import a save's mod list, and turn installed items from a public Workshop collection into a pack.
 - **Choose the target.** Apply to the global list, one save, or one server configuration through separate confirmed actions with backups and validation.
 - **Investigate issues.** Inspect declared dependencies, potential file overlaps, and selected console-log findings on demand.
 
@@ -59,9 +59,11 @@ Screenshots from v0.2.0 show the workspace with an installed mod library. The se
 | --- | --- |
 | Scan, search, reorder, and Suggest Order | Reads installed mods and stages an in-memory list. Suggestions use declared constraints and are not a guarantee of runtime load order. |
 | Save or import a Mod Pack | Writes an app-owned pack. Importing from a save or public Workshop collection does not change the save or subscribe to Workshop items. |
-| Apply to Project Zomboid | Updates only the global `Zomboid/mods/default.txt` after confirmation, backup, concurrent-change check, atomic replacement, and readback validation. |
-| Apply to a save | Updates one selected immediate save's `mods.txt`; existing maps are preserved. |
-| Apply to server settings | Updates only `Mods` and `WorkshopItems` in one selected server `.ini`; other settings remain in place. |
+| Apply to Project Zomboid | Previews ordered Mod ID and map changes, then updates only the global `Zomboid/mods/default.txt` after confirmation, backup, concurrent-change check, atomic replacement, and readback validation. |
+| Apply to a save | Previews the ordered Mod ID changes, then updates one selected immediate save's `mods.txt`; existing maps are preserved. |
+| Apply to server settings | Previews Mod ID and Workshop ID changes, then updates only `Mods` and `WorkshopItems` in one selected server `.ini`; other settings remain in place. |
+| Restore a save/server backup | Choose a timestamped backup for the selected target, preview its Mod ID/map or server-list changes, and confirm before restoring. The current file is backed up first when it exists. |
+| Reset a save to the global list | Preview and back up its explicit `mods.txt`, then remove that file so the save inherits the global default list again. |
 
 Existing save and server files are also backed up before a write. Stop the game or server and close its settings editor before applying. **Apply & Launch…** applies staged global changes first, then asks Steam to launch the game; a successful handoff does not confirm that the game opened.
 
@@ -102,7 +104,7 @@ The attestation ties the exact installer to the repository workflow. It does not
 
 Standard installs keep Mod Packs under `%APPDATA%\ProjectZomboidModManager\profiles\` and settings in the current user's Qt registry key. Portable installs keep both in `data\` beside the app; choose **Portable installation** during setup and use a writable folder.
 
-Global-list backups sit beside `default.txt` as `default.txt.bak-<timestamp>`. **Restore Backup…** in Paths & Settings can preview and restore one. Save and server backups sit beside the file they protect and can be restored manually after review. Replaced or deleted Mod Packs have recoverable copies in the pack store.
+Global-list backups sit beside `default.txt` as `default.txt.bak-<timestamp>`. **Restore Backup…** in Paths & Settings can preview and restore one. Save and server backups sit beside the file they protect; use **Apply Elsewhere…** to restore a save/server backup, or reset an explicit save list to global inheritance. Server restore previews changed settings and masks secret-like values. The app remembers the last save and server folders. Replaced or deleted Mod Packs have recoverable copies in the pack store.
 
 Upgrades and uninstall leave app data, game-list backups, saves, and installed mods in place. Switching between standard and portable modes does not move data; export and import Mod Packs to transfer them. See [packaging details](packaging/README.md) for install modes and release checks.
 
@@ -113,7 +115,7 @@ Upgrades and uninstall leave app data, game-list backups, saves, and installed m
 - **Workshop page or description unavailable:** check Steam or network access; local metadata remains usable.
 - **Launch did not start the game:** open it from Steam directly. The app can confirm only that Windows accepted the Steam link.
 - **Need diagnostic help:** choose **Help → Save Support Report…**. Review its preview before saving; it omits paths, names and IDs, logs, and file contents.
-- **Need to roll back:** use **Restore Backup…** for the global list, or review the sibling backup of a save or server file before restoring it manually.
+- **Need to roll back:** use **Restore Backup…** for the global list, or use the save/server restore actions under **Apply Elsewhere…**. Each restore previews the change and creates a fresh backup of an existing current file. To make a save inherit global settings again, choose **Reset save to inherit global list…**.
 
 ## Run from source
 

@@ -26,6 +26,7 @@ from zomboid_mod_manager.profiles import (
     ProfileStore,
     parse_profile,
 )
+from zomboid_mod_manager.ui.change_preview import format_ordered_list_change
 from zomboid_mod_manager.ui.save_mod_pack_dialog import SaveModPackDialog
 from zomboid_mod_manager.ui.theme import apply_theme
 
@@ -53,10 +54,14 @@ class ModPacksDialog(QDialog):
         parent=None,
         *,
         scan_result: ScanResult | None = None,
+        current_mod_ids: tuple[str, ...] | None = None,
+        current_map_ids: tuple[str, ...] | None = None,
     ) -> None:
         super().__init__(parent)
         self._profile_store = profile_store
         self._scan_result = scan_result
+        self._current_mod_ids = current_mod_ids
+        self._current_map_ids = current_map_ids
         self.selected_pack: ModProfile | None = None
         self.setWindowTitle("Mod Packs")
         self.resize(780, 600)
@@ -89,7 +94,9 @@ class ModPacksDialog(QDialog):
         layout.addWidget(self.details)
         self.pack_preview = QPlainTextEdit()
         self.pack_preview.setReadOnly(True)
-        self.pack_preview.setAccessibleName("Selected Mod Pack ordered contents")
+        self.pack_preview.setAccessibleName(
+            "Selected Mod Pack contents and global list changes"
+        )
         self.pack_preview.setPlaceholderText("Select a Mod Pack to preview its order.")
         self.pack_preview.setMinimumHeight(100)
         layout.addWidget(self.pack_preview, 2)
@@ -196,6 +203,24 @@ class ModPacksDialog(QDialog):
             if profile.map_ids is not None
             else ("Not saved; current maps will be preserved",)
         )
+        if self._current_mod_ids is not None:
+            sections.extend(["", "CHANGES TO GLOBAL LIST"])
+            sections.extend(
+                format_ordered_list_change(
+                    "Mod IDs", self._current_mod_ids, profile.mod_ids
+                )
+            )
+            if self._current_map_ids is not None:
+                resulting_maps = (
+                    self._current_map_ids
+                    if profile.map_ids is None
+                    else profile.map_ids
+                )
+                sections.extend(
+                    format_ordered_list_change(
+                        "Maps", self._current_map_ids, resulting_maps
+                    )
+                )
         self.pack_preview.setPlainText("\n".join(sections))
         self.load_apply_button.setEnabled(True)
 
