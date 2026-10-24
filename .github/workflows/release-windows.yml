@@ -151,6 +151,7 @@ jobs:
           path: |
             dist/installer/*.exe
             dist/installer/*.sha256
+          compression-level: 0
       - name: Publish tagged GitHub Release
         shell: pwsh
         env:
