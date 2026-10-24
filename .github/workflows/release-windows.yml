@@ -30,6 +30,10 @@ jobs:
         with:
           python-version: '3.14'
           architecture: x64
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            packaging/constraints-windows.txt
       - name: Validate tag and version
         shell: pwsh
         env:
@@ -43,28 +47,29 @@ jobs:
           "RELEASE_TAG=$tag" >> $env:GITHUB_ENV
       - name: Install pinned dependencies
         shell: pwsh
-        run: python -m pip install -e ".[dev,windows]" -c packaging/constraints-windows.txt
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\python.exe -m pip install -e ".[dev,windows]" -c packaging\constraints-windows.txt
       - name: Test and lint
         shell: pwsh
         run: |
           $env:PYTHONPATH = Join-Path (Get-Location) 'src'
-          python -m unittest discover -s tests -v
+          $python = Join-Path (Get-Location) '.venv\Scripts\python.exe'
+          $ruff = Join-Path (Get-Location) '.venv\Scripts\ruff.exe'
+          & $python -m unittest discover -s tests -v
           if ($LASTEXITCODE -ne 0) { throw 'Unit tests failed.' }
-          ruff check src tests
+          & $ruff check src tests
           if ($LASTEXITCODE -ne 0) { throw 'Ruff check failed.' }
-          ruff format --check src tests
+          & $ruff format --check src tests
           if ($LASTEXITCODE -ne 0) { throw 'Ruff format check failed.' }
-          python -m compileall -q src tests
+          & $python -m compileall -q src tests
           if ($LASTEXITCODE -ne 0) { throw 'Python compilation failed.' }
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup --version=6.7.1 --yes --no-progress
       - name: Build app bundle
         shell: pwsh
-        run: |
-          python -m venv .venv
-          .\.venv\Scripts\python.exe -m pip install -e ".[dev,windows]" -c packaging\constraints-windows.txt
-          .\packaging\build_windows.ps1
+        run: .\packaging\build_windows.ps1 -SkipDependencyInstall
       - name: Build installer
         shell: pwsh
         run: .\packaging\build_installer.ps1 -SkipAppBuild

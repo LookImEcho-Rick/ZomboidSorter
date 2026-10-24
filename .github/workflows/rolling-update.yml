@@ -33,7 +33,95 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'push' }}
 
 jobs:
-  rolling-windows-update:
+  quality:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          fetch-tags: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          architecture: x64
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            packaging/constraints-windows.txt
+      - name: Create environment and install pinned test dependencies
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\python.exe -m pip install -e ".[dev,windows]" -c packaging\constraints-windows.txt
+      - name: Test and lint
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = Join-Path (Get-Location) 'src'
+          $python = Join-Path (Get-Location) '.venv\Scripts\python.exe'
+          $ruff = Join-Path (Get-Location) '.venv\Scripts\ruff.exe'
+          & $python -m unittest discover -s tests -v
+          if ($LASTEXITCODE -ne 0) { throw 'Unit tests failed.' }
+          & $ruff check src tests
+          if ($LASTEXITCODE -ne 0) { throw 'Ruff check failed.' }
+          & $ruff format --check src tests
+          if ($LASTEXITCODE -ne 0) { throw 'Ruff format check failed.' }
+          & $python -m compileall -q src tests
+          if ($LASTEXITCODE -ne 0) { throw 'Python compilation failed.' }
+  build-installer:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          fetch-tags: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          architecture: x64
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            packaging/constraints-windows.txt
+      - name: Create environment and install pinned build dependencies
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\python.exe -m pip install -e ".[windows]" -c packaging\constraints-windows.txt
+      - name: Check redistribution approval
+        shell: pwsh
+        run: |
+          if (-not (Test-Path packaging/RELEASE_READY -PathType Leaf)) {
+            throw 'Binary release is blocked until packaging/RELEASE_READY is committed after the Qt/WebEngine license and source review.'
+          }
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --version=6.7.1 --yes --no-progress
+      - name: Build app and versionless installer
+        shell: pwsh
+        run: |
+          .\packaging\build_windows.ps1 -SkipDependencyInstall
+          .\packaging\build_installer.ps1 -SkipAppBuild
+      - name: Smoke-test packaged install and launch
+        shell: pwsh
+        run: .\packaging\smoke_test_installer.ps1 -InstallerPath (Join-Path (Get-Location) 'dist\installer\ZomboidSorter-windows-setup.exe')
+      - name: Upload verified installer for publication
+        uses: actions/upload-artifact@v4
+        with:
+          name: rolling-installer-${{ github.run_id }}
+          path: |
+            dist/installer/ZomboidSorter-windows-setup.exe
+            dist/installer/ZomboidSorter-windows-setup.exe.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+  publish-update:
+    needs: [quality, build-installer]
     runs-on: windows-2022
     timeout-minutes: 60
     permissions:
@@ -50,15 +138,26 @@ jobs:
         with:
           python-version: "3.14"
           architecture: x64
-          cache: pip
-          cache-dependency-path: |
-            pyproject.toml
-            packaging/constraints-windows.txt
-      - name: Create environment and install pinned dependencies
+      - name: Download installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rolling-installer-${{ github.run_id }}
+          path: dist/installer
+      - name: Verify downloaded installer and checksum
         shell: pwsh
         run: |
-          python -m venv .venv
-          .\.venv\Scripts\python.exe -m pip install -e ".[dev,windows]" -c packaging\constraints-windows.txt
+          $installer = Join-Path (Get-Location) 'dist\installer\ZomboidSorter-windows-setup.exe'
+          $checksumPath = "$installer.sha256"
+          if (-not (Test-Path -LiteralPath $installer -PathType Leaf) -or
+              -not (Test-Path -LiteralPath $checksumPath -PathType Leaf)) {
+            throw 'The installer artifact or checksum is missing.'
+          }
+          $checksum = [System.IO.File]::ReadAllText($checksumPath).Trim()
+          $match = [regex]::Match($checksum, '^([0-9a-fA-F]{64})\s+\*?ZomboidSorter-windows-setup\.exe$')
+          $actual = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          if (-not $match.Success -or $actual -ne $match.Groups[1].Value.ToLowerInvariant()) {
+            throw 'The downloaded installer artifact failed SHA-256 verification.'
+          }
       - name: Download and verify latest stable installer for update smoke
         id: previous-installer
         shell: pwsh
@@ -92,31 +191,6 @@ jobs:
           if ($actual -ne $match.Groups[1].Value.ToLowerInvariant()) { throw 'Previous stable installer checksum verification failed.' }
           "path=$installer" >> $env:GITHUB_OUTPUT
           "tag=$($stable.tagName)" >> $env:GITHUB_OUTPUT
-      - name: Test and lint
-        shell: pwsh
-        run: |
-          $env:PYTHONPATH = Join-Path (Get-Location) 'src'
-          $python = Join-Path (Get-Location) '.venv\Scripts\python.exe'
-          $ruff = Join-Path (Get-Location) '.venv\Scripts\ruff.exe'
-          & $python -m unittest discover -s tests -v
-          if ($LASTEXITCODE -ne 0) { throw 'Unit tests failed.' }
-          & $ruff check src tests
-          if ($LASTEXITCODE -ne 0) { throw 'Ruff check failed.' }
-          & $ruff format --check src tests
-          if ($LASTEXITCODE -ne 0) { throw 'Ruff format check failed.' }
-          & $python -m compileall -q src tests
-          if ($LASTEXITCODE -ne 0) { throw 'Python compilation failed.' }
-      - name: Install Inno Setup
-        shell: pwsh
-        run: choco install innosetup --version=6.7.1 --yes --no-progress
-      - name: Build app and versionless installer
-        shell: pwsh
-        run: |
-          .\packaging\build_windows.ps1
-          .\packaging\build_installer.ps1 -SkipAppBuild
-      - name: Smoke-test packaged install and launch
-        shell: pwsh
-        run: .\packaging\smoke_test_installer.ps1 -InstallerPath (Join-Path (Get-Location) 'dist\installer\ZomboidSorter-windows-setup.exe')
       - name: Prepare rolling update assets
         id: update-assets
         shell: pwsh
@@ -130,7 +204,7 @@ jobs:
           $hash = (Get-FileHash -LiteralPath $rollingInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
           $checksum = "$rollingInstaller.sha256"
           [System.IO.File]::WriteAllText($checksum, "$hash  ZomboidSorter-windows-setup.exe`n", [System.Text.Encoding]::ASCII)
-          $version = (& .\.venv\Scripts\python.exe -c 'import pathlib,tomllib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"])').Trim()
+          $version = (& python -c 'import pathlib,tomllib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"])').Trim()
           if ($LASTEXITCODE -ne 0 -or -not $version) { throw 'Could not read the app version.' }
           $manifest = [ordered]@{
             schema = 1

@@ -1,3 +1,7 @@
+param(
+    [switch]$SkipDependencyInstall
+)
+
 $ErrorActionPreference = "Stop"
 
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -13,8 +17,10 @@ if (-not (Test-Path -LiteralPath $PythonExe -PathType Leaf)) {
 
 Push-Location $ProjectRoot
 try {
-    & $PythonExe -m pip install -e ".[windows]" -c (Join-Path $PSScriptRoot "constraints-windows.txt")
-    if ($LASTEXITCODE -ne 0) { throw "Could not install packaging dependencies into .venv." }
+    if (-not $SkipDependencyInstall) {
+        & $PythonExe -m pip install -e ".[windows]" -c (Join-Path $PSScriptRoot "constraints-windows.txt")
+        if ($LASTEXITCODE -ne 0) { throw "Could not install packaging dependencies into .venv." }
+    }
 
     # PyInstaller resolves transitive DLLs from PATH. Keep unrelated tools'
     # native libraries (for example, Poppler's ICU DLL) out of the bundle.
