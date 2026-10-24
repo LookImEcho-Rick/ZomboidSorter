@@ -2,6 +2,7 @@
 
 ## Local 0.2.3 package build (2026-10-24)
 
+- Final branch validation after the UI changes: all 159 tests passed with one environment-only symlink skip. Ruff check/format, compileall, and diff whitespace checks passed. The UI portion was also run separately (59 tests passed).
 - Built commit `7f26354599a7ff2f2d744df28b2a2bd4184e0284` on Windows 11 with Python 3.14.7, PyInstaller 6.22.3, and Inno Setup 6.7.3. The build inventoried 19 Qt runtime DLLs and generated 57 Qt plus 125 WebEngine attribution pages. The versionless `ZomboidSorter-windows-setup.exe` compiled successfully with product version 0.2.3.
 - The local installer is 121,028,393 bytes. Its SHA-256, sidecar, and independent `Get-FileHash` check agree: `3003a7a7d99d811ab693e01e174b3f65c3c387dc34ac9b1ceaeaf26ede757d47`. The bundled `BUILD_ID` matches the commit above. Build output is ignored local output, not a release asset.
 - The existing installer smoke script explicitly permits only an isolated GitHub Actions runner, so this machine did not run its install/launch/uninstall checks. No installer was installed or published, no update was attempted, and no game data was changed. Hosted installer and rolling-update verification remain gates before distribution.
