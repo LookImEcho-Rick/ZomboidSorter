@@ -144,6 +144,8 @@ class LibraryMixin:
             if owner.currentItem() is not inspected_item:
                 owner.setCurrentItem(inspected_item)
             self._show_management_item(inspected_item, None)
+        elif inspected_id is not None and inspected_widget is not None:
+            self._display_removed_mod_id(inspected_id)
         for item in items_to_select:
             item.setSelected(True)
         for widget in list_widgets:

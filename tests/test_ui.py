@@ -2558,6 +2558,41 @@ class MainWindowTests(unittest.TestCase):
             self.assertIsNone(window._selected_entry)
             self.assertIn("No description", window.description.toPlainText())
 
+    def test_removed_discover_mod_clears_details_after_rescan(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            window, _ = self._make_launch_window(Path(temporary))
+            self._wait_for_background_workers(window)
+            local_item = next(
+                window.available_list.item(row)
+                for row in range(window.available_list.count())
+                if window.available_list.item(row).data(Qt.ItemDataRole.UserRole)
+                == "LocalShared"
+            )
+            window.available_list.setCurrentItem(local_item)
+            self.assertTrue(window.open_folder_button.isEnabled())
+            window.manage_search.setText("no matching mod")
+            self.assertTrue(local_item.isHidden())
+            self.assertIsNotNone(window._selected_entry)
+            window.manage_search.clear()
+
+            result = window._last_result
+            window._last_result = ScanResult(
+                tuple(
+                    entry
+                    for entry in result.local_entries
+                    if entry.mod_id != "LocalShared"
+                ),
+                result.workshop_items,
+                result.diagnostics,
+            )
+            window._refresh_management_lists()
+
+            self.assertIsNone(window._selected_entry)
+            self.assertFalse(window.open_folder_button.isEnabled())
+            self.assertFalse(window.open_workshop_button.isEnabled())
+            self.assertIn("no longer", window.details.toPlainText().casefold())
+            self.assertIn("No description", window.description.toPlainText())
+
     def test_read_only_file_and_console_diagnostics_are_connected_to_ui(self) -> None:
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)

@@ -1,5 +1,11 @@
 # Progress
 
+## Selected mod removed by a later scan (2026-10-24)
+
+- A changed-scan fixture reproduced a stale Details state: an inactive mod selected in Discover disappeared from the scan, but its description and **Open Folder** action still pointed to the old entry. When the inspected Mod ID no longer exists in either rebuilt list, Details now says the mod is no longer in the scanned folders and clears the old description, preview, selected-entry state, and external actions. A shared Details reset keeps this consistent with missing/duplicate active IDs.
+- The same fixture confirms that merely hiding a selected row with search preserves its selection and details. The focused regression and all 58 UI tests passed. No actual installed mod was removed or changed; the scan result was replaced in memory. Packaged/native UI and gameplay behavior remain unverified for this change.
+- Next useful check: inspect Library & Diagnostics table selection after changed scans, then validate the accumulated source in a local packaged build before any push to the rolling channel.
+
 ## Unresolved Mod ID details (2026-10-24)
 
 - Selecting a missing or duplicate active Mod ID updated Metadata and the preview but left the prior installed mod's Description and selected-entry state in memory. The unresolved-ID display now clears the old description, pending Workshop description request, selected entry, preview, and folder/Workshop actions before showing the missing or duplicate explanation.

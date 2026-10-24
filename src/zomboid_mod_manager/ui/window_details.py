@@ -91,7 +91,7 @@ class DetailsMixin:
         if self._last_result is not None:
             self._refresh_management_lists()
 
-    def _display_unresolved_mod_id(self, mod_id: str, *, duplicate: bool) -> None:
+    def _clear_entry_details(self) -> None:
         self._selected_entry = None
         self._workshop_description_requested_id = None
         self._workshop_description_pending = None
@@ -105,6 +105,9 @@ class DetailsMixin:
         self.open_workshop_button.setEnabled(False)
         self.open_folder_button.setProperty("entryPath", None)
         self.open_folder_button.setEnabled(False)
+
+    def _display_unresolved_mod_id(self, mod_id: str, *, duplicate: bool) -> None:
+        self._clear_entry_details()
         self.details.setPlainText(
             f"Mod ID: {mod_id}\n"
             + (
@@ -112,6 +115,14 @@ class DetailsMixin:
                 if duplicate
                 else "This Mod ID is not installed."
             )
+        )
+
+    def _display_removed_mod_id(self, mod_id: str) -> None:
+        self._last_management_mod_id = None
+        self._clear_entry_details()
+        self.details.setPlainText(
+            f"Mod ID: {mod_id}\n"
+            "This mod is no longer in the scanned folders. Check Paths & Settings or refresh the library."
         )
 
     def _display_entry(self, entry: ModEntry) -> None:
