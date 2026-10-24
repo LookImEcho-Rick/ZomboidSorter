@@ -30,7 +30,7 @@ permissions:
 
 concurrency:
   group: rolling-windows-update
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 jobs:
   rolling-windows-update:
@@ -44,14 +44,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
+          fetch-tags: false
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
           architecture: x64
-      - name: Install pinned dependencies
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            packaging/constraints-windows.txt
+      - name: Create environment and install pinned dependencies
         shell: pwsh
-        run: python -m pip install -e ".[dev,windows]" -c packaging\constraints-windows.txt
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\python.exe -m pip install -e ".[dev,windows]" -c packaging\constraints-windows.txt
       - name: Download and verify latest stable installer for update smoke
         id: previous-installer
         shell: pwsh
@@ -89,13 +96,15 @@ jobs:
         shell: pwsh
         run: |
           $env:PYTHONPATH = Join-Path (Get-Location) 'src'
-          python -m unittest discover -s tests -v
+          $python = Join-Path (Get-Location) '.venv\Scripts\python.exe'
+          $ruff = Join-Path (Get-Location) '.venv\Scripts\ruff.exe'
+          & $python -m unittest discover -s tests -v
           if ($LASTEXITCODE -ne 0) { throw 'Unit tests failed.' }
-          ruff check src tests
+          & $ruff check src tests
           if ($LASTEXITCODE -ne 0) { throw 'Ruff check failed.' }
-          ruff format --check src tests
+          & $ruff format --check src tests
           if ($LASTEXITCODE -ne 0) { throw 'Ruff format check failed.' }
-          python -m compileall -q src tests
+          & $python -m compileall -q src tests
           if ($LASTEXITCODE -ne 0) { throw 'Python compilation failed.' }
       - name: Install Inno Setup
         shell: pwsh
@@ -103,8 +112,6 @@ jobs:
       - name: Build app and versionless installer
         shell: pwsh
         run: |
-          python -m venv .venv
-          .\.venv\Scripts\python.exe -m pip install -e ".[dev,windows]" -c packaging\constraints-windows.txt
           .\packaging\build_windows.ps1
           .\packaging\build_installer.ps1 -SkipAppBuild
       - name: Smoke-test packaged install and launch
