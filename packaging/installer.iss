@@ -20,6 +20,7 @@ SetupIconFile=..\assets\zomboidsorter.ico
 OutputDir=..\dist\installer
 OutputBaseFilename=ZomboidSorter-windows-setup
 Compression=lzma2
+LZMANumBlockThreads=2
 SolidCompression=yes
 WizardStyle=modern
 CloseApplications=yes
