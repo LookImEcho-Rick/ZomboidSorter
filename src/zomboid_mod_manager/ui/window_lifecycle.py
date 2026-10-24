@@ -19,15 +19,10 @@ class WindowLifecycleMixin:
         self.workflow_hint.setVisible(roomy)
         self.available_intro.setVisible(roomy)
         self.active_intro.setVisible(roomy)
-        if not hasattr(self, "apply_other_targets_button"):
-            return
         compact = self.width() < 1160
         self.revert_button.setText("Discard" if compact else "Discard Changes")
         self.apply_config_button.setText(
             "Apply Global List…" if compact else "Apply To Project Zomboid…"
-        )
-        self.apply_other_targets_button.setText(
-            "Other Targets…" if compact else "Apply Elsewhere…"
         )
         dirty = (
             self._active_config is not None

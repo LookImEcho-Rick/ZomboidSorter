@@ -126,7 +126,7 @@ class ActiveConfigurationMixin:
         if not is_global_default_mod_list(snapshot.path):
             return (
                 "Choose global default.txt",
-                "Launch supports only the global Zomboid/mods/default.txt target. Save and server mod lists are not changed.",
+                "Choose the global Zomboid/mods/default.txt file to launch Project Zomboid through this app.",
             )
         try:
             read_unchanged_active_configuration(snapshot)
@@ -322,11 +322,9 @@ class ActiveConfigurationMixin:
             )
             confirmation = (
                 "Save the staged list to Project Zomboid's global default mod list? A timestamped backup will be created. "
-                "After the saved list is verified, Project Zomboid will open through Steam. "
-                "Per-save mod lists will not be changed."
+                "After the saved list is verified, Project Zomboid will open through Steam."
                 if launch_after_apply
-                else "Update the global Project Zomboid default mod list? A timestamped backup will be created. "
-                "Per-save mod lists will not be changed."
+                else "Update the global Project Zomboid default mod list? A timestamped backup will be created."
             )
             answer = QMessageBox.question(
                 self,
@@ -408,7 +406,7 @@ class ActiveConfigurationMixin:
             QMessageBox.warning(
                 self,
                 "Unsupported Mod List Target",
-                "Launching from this app requires the global Zomboid/mods/default.txt target. Save and server mod lists are not changed.",
+                "Choose the global Zomboid/mods/default.txt file before launching through this app.",
             )
             return
         if tuple(self._staged_mod_ids) != snapshot.config.mods:

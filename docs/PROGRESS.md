@@ -1,5 +1,10 @@
 # Progress
 
+## Global-list-only launcher scope (2026-10-24)
+
+- Removed per-save apply, backup restore, reset-to-global, and save-list import, along with server settings apply and backup restore. The launcher now manages only the global `Zomboid/mods/default.txt` list; Mod Pack save/load, Workshop collection import, global backup restore, and launch remain available.
+- Removed the unused UI/core modules and their dedicated save/server tests and fixtures. Updated the README and architecture guidance. No save, server, or game configuration files were read or changed during this cleanup. Automated tests were not run in this pass.
+
 ## v0.2.2 path setup UX polish (2026-10-24)
 
 - Renamed the tabs to **Paths Settings** and **Library Diagnostics**. Added per-field **Auto Detect** actions and **Detect All**. All path detection is read-only; unavailable game or Workshop paths are kept, and multiple game installations prompt for a choice. Compact indicators show path health; tooltips and accessibility descriptions give the found, missing, unreadable, invalid, or partial state and expected location.
@@ -247,7 +252,7 @@ Updated 2026-10-22 after the desktop UX refresh.
 
 - **Initial research/foundation:** Python 3.11+ and PySide6, Windows first, modular discovery/game I/O/profile/diagnostic/sorting services. RimSort source was inspected for architecture and workflow; no code or assets were copied. See `docs/research/`.
 - **Discovery:** Steam/game path detection, local and Workshop scanning, Build 41 root and Build 42 common/version candidates, multiple Mod IDs per Workshop item, duplicate-ID reporting, defensive metadata parsing, search/details/diagnostics. Repeated `description=` and documented repeatable `poster=` values are preserved.
-- **Mod management:** staged global `default.txt` list, ordered enable/disable and move/drag actions, maps preservation, explicit apply confirmation, timestamp backup, atomic write/readback, and concurrent-change checks. Separate, guarded actions apply staged IDs to one save list or server `.ini`; the global writer still refuses non-global targets.
+- **Mod management:** staged global `default.txt` list, ordered enable/disable and move/drag actions, maps preservation, explicit apply confirmation, timestamp backup, atomic write/readback, and concurrent-change checks. No save-list or server-settings actions are part of the current launcher.
 - **Profiles:** app-owned JSON profiles with stable order, unavailable Mod IDs and Workshop IDs, v1→v2 schema compatibility, import/export, overwrite backups, reversible deletion, and restore.
 - **Dependencies/sorting:** candidate-specific `require`, `incompatible`, `loadModAfter`, and `loadModBefore` analysis. Explicit before/after rules are editable and persisted in app settings. The deterministic proposal retains current order as a tie-breaker and stops on cycles; it is not presented as a runtime guarantee.
 - **Workshop:** read-only public collection/item metadata, URL links, PZ App ID filtering, installed/missing resolution, and profile creation. Collection import can open a selected missing item's public Workshop page. No subscription/download/update side effects.
@@ -271,7 +276,7 @@ Updated 2026-10-22 after the desktop UX refresh.
 - The packaged app has been smoke-tested in isolated locations on the development machine. Windows 10 coverage and upgrade from a previous version of the optimized installer remain unverified. Real-game global-list apply/launch acceptance was completed later, as recorded above.
 - Workshop API integration is response-mock tested, not live-tested. Subscription, update, and download flows are absent.
 - Exact Build 42 runtime selection/precedence, duplicate-Mod-ID winner behavior, and resource-specific file override/merge semantics remain unresolved. The UI labels candidate overlaps as potential.
-- Save and server writers are fixture-validated but have not been exercised against live game files; save format validation is based on a local sample and Build 42.21 source, and the server parser intentionally accepts only UTF-8 settings with distinct `Mods` and `WorkshopItems` lines. The original code is GPL-3.0-or-later. The technical Qt/WebEngine notice and source review is recorded in `packaging/RELEASE_READY`; the maintainer remains responsible for fulfilling the written source offer.
+- Save-list and server-settings features described in earlier progress entries were retired from the current global-list-only app. The original code is GPL-3.0-or-later. The technical Qt/WebEngine notice and source review is recorded in `packaging/RELEASE_READY`; the maintainer remains responsible for fulfilling the written source offer.
 
 ## Public release preparation (2026-10-22)
 

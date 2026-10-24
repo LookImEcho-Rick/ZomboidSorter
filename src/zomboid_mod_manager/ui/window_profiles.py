@@ -71,7 +71,6 @@ class ProfileActionsMixin:
         dialog = ModPacksDialog(
             self._profile_store,
             self,
-            scan_result=self._last_result,
             current_mod_ids=(
                 tuple(self._active_config.config.mods)
                 if self._active_config is not None
@@ -101,7 +100,7 @@ class ProfileActionsMixin:
             QMessageBox.warning(
                 self,
                 "Unsupported Mod List",
-                "Mod Packs from this dialog can only be applied to the global Zomboid/mods/default.txt file. Use Apply Elsewhere for a separately confirmed save or server target.",
+                "Choose the global Zomboid/mods/default.txt file to apply a Mod Pack.",
             )
             return
         try:
@@ -134,7 +133,7 @@ class ProfileActionsMixin:
                 "Replace Global Map List?",
                 f"Apply Mod Pack '{profile.name}' and replace the global map list with "
                 f"{len(profile.map_ids or ())} Map IDs? A timestamped backup will be created. "
-                f"Per-save mod lists will not be changed.\n\nChanges:\n{change_text}",
+                f"Only the global mod list will be changed.\n\nChanges:\n{change_text}",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )

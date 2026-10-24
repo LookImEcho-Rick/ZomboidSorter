@@ -8,14 +8,14 @@
 
 </div>
 
-ZomboidSorter brings local and Steam Workshop mods into one workspace. Inspect what is installed, arrange a load order, save it as a Mod Pack, and choose exactly where to apply it. Built for people who want a clearer view of a growing mod library without editing game files by hand.
+ZomboidSorter brings local and Steam Workshop mods into one workspace. Inspect what is installed, arrange a load order, save it as a Mod Pack, and apply it to the game's global mod list. Built for people who want a clearer view of a growing mod library without editing game files by hand.
 
 ## What you can do
 
 - **Find and understand your mods.** Search by name or ID, preview descriptions and metadata, and spot missing or duplicate Mod IDs.
 - **Build an order before changing the game.** Enable, disable, drag, and reorder mods in a staged list. Dependency suggestions show a proposed order you can review.
-- **Keep loadouts ready.** Save Mod Packs, preview their changes against the loaded global list, import a save's mod list, and turn installed items from a public Workshop collection into a pack.
-- **Choose the target.** Apply to the global list, one save, or one server configuration through separate confirmed actions with backups and validation.
+- **Keep loadouts ready.** Save Mod Packs, preview their changes against the loaded global list, and turn installed items from a public Workshop collection into a pack.
+- **Update the game list safely.** Apply only to the global `Zomboid/mods/default.txt` list through a confirmed action with backup and validation.
 - **Investigate issues.** Inspect declared dependencies, potential file overlaps, and selected console-log findings on demand.
 
 A Workshop item may contain several mods. ZomboidSorter tracks each Mod ID separately from its Workshop ID.
@@ -49,7 +49,7 @@ Screenshots from v0.2.0 show the workspace with an installed mod library. The se
 2. Launch Project Zomboid through Steam at least once. If `Zomboid/mods/default.txt` does not exist yet, open the game's Mods screen so it can create the global list.
 3. Open **Paths & Settings** to confirm your game, local-mod, Workshop, and global-list paths. Select **Refresh** in Mod Workspace to scan. Scanning only reads installed folders.
 4. In **Mod Workspace**, move mods from **Discover** to **Active Order** and arrange them. Select a mod to read its **Description** or **Metadata**. Nothing is written to the game while you stage changes.
-5. Save the order as a **Mod Pack** if you want to reuse it. When ready, use the primary **Apply** action for the global list, or **Other Targets… / Apply Elsewhere…** for one save or server.
+5. Save the order as a **Mod Pack** if you want to reuse it. When ready, use **Apply To Project Zomboid…** to update the global list, or **Apply & Launch…** to apply and then launch through Steam.
 
 **Use Installed** in the details pane selects the detected Build 41 or 42 metadata family. An exact Build 42 version can select an appropriate versioned `mod.info` candidate. This helps display metadata and suggest an order; it does not prove that a mod's content works in that game build.
 
@@ -58,14 +58,11 @@ Screenshots from v0.2.0 show the workspace with an installed mod library. The se
 | Action | Result |
 | --- | --- |
 | Scan, search, reorder, and Suggest Order | Reads installed mods and stages an in-memory list. Suggestions use declared constraints and are not a guarantee of runtime load order. |
-| Save or import a Mod Pack | Writes an app-owned pack. Importing from a save or public Workshop collection does not change the save or subscribe to Workshop items. |
+| Save or import a Mod Pack | Writes an app-owned pack. Importing from a public Workshop collection does not subscribe to or download Workshop items. |
 | Apply to Project Zomboid | Previews ordered Mod ID and map changes, then updates only the global `Zomboid/mods/default.txt` after confirmation, backup, concurrent-change check, atomic replacement, and readback validation. |
-| Apply to a save | Previews the ordered Mod ID changes, then updates one selected immediate save's `mods.txt`; existing maps are preserved. |
-| Apply to server settings | Previews Mod ID and Workshop ID changes, then updates only `Mods` and `WorkshopItems` in one selected server `.ini`; other settings remain in place. |
-| Restore a save/server backup | Choose a timestamped backup for the selected target, preview its Mod ID/map or server-list changes, and confirm before restoring. The current file is backed up first when it exists. |
-| Reset a save to the global list | Preview and back up its explicit `mods.txt`, then remove that file so the save inherits the global default list again. |
+| Restore a global-list backup | Choose a timestamped backup beside `default.txt`, preview the Mod ID and map changes, and confirm. The current file is backed up before it is replaced. |
 
-Existing save and server files are also backed up before a write. Stop the game or server and close its settings editor before applying. **Apply & Launch…** applies staged global changes first, then asks Steam to launch the game; a successful handoff does not confirm that the game opened.
+**Apply & Launch…** applies staged global changes first, then asks Steam to launch the game; a successful handoff does not confirm that the game opened.
 
 ## Compatibility and limits
 
@@ -104,18 +101,18 @@ The attestation ties the exact installer to the repository workflow. It does not
 
 Standard installs keep Mod Packs under `%APPDATA%\ProjectZomboidModManager\profiles\` and settings in the current user's Qt registry key. Portable installs keep both in `data\` beside the app; choose **Portable installation** during setup and use a writable folder.
 
-Global-list backups sit beside `default.txt` as `default.txt.bak-<timestamp>`. **Restore Backup…** in Paths & Settings can preview and restore one. Save and server backups sit beside the file they protect; use **Apply Elsewhere…** to restore a save/server backup, or reset an explicit save list to global inheritance. Server restore previews changed settings and masks secret-like values. The app remembers the last save and server folders. Replaced or deleted Mod Packs have recoverable copies in the pack store.
+Global-list backups sit beside `default.txt` as `default.txt.bak-<timestamp>`. **Restore Backup…** in Paths & Settings can preview and restore one. Replaced or deleted Mod Packs have recoverable copies in the pack store.
 
-Upgrades and uninstall leave app data, game-list backups, saves, and installed mods in place. Switching between standard and portable modes does not move data; export and import Mod Packs to transfer them. See [packaging details](packaging/README.md) for install modes and release checks.
+Upgrades and uninstall leave app data, global-list backups, saves, and installed mods in place. The launcher changes only the global mod list; it does not read or write save or server configuration files. Switching between standard and portable modes does not move data; export and import Mod Packs to transfer them. See [packaging details](packaging/README.md) for install modes and release checks.
 
 ## Troubleshooting
 
 - **No mods found:** check Paths & Settings and whether Steam has installed the Workshop content. One Workshop item can provide multiple Mod IDs.
-- **Cannot apply:** load the global `Zomboid/mods/default.txt` or choose the separate save/server target. The app refuses unknown syntax, links, unsafe targets, and files changed since loading.
+- **Cannot apply:** load the global `Zomboid/mods/default.txt`. The app refuses unknown syntax, links, unsafe targets, and files changed since loading.
 - **Workshop page or description unavailable:** check Steam or network access; local metadata remains usable.
 - **Launch did not start the game:** open it from Steam directly. The app can confirm only that Windows accepted the Steam link.
 - **Need diagnostic help:** choose **Help → Save Support Report…**. Review its preview before saving; it omits paths, names and IDs, logs, and file contents.
-- **Need to roll back:** use **Restore Backup…** for the global list, or use the save/server restore actions under **Apply Elsewhere…**. Each restore previews the change and creates a fresh backup of an existing current file. To make a save inherit global settings again, choose **Reset save to inherit global list…**.
+- **Need to roll back:** use **Restore Backup…** in Paths & Settings. It previews the change and creates a fresh backup of the current global list before restoring.
 
 ## Run from source
 
