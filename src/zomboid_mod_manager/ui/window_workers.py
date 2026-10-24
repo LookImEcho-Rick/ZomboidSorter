@@ -159,10 +159,11 @@ class PreviewWorker(QThread):
                     reader.setAutoTransform(True)
                     size = reader.size()
                     if size.isValid() and size.width() * size.height() <= 48_000_000:
-                        scaled = size.scaled(
-                            QSize(960, 540), Qt.AspectRatioMode.KeepAspectRatio
-                        )
-                        reader.setScaledSize(scaled)
+                        if size.width() > 960 or size.height() > 540:
+                            scaled = size.scaled(
+                                QSize(960, 540), Qt.AspectRatioMode.KeepAspectRatio
+                            )
+                            reader.setScaledSize(scaled)
                         image = reader.read()
             except OSError:
                 continue

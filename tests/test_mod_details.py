@@ -173,6 +173,8 @@ class ModDetailsTests(unittest.TestCase):
 
             self.assertEqual(Path(loaded[0][0]), entry_root / "animated.gif")
             self.assertFalse(loaded[0][2].isNull())
+            self.assertEqual(loaded[0][2].size().width(), 8)
+            self.assertEqual(loaded[0][2].size().height(), 8)
 
     def test_build_42_details_keep_the_discovered_name_for_root_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
