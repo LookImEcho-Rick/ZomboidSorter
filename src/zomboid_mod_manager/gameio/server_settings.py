@@ -243,12 +243,18 @@ def read_server_settings_backup(
     """Read and validate a backup beside the exact selected server file."""
     path = _validate_server_snapshot(snapshot)
     backup = Path(backup_path).expanduser().absolute()
-    if (
-        backup.parent != path.parent
-        or not backup.name.startswith(f"{path.name}.bak-")
-        or backup.is_symlink()
-        or getattr(backup, "is_junction", lambda: False)()
-    ):
+    try:
+        backup_parent = backup.parent.resolve(strict=True)
+    except OSError as exc:
+        raise ServerSettingsError(
+            "Choose a timestamped backup beside the selected server settings file."
+        ) from exc
+    if backup_parent != path.parent or not backup.name.startswith(f"{path.name}.bak-"):
+        raise ServerSettingsError(
+            "Choose a timestamped backup beside the selected server settings file."
+        )
+    backup = backup_parent / backup.name
+    if backup.is_symlink() or getattr(backup, "is_junction", lambda: False)():
         raise ServerSettingsError(
             "Choose a timestamped backup beside the selected server settings file."
         )

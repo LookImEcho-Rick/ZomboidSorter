@@ -271,11 +271,18 @@ def read_save_mod_backup(
     """Read and validate a backup beside the exact selected save list."""
     path = _validate_save_snapshot(snapshot)
     backup = Path(backup_path).expanduser().absolute()
-    if (
-        backup.parent != path.parent
-        or not backup.name.startswith("mods.txt.bak-")
-        or _is_link_or_junction(backup)
-    ):
+    try:
+        backup_parent = backup.parent.resolve(strict=True)
+    except OSError as exc:
+        raise SaveModDiscoveryError(
+            "Choose a timestamped backup beside the selected save's mods.txt."
+        ) from exc
+    if backup_parent != path.parent or not backup.name.startswith("mods.txt.bak-"):
+        raise SaveModDiscoveryError(
+            "Choose a timestamped backup beside the selected save's mods.txt."
+        )
+    backup = backup_parent / backup.name
+    if _is_link_or_junction(backup):
         raise SaveModDiscoveryError(
             "Choose a timestamped backup beside the selected save's mods.txt."
         )
