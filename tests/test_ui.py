@@ -1928,6 +1928,8 @@ class MainWindowTests(unittest.TestCase):
                 active_config_path=FIXTURES / "config" / "default.txt",
                 profile_store=ProfileStore(root / "profiles"),
             )
+            window._persist_settings = False
+            self.addCleanup(window.close)
             self._wait_for_background_workers(window)
 
             save_root = root / "Zomboid" / "Saves"
@@ -1959,9 +1961,13 @@ class MainWindowTests(unittest.TestCase):
                     "zomboid_mod_manager.ui.window_game_targets.QMessageBox.question",
                     return_value=QMessageBox.StandardButton.Yes,
                 ) as confirm,
+                patch.object(QMessageBox, "warning") as warning,
+                patch.object(QMessageBox, "information") as information,
             ):
                 window._restore_save_backup()
 
+            warning.assert_not_called()
+            information.assert_not_called()
             self.assertEqual(save_path.read_bytes(), old_save)
             self.assertEqual(
                 [
@@ -2006,9 +2012,13 @@ class MainWindowTests(unittest.TestCase):
                     "zomboid_mod_manager.ui.window_game_targets.QMessageBox.question",
                     return_value=QMessageBox.StandardButton.Yes,
                 ) as confirm,
+                patch.object(QMessageBox, "warning") as warning,
+                patch.object(QMessageBox, "information") as information,
             ):
                 window._restore_server_backup()
 
+            warning.assert_not_called()
+            information.assert_not_called()
             self.assertEqual(server_path.read_bytes(), old_server)
             self.assertEqual(
                 [
@@ -2042,7 +2052,6 @@ class MainWindowTests(unittest.TestCase):
             self.assertIn("Reset save to inherit global list…", action_names)
             self.assertIn("Restore a server backup…", action_names)
             self._wait_for_background_workers(window)
-            window.close()
 
     def test_reset_save_to_global_list_previews_and_backs_up_before_removing(
         self,
