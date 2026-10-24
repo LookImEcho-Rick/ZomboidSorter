@@ -22,7 +22,7 @@ A Workshop item may contain several mods. ZomboidSorter tracks each Mod ID separ
 
 ## See it in action
 
-The workspace screenshot shows the current v0.2.3 source with a disposable fixture library. **Optional Addon** is staged in memory so you can see the review path; the capture does not change any game files.
+The workspace screenshot shows the v0.2.3 source with a disposable fixture library. **Optional Addon** is staged in memory so you can see the review path; the capture does not change any game files.
 
 ![Mod Workspace with Discover, Active Order, selected mod details, and a direct Review action for active-order issues](docs/screenshots/workspace-source-v0.2.3.jpg)
 

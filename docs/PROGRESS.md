@@ -1,5 +1,12 @@
 # Progress
 
+## v0.2.4 release preparation (2026-10-24)
+
+- Prepared the `0.2.4` release candidate from the current workspace changes: clearer Build 42 metadata and version-bound warnings, improved workspace issue review and keyboard access, and stable selection/details across scans and filters. No runtime dependency or bundled Qt component changed.
+- Validation: all 159 tests passed with one environment-only symlink skip; Ruff check/format, compileall, `git diff --check`, and app/package version agreement passed.
+- Local Windows 11 packaging succeeded with Python 3.14.7, PyInstaller 6.22.3, and Inno Setup 6.7.3. The versionless installer reports product version 0.2.4 and contains 19 Qt runtime DLLs, 57 Qt attribution pages, and 125 WebEngine pages. It is 121,027,972 bytes; the sidecar and independent SHA-256 check agree: `f5cc15659e968e2f06ddaee5702e74c4ab01ddfe31a82f739136f61fd83f7251`.
+- The local installer was not installed or published; the isolated installer/update smoke scripts are restricted to GitHub-hosted Windows runners. The tagged release and rolling workflows must build the pushed commit and pass their install, update, checksum, provenance, and rollback gates before distribution.
+
 ## Local 0.2.3 package build (2026-10-24)
 
 - Final branch validation after the UI changes: all 159 tests passed with one environment-only symlink skip. Ruff check/format, compileall, and diff whitespace checks passed. The UI portion was also run separately (59 tests passed).
