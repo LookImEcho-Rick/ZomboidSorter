@@ -24,6 +24,7 @@ from zomboid_mod_manager.gameio.active_mods import ActiveModSnapshot
 from zomboid_mod_manager.portable import portable_settings_path
 from zomboid_mod_manager.profiles import ProfileStore
 from zomboid_mod_manager.sorting.user_rules import parse_user_order_rules
+from zomboid_mod_manager.ui.mod_details import PreviewChoice
 
 from .window_configuration import ActiveConfigurationMixin
 from .window_details import DetailsMixin
@@ -118,8 +119,8 @@ class MainWindow(
         self._extra_diagnostics: dict[str, str] = {}
         self._issue_error_count = 0
         self._preview_worker: PreviewWorker | None = None
-        self._preview_pending: Path | None = None
-        self._preview_requested: str | None = None
+        self._preview_pending: tuple[tuple[PreviewChoice, ...], int] | None = None
+        self._preview_choices: tuple[PreviewChoice, ...] = ()
         self._preview_generation = 0
         self._preview_cache: OrderedDict[str, QImage] = OrderedDict()
         self._selected_entry: ModEntry | None = None

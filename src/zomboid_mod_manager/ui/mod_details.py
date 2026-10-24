@@ -14,7 +14,7 @@ from zomboid_mod_manager.discovery.version_selection import (
 )
 from zomboid_mod_manager.domain import MetadataCandidate, ModEntry
 
-_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 _KNOWN_FIELDS = {
     "id",
     "name",
@@ -56,11 +56,21 @@ def candidates_for_build(
 def find_preview_for_candidates(
     entry: ModEntry, candidates: tuple[MetadataCandidate, ...]
 ) -> PreviewChoice | None:
-    """Find a declared local preview among the supplied metadata candidates."""
+    """Find the first declared, supported local image among these candidates."""
+    choices = find_preview_choices_for_candidates(entry, candidates)
+    return choices[0] if choices else None
+
+
+def find_preview_choices_for_candidates(
+    entry: ModEntry, candidates: tuple[MetadataCandidate, ...]
+) -> tuple[PreviewChoice, ...]:
+    """Return supported local images in metadata order, skipping video media."""
     try:
         entry_root = entry.entry_path.resolve()
     except OSError:
-        return None
+        return ()
+    choices: list[PreviewChoice] = []
+    seen: set[Path] = set()
     for candidate in candidates:
         references = candidate.fields.get("poster", "").splitlines()
         references += candidate.fields.get("icon", "").splitlines()
@@ -74,11 +84,13 @@ def find_preview_for_candidates(
                     path.is_relative_to(entry_root)
                     and path.suffix.casefold() in _IMAGE_EXTENSIONS
                     and path.is_file()
+                    and path not in seen
                 ):
-                    return PreviewChoice(path, candidate)
+                    choices.append(PreviewChoice(path, candidate))
+                    seen.add(path)
             except OSError:
                 continue
-    return None
+    return tuple(choices)
 
 
 def format_entry_description(entry: ModEntry, target_build: str = "all") -> str:
@@ -318,14 +330,7 @@ def format_entry_details(
     representative_fields = (
         representative_candidate.fields if representative_candidate else {}
     )
-    no_candidate = target_build != "all" and representative_candidate is None
-    display_name = representative_fields.get("name", "").strip() or (
-        "No matching metadata candidate"
-        if no_candidate
-        else entry.name
-        if target_build == "all"
-        else "(not provided)"
-    )
+    display_name = representative_fields.get("name", "").strip() or entry.name
     display_author = (
         representative_fields.get("author", "").strip()
         or representative_fields.get("authors", "").strip()

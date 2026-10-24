@@ -86,9 +86,21 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         )
         self.detect_all_paths_button.clicked.connect(self._auto_detect_all_paths)
         scan_heading_row.addWidget(self.detect_all_paths_button)
+        self.detect_all_trailing_spacer = QWidget()
+        scan_heading_row.addWidget(self.detect_all_trailing_spacer)
         self.setup_layout.addLayout(scan_heading_row)
 
         paths_form = QFormLayout()
+        paths_form.setFieldGrowthPolicy(
+            QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow
+        )
+        self.settings_paths_form = paths_form
+        self._settings_browse_buttons: list[QPushButton] = []
+        self._settings_secondary_buttons: list[QPushButton] = [
+            self.detect_all_paths_button
+        ]
+        self._settings_trailing_buttons: list[QPushButton] = []
+        self._settings_path_health_indicators: list[QLabel] = []
         default_game_path = (
             str(self._detected.game_installations[0])
             if self._detected.game_installations
@@ -109,8 +121,10 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         game_row.addWidget(self.game_path)
         game_browse = QPushButton("Browse…")
         game_browse.clicked.connect(lambda: self._browse_into(self.game_path))
+        self._settings_browse_buttons.append(game_browse)
         game_row.addWidget(game_browse)
         self.game_path_detect_button = QPushButton("Auto Detect")
+        self._settings_secondary_buttons.append(self.game_path_detect_button)
         self.game_path_detect_button.setAccessibleName("Auto-detect game folder")
         self.game_path_detect_button.setToolTip(
             "Find the Project Zomboid installation in the detected Steam libraries."
@@ -121,7 +135,8 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         self.game_path_health.setObjectName("pathHealth")
         self.game_path_health.setAccessibleName("Game folder path health")
         self.game_path_health.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.game_path_health.setFixedWidth(28)
+        self.game_path_health.setFixedWidth(20)
+        self._settings_path_health_indicators.append(self.game_path_health)
         game_row.addWidget(self.game_path_health)
         paths_form.addRow("Game folder", game_row)
 
@@ -136,8 +151,10 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         local_row.addWidget(self.local_path)
         local_browse = QPushButton("Browse…")
         local_browse.clicked.connect(lambda: self._browse_into(self.local_path))
+        self._settings_browse_buttons.append(local_browse)
         local_row.addWidget(local_browse)
         self.local_path_detect_button = QPushButton("Auto Detect")
+        self._settings_secondary_buttons.append(self.local_path_detect_button)
         self.local_path_detect_button.setAccessibleName("Auto-detect local mods folder")
         self.local_path_detect_button.setToolTip(
             "Reset to the standard Project Zomboid local mods folder."
@@ -148,7 +165,8 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         self.local_path_health.setObjectName("pathHealth")
         self.local_path_health.setAccessibleName("Local mods path health")
         self.local_path_health.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.local_path_health.setFixedWidth(28)
+        self.local_path_health.setFixedWidth(20)
+        self._settings_path_health_indicators.append(self.local_path_health)
         local_row.addWidget(self.local_path_health)
         paths_form.addRow("Local mods", local_row)
 
@@ -169,8 +187,10 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         workshop_row.addWidget(self.workshop_paths)
         workshop_browse = QPushButton("Add Folder…")
         workshop_browse.clicked.connect(self._add_workshop_folder)
+        self._settings_browse_buttons.append(workshop_browse)
         workshop_row.addWidget(workshop_browse)
         self.workshop_paths_detect_button = QPushButton("Auto Detect")
+        self._settings_secondary_buttons.append(self.workshop_paths_detect_button)
         self.workshop_paths_detect_button.setAccessibleName(
             "Auto-detect Workshop content folders"
         )
@@ -185,7 +205,8 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         self.workshop_paths_health.setObjectName("pathHealth")
         self.workshop_paths_health.setAccessibleName("Workshop paths health")
         self.workshop_paths_health.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.workshop_paths_health.setFixedWidth(28)
+        self.workshop_paths_health.setFixedWidth(20)
+        self._settings_path_health_indicators.append(self.workshop_paths_health)
         workshop_row.addWidget(self.workshop_paths_health)
         paths_form.addRow("Workshop content", workshop_row)
         self.setup_layout.addLayout(paths_form)
@@ -292,7 +313,9 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
             self.metadata_preview_target.setCurrentIndex(saved_target_index)
         self.metadata_preview_target.setAccessibleName("Metadata target build")
         self.metadata_preview_target.setToolTip(
-            "Build 41 uses root metadata. For Build 42, enter the exact game version to select the newest compatible version folder. "
+            "Build 41 uses root metadata. Build 42 ignores root-level Build 41 mod files; "
+            "those entries need common metadata or a compatible version folder. "
+            "Enter the exact game version to select the newest compatible version folder. "
             "This selects metadata only; it does not verify mod content compatibility."
         )
         self.metadata_preview_target.currentIndexChanged.connect(

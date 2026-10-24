@@ -58,7 +58,9 @@ class DiagnosticsMixin:
                         elif diagnostic.level == "error":
                             error_count += 1
             for entry in result.entries:
-                messages = self._entry_diagnostics_for_target(entry)
+                messages = self._entry_diagnostics_for_target(
+                    entry, self._discover_target_build()
+                )
                 lines.extend(f"WARNING: {message}" for message in messages)
                 warning_count += len(messages)
 
@@ -81,7 +83,7 @@ class DiagnosticsMixin:
                 report = analyze_dependencies(
                     result.entries,
                     self._staged_mod_ids,
-                    target_build=self._metadata_target_build(),
+                    target_build=self._discover_target_build(),
                 )
                 for finding in report.findings:
                     level = "INFO" if finding.kind == "normalization" else "WARNING"

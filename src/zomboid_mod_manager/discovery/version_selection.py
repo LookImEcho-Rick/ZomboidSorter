@@ -44,6 +44,27 @@ def is_numeric_game_build(value: str) -> bool:
     return _version_key(value) is not None
 
 
+def _missing_build_42_message(
+    candidates: tuple[MetadataCandidate, ...],
+    directory_candidates: tuple[MetadataCandidate, ...],
+) -> str:
+    universe = directory_candidates or candidates
+    has_root_metadata = any(
+        candidate.layout == "root (Build 41 style)" for candidate in universe
+    )
+    has_build_42_metadata = any(
+        candidate.layout == "common (shared)" or candidate.version_folder
+        for candidate in universe
+    )
+    if has_root_metadata and not has_build_42_metadata:
+        return (
+            "Only root (Build 41 style) metadata was found. Build 42 ignores "
+            "root-level mod files; this mod needs common metadata or a compatible "
+            "42+ version folder."
+        )
+    return "No Build 42 shared or versioned metadata candidate was found."
+
+
 def resolve_metadata_candidates(
     candidates: tuple[MetadataCandidate, ...],
     target_build: str,
@@ -82,7 +103,7 @@ def resolve_metadata_candidates(
             return CandidateSelection(
                 (),
                 "missing",
-                "No Build 42 shared or versioned metadata candidate was found.",
+                _missing_build_42_message(candidates, directory_candidates),
             )
         return CandidateSelection(
             build_42_candidates,
@@ -167,7 +188,11 @@ def resolve_metadata_candidates(
     return CandidateSelection(
         (),
         "missing",
-        f"No compatible metadata candidate was found for game build {target_build}.",
+        (
+            _missing_build_42_message(candidates, universe)
+            if target_version[0] >= 42
+            else f"No compatible metadata candidate was found for game build {target_build}."
+        ),
     )
 
 

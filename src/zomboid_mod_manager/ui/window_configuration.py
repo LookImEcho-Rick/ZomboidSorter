@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 
 from PySide6.QtCore import (
@@ -11,7 +12,7 @@ from PySide6.QtGui import (
     QDesktopServices,
 )
 from PySide6.QtWidgets import (
-    QFileDialog,
+    QDialog,
     QMessageBox,
 )
 
@@ -20,16 +21,17 @@ from zomboid_mod_manager.configuration import (
     apply_active_configuration,
     is_global_default_mod_list,
     list_active_configuration_backups,
-    read_active_configuration_backup,
     read_unchanged_active_configuration,
     restore_active_configuration,
     selected_path_matches_configuration,
 )
+from zomboid_mod_manager.diagnostics.dependencies import analyze_dependencies
 from zomboid_mod_manager.gameio.active_mods import (
     ActiveModConfigError,
     ConcurrentConfigChangeError,
 )
 from zomboid_mod_manager.ui.change_preview import format_ordered_list_change
+from zomboid_mod_manager.ui.global_backup_dialog import GlobalBackupDialog
 
 
 class ActiveConfigurationMixin:
@@ -196,19 +198,12 @@ class ActiveConfigurationMixin:
                 "No timestamped backups were found beside the loaded global mod list.",
             )
             return
-        selected, _ = QFileDialog.getOpenFileName(
-            self,
-            "Choose a global mod list backup",
-            str(snapshot.path.parent),
-            "Global mod list backups (default.txt.bak-*)",
-        )
-        if not selected:
+        dialog = GlobalBackupDialog(snapshot, backups, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        backup_path = Path(selected)
-        try:
-            backup = read_active_configuration_backup(snapshot, backup_path)
-        except (OSError, ActiveModConfigError) as exc:
-            QMessageBox.warning(self, "Could Not Read Backup", str(exc))
+        backup_path = dialog.selected_path
+        backup = dialog.selected_backup
+        if backup_path is None or backup is None:
             return
 
         current = snapshot.config
@@ -300,6 +295,8 @@ class ActiveConfigurationMixin:
             map_ids is None or map_ids == self._active_config.config.maps
         ):
             return True
+        if not self._confirm_configuration_preflight("applying"):
+            return False
         if require_confirmation:
             resulting_maps = (
                 self._active_config.config.maps if map_ids is None else map_ids
@@ -386,6 +383,78 @@ class ActiveConfigurationMixin:
             self._active_config, self.active_config_path.text()
         )
 
+    def _configuration_preflight_warnings(self) -> tuple[str, ...]:
+        result = self._last_result
+        warnings: list[str] = []
+        if result is None:
+            warnings.append(
+                "The mod library has not been scanned, so installed Mod IDs and declared dependencies could not be checked.",
+            )
+            entries_by_id = {}
+        else:
+            entries_by_id = {}
+            for entry in result.entries:
+                if entry.mod_id:
+                    entries_by_id.setdefault(entry.mod_id, []).append(entry)
+
+        active_ids = tuple(self._staged_mod_ids)
+        active_counts = Counter(active_ids)
+        for mod_id, count in active_counts.items():
+            if count > 1:
+                warnings.append(f"'{mod_id}' appears {count} times in the active list.")
+        for mod_id in dict.fromkeys(active_ids):
+            installed = entries_by_id.get(mod_id, ())
+            if result is not None and not installed:
+                warnings.append(
+                    f"'{mod_id}' is active but was not found in the scanned library."
+                )
+            elif len(installed) > 1:
+                warnings.append(
+                    f"'{mod_id}' appears in {len(installed)} installed entries."
+                )
+
+        if result is not None:
+            report = analyze_dependencies(
+                result.entries,
+                active_ids,
+                target_build=self._metadata_target_build(),
+            )
+            warnings.extend(
+                f"[{finding.kind}] {finding.message}"
+                for finding in report.findings
+                if finding.kind != "normalization"
+            )
+        return tuple(dict.fromkeys(warnings))
+
+    def _confirm_configuration_preflight(self, action: str) -> bool:
+        warnings = self._configuration_preflight_warnings()
+        if not warnings:
+            return True
+        shown = warnings[:40]
+        details = "\n".join(f"• {warning}" for warning in shown)
+        if len(warnings) > len(shown):
+            details += f"\n• …and {len(warnings) - len(shown)} more finding(s)"
+        action_title = "Apply" if action == "applying" else "Launch"
+        box = QMessageBox(
+            QMessageBox.Icon.Warning,
+            f"Review Before {action_title}",
+            f"Preflight found {len(warnings)} possible issue(s) in the active Mod IDs.",
+            QMessageBox.StandardButton.NoButton,
+            self,
+        )
+        proceed = box.addButton(
+            f"Continue to {action_title}", QMessageBox.ButtonRole.AcceptRole
+        )
+        cancel = box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        box.setInformativeText(
+            "These checks use the scanned library and mod.info declarations. Review them before continuing."
+        )
+        box.setDetailedText(details)
+        box.setDefaultButton(cancel)
+        box.setEscapeButton(cancel)
+        box.exec()
+        return box.clickedButton() is proceed
+
     def _launch_project_zomboid(self) -> None:
         snapshot = self._active_config
         if snapshot is None:
@@ -417,6 +486,8 @@ class ActiveConfigurationMixin:
             snapshot = self._active_config
             if snapshot is None:
                 return
+        elif not self._confirm_configuration_preflight("launching"):
+            return
         try:
             read_unchanged_active_configuration(snapshot)
         except ConcurrentConfigChangeError:

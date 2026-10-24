@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import (
     QEvent,
     QRect,
@@ -12,6 +14,8 @@ from PySide6.QtCore import (
 from PySide6.QtGui import (
     QColor,
     QImage,
+    QImageReader,
+    QMovie,
     QPainter,
     QPixmap,
 )
@@ -33,6 +37,8 @@ SEARCH_ROLE = int(Qt.ItemDataRole.UserRole) + 1
 SOURCE_ROLE = SEARCH_ROLE + 1
 ISSUE_ROLE = SEARCH_ROLE + 2
 NEW_WORKSHOP_ROLE = ISSUE_ROLE + 1
+BUILD_41_ROLE = NEW_WORKSHOP_ROLE + 1
+BUILD_42_ROLE = BUILD_41_ROLE + 1
 
 
 class PreviewLabel(QLabel):
@@ -41,10 +47,14 @@ class PreviewLabel(QLabel):
     def __init__(self) -> None:
         super().__init__()
         self._image = QImage()
+        self._movie: QMovie | None = None
+        self._movie_source_size = QSize()
+        self._movie_scaled_size = QSize()
         self._mouse_pressed = False
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
     def show_placeholder(self, text: str) -> None:
+        self._stop_movie()
         self._image = QImage()
         self._mouse_pressed = False
         self.clear()
@@ -54,11 +64,43 @@ class PreviewLabel(QLabel):
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
     def show_image(self, image: QImage) -> None:
+        self._stop_movie()
+        self.clear()
         self._image = image
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setToolTip("Click or press Enter to enlarge this image")
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._refresh_image()
+
+    def show_movie(self, path: Path) -> bool:
+        """Play a local GIF, keeping its current frame available for enlargement."""
+        self._stop_movie()
+        movie = QMovie(str(path), parent=self)
+        if not movie.isValid():
+            movie.deleteLater()
+            return False
+        size = QImageReader(str(path)).size()
+        if not size.isValid():
+            movie.deleteLater()
+            return False
+
+        self.clear()
+        self._image = QImage()
+        self._movie = movie
+        self._movie_source_size = size
+        self._movie_scaled_size = QSize()
+        movie.setCacheMode(QMovie.CacheMode.CacheNone)
+        movie.frameChanged.connect(self._movie_frame_changed)
+        self.setMovie(movie)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip(
+            "Animated preview. Click or press Enter to enlarge the current frame"
+        )
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._refresh_image()
+        movie.start()
+        self._movie_frame_changed(movie.currentFrameNumber())
+        return True
 
     @property
     def image(self) -> QImage:
@@ -105,6 +147,14 @@ class PreviewLabel(QLabel):
         self._refresh_image()
 
     def _refresh_image(self) -> None:
+        if self._movie is not None:
+            target = self._movie_source_size.scaled(
+                self.contentsRect().size(), Qt.AspectRatioMode.KeepAspectRatio
+            )
+            if target.isValid() and target != self._movie_scaled_size:
+                self._movie_scaled_size = target
+                self._movie.setScaledSize(target)
+            return
         if self._image.isNull():
             return
         self.setPixmap(
@@ -114,6 +164,20 @@ class PreviewLabel(QLabel):
                 Qt.TransformationMode.SmoothTransformation,
             )
         )
+
+    def _movie_frame_changed(self, _frame_number: int) -> None:
+        if self._movie is not None:
+            self._image = self._movie.currentImage()
+
+    def _stop_movie(self) -> None:
+        movie = self._movie
+        self._movie = None
+        self._movie_source_size = QSize()
+        self._movie_scaled_size = QSize()
+        if movie is not None:
+            movie.stop()
+            movie.setFileName("")
+            movie.deleteLater()
 
 
 class ImagePreviewOverlay(QWidget):

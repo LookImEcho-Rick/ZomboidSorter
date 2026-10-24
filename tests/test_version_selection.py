@@ -51,6 +51,20 @@ class VersionSelectionTests(unittest.TestCase):
         self.assertEqual(selected.status, "selected-common")
         self.assertEqual(selected.candidates[0].layout, "common (shared)")
 
+    def test_explains_root_only_metadata_is_not_available_to_build_42(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            entries = self._scan_entry(
+                Path(temporary),
+                {"mod.info": "name=Legacy Example\nid=Example\n"},
+            )
+
+        preview = resolve_entry_metadata(entries["Example"], "42")
+        exact = resolve_entry_metadata(entries["Example"], "42.21.0")
+        self.assertEqual(preview.status, "missing")
+        self.assertEqual(exact.status, "missing")
+        self.assertIn("root (Build 41 style)", preview.message)
+        self.assertIn("Build 42 ignores root-level mod files", exact.message)
+
     def test_versioned_id_supersedes_common_id_for_the_same_folder(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             entries = self._scan_entry(

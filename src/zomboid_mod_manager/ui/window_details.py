@@ -13,10 +13,14 @@ from PySide6.QtGui import (
     QImage,
 )
 
-from zomboid_mod_manager.discovery.version_selection import resolve_entry_metadata
+from zomboid_mod_manager.discovery.version_selection import (
+    CandidateSelection,
+    resolve_entry_metadata,
+)
 from zomboid_mod_manager.domain import ModEntry
 from zomboid_mod_manager.ui.mod_details import (
-    find_preview_for_candidates,
+    PreviewChoice,
+    find_preview_choices_for_candidates,
     format_entry_description_html,
     format_entry_details,
     format_workshop_description_html,
@@ -114,23 +118,59 @@ class DetailsMixin:
             self._show_local_description(
                 entry, target_build, "Local mod.info description"
             )
-        choice = find_preview_for_candidates(entry, candidates)
-        if choice is None:
+        choices = list(find_preview_choices_for_candidates(entry, candidates))
+        seen_paths = {choice.path for choice in choices}
+        choices.extend(
+            choice
+            for choice in find_preview_choices_for_candidates(entry, entry.candidates)
+            if choice.path not in seen_paths
+        )
+        preview_choices = tuple(choices)
+        if not preview_choices:
             self._clear_preview(
                 "NO PREVIEW AVAILABLE",
-                f"{selection.message} No local poster or icon was found.",
+                "No usable local image or GIF was found. Video media is skipped.",
             )
             return
-        self._preview_requested = str(choice.path)
+        self._preview_generation += 1
+        generation = self._preview_generation
+        self._preview_choices = preview_choices
+        self._preview_pending = None
+        first_choice = preview_choices[0]
+        first_path = str(first_choice.path)
+        if first_choice.path.suffix.casefold() == ".gif":
+            cached = None
+        else:
+            cached = self._preview_cache.get(first_path)
+        if cached is not None:
+            self._preview_cache.move_to_end(first_path)
+            self.preview.show_image(cached)
+            self._set_preview_caption(first_choice, selection, target_build)
+            return
+        self.preview.show_placeholder("LOADING PREVIEW…")
+        if self._preview_worker is None:
+            self._start_preview_worker(preview_choices, generation)
+        else:
+            self._preview_pending = (preview_choices, generation)
+
+    def _set_preview_caption(
+        self,
+        choice: PreviewChoice,
+        selection: CandidateSelection,
+        target_build: str,
+    ) -> None:
         if target_build == "all":
             caption = (
                 f"Illustration from {choice.candidate.layout}; "
                 "this does not select a game build."
             )
-        elif (
-            selection.status == "selected-version"
-            or selection.status == "selected-common"
-        ):
+        elif choice.candidate not in selection.candidates:
+            caption = (
+                f"Illustration from {choice.candidate.layout} metadata. It is not "
+                f"the selected metadata for game build {target_build}; this preview "
+                "does not indicate mod compatibility."
+            )
+        elif selection.status in {"selected-version", "selected-common"}:
             caption = (
                 f"{selection.message} This selects metadata only; it does not "
                 "verify the mod's content is compatible."
@@ -140,17 +180,6 @@ class DetailsMixin:
                 f"Illustration from {choice.candidate.layout}; {selection.message}"
             )
         self.preview_caption.setText(f"{caption} Click the image to enlarge it.")
-        cached = self._preview_cache.get(self._preview_requested)
-        if cached is not None:
-            self._preview_cache.move_to_end(self._preview_requested)
-            self.preview.show_image(cached)
-            self._preview_pending = None
-            return
-        self.preview.show_placeholder("LOADING PREVIEW…")
-        if self._preview_worker is None:
-            self._start_preview_worker(choice.path)
-        else:
-            self._preview_pending = choice.path
 
     def _show_local_description(
         self, entry: ModEntry, target_build: str, source: str
@@ -255,7 +284,8 @@ class DetailsMixin:
             self._start_workshop_description_worker(pending)
 
     def _clear_preview(self, text: str, caption: str) -> None:
-        self._preview_requested = None
+        self._preview_generation += 1
+        self._preview_choices = ()
         self._preview_pending = None
         self.preview.show_placeholder(text)
         self.preview_caption.setText(caption)
@@ -266,8 +296,10 @@ class DetailsMixin:
             return
         self.preview_overlay.show_image(image)
 
-    def _start_preview_worker(self, path: Path) -> None:
-        self._preview_worker = PreviewWorker(path, self._preview_generation)
+    def _start_preview_worker(
+        self, choices: tuple[PreviewChoice, ...], generation: int
+    ) -> None:
+        self._preview_worker = PreviewWorker(choices, generation)
         self._preview_worker.loaded.connect(self._preview_loaded)
         self._preview_worker.finished.connect(self._preview_worker_finished)
         self._preview_worker.start()
@@ -275,16 +307,35 @@ class DetailsMixin:
     def _preview_loaded(self, path: str, generation: int, image: QImage) -> None:
         if generation != self._preview_generation:
             return
-        if not image.isNull():
+        if image.isNull() or not path:
+            self.preview.show_placeholder("PREVIEW UNAVAILABLE")
+            self.preview_caption.setText(
+                "No supported local image or GIF could be decoded. "
+                "Video media is skipped."
+            )
+            return
+        selected_path = Path(path)
+        choice = next(
+            (item for item in self._preview_choices if item.path == selected_path),
+            None,
+        )
+        if choice is None:
+            return
+        if selected_path.suffix.casefold() == ".gif":
+            if not self.preview.show_movie(selected_path):
+                self.preview.show_image(image)
+        else:
             self._preview_cache[path] = image
             self._preview_cache.move_to_end(path)
             if len(self._preview_cache) > 16:
                 self._preview_cache.popitem(last=False)
-        if self._preview_requested == path:
-            if image.isNull():
-                self.preview.show_placeholder("PREVIEW UNAVAILABLE")
-            else:
-                self.preview.show_image(image)
+            self.preview.show_image(image)
+        entry = self._selected_entry
+        if entry is None:
+            return
+        target_build = self._metadata_target_build()
+        selection = resolve_entry_metadata(entry, target_build)
+        self._set_preview_caption(choice, selection, target_build)
 
     def _preview_worker_finished(self) -> None:
         self._preview_worker = None
@@ -293,12 +344,8 @@ class DetailsMixin:
             return
         pending = self._preview_pending
         self._preview_pending = None
-        if (
-            pending is not None
-            and str(pending) == self._preview_requested
-            and str(pending) not in self._preview_cache
-        ):
-            self._start_preview_worker(pending)
+        if pending is not None and pending[1] == self._preview_generation:
+            self._start_preview_worker(*pending)
 
     def _open_selected_folder(self) -> None:
         path = self.open_folder_button.property("entryPath")

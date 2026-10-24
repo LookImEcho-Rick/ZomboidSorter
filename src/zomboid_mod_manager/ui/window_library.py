@@ -16,6 +16,8 @@ from zomboid_mod_manager.discovery.version_selection import resolve_entry_metada
 from zomboid_mod_manager.domain import ModEntry
 
 from .window_widgets import (
+    BUILD_41_ROLE,
+    BUILD_42_ROLE,
     ISSUE_ROLE,
     NEW_WORKSHOP_ROLE,
     SEARCH_ROLE,
@@ -136,7 +138,7 @@ class LibraryMixin:
     def _set_list_item_metadata(
         self, item: QListWidgetItem, mod_id: str, matches: list[ModEntry]
     ) -> None:
-        target_build = self._metadata_target_build()
+        target_build = self._discover_target_build()
         item.setData(
             SEARCH_ROLE,
             " ".join(
@@ -146,6 +148,14 @@ class LibraryMixin:
             ).casefold(),
         )
         item.setData(SOURCE_ROLE, matches[0].source if len(matches) == 1 else "")
+        item.setData(
+            BUILD_41_ROLE,
+            any(resolve_entry_metadata(entry, "41").candidates for entry in matches),
+        )
+        item.setData(
+            BUILD_42_ROLE,
+            any(resolve_entry_metadata(entry, "42").candidates for entry in matches),
+        )
         item.setData(
             ISSUE_ROLE,
             len(matches) != 1
@@ -167,20 +177,25 @@ class LibraryMixin:
             return self.metadata_build_version.text().strip() or "42"
         return target
 
+    def _discover_target_build(self) -> str:
+        target = self.inactive_build_filter.currentData()
+        return str(target) if target in {"41", "42"} else self._metadata_target_build()
+
     def _entry_display_name(self, entry: ModEntry) -> str:
-        target_build = self._metadata_target_build()
+        target_build = self._discover_target_build()
         selected = resolve_entry_metadata(entry, target_build)
         candidate = selected.candidates[0] if selected.candidates else None
         if candidate is not None:
             name = candidate.fields.get("name", "").strip()
             if name:
                 return name
-        if target_build != "all" and not selected.candidates:
-            return "No matching metadata"
         return entry.name
 
-    def _entry_diagnostics_for_target(self, entry: ModEntry) -> tuple[str, ...]:
-        selection = resolve_entry_metadata(entry, self._metadata_target_build())
+    def _entry_diagnostics_for_target(
+        self, entry: ModEntry, target_build: str | None = None
+    ) -> tuple[str, ...]:
+        target_build = target_build or self._discover_target_build()
+        selection = resolve_entry_metadata(entry, target_build)
         messages = list(entry.diagnostics)
         if selection.status in {
             "build-41",
@@ -220,10 +235,14 @@ class LibraryMixin:
 
     def _filter_available_mods(self, query: str) -> None:
         mode = self.inactive_filter.currentText()
+        build = self.inactive_build_filter.currentData()
+        build_role = {"41": BUILD_41_ROLE, "42": BUILD_42_ROLE}.get(build)
         visible = 0
         for index in range(self.available_list.count()):
             item = self.available_list.item(index)
             match = self._matches_list_filter(item, query, mode)
+            if build_role is not None:
+                match = match and bool(item.data(build_role))
             item.setHidden(not match)
             visible += match
         self.available_list.visible_count = visible
@@ -238,7 +257,7 @@ class LibraryMixin:
         self.inactive_heading.setText(f"DISCOVER  ·  {count}{new_label}")
         self.available_list.empty_text = (
             "No mods match this search or filter"
-            if query or mode != "All sources"
+            if query or mode != "All sources" or build != "all"
             else "No inactive mods found in the scanned folders"
         )
         self.available_list.viewport().update()

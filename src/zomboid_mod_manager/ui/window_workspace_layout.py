@@ -159,6 +159,18 @@ class WorkspaceLayoutMixin:
         )
         inactive_options.addWidget(self.inactive_sort)
         available_column.addLayout(inactive_options)
+        self.inactive_build_filter = QComboBox()
+        self.inactive_build_filter.addItem("Show all", "all")
+        self.inactive_build_filter.addItem("Build 41", "41")
+        self.inactive_build_filter.addItem("Build 42", "42")
+        self.inactive_build_filter.setAccessibleName("Discover game build filter")
+        self.inactive_build_filter.setToolTip(
+            "Filter Discover by metadata layout: root files for Build 41, or shared and versioned files for Build 42."
+        )
+        self.inactive_build_filter.currentIndexChanged.connect(
+            lambda _index: self._refresh_management_lists()
+        )
+        available_column.addWidget(self.inactive_build_filter)
         self.available_list = StagingModListWidget()
         self.available_list.empty_text = "Scanning installed mods…"
         self.available_list.setAccessibleName("Inactive mods")

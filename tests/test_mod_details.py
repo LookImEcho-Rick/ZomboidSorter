@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import os
 import tempfile
 import unittest
@@ -13,10 +14,12 @@ from zomboid_mod_manager.discovery.scanner import scan_mods
 from zomboid_mod_manager.ui.mod_details import (
     candidates_for_build,
     find_preview,
+    find_preview_choices_for_candidates,
     format_entry_description,
     format_entry_details,
     format_workshop_description_html,
 )
+from zomboid_mod_manager.ui.window_workers import PreviewWorker
 
 
 class ModDetailsTests(unittest.TestCase):
@@ -133,6 +136,57 @@ class ModDetailsTests(unittest.TestCase):
             self.assertTrue(image.save(str(root / "outside.png")))
             entry = scan_mods(local_roots=[root]).entries[0]
             self.assertIsNone(find_preview(entry))
+
+    def test_preview_skips_video_and_tries_next_decodable_gif_or_image(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            entry_root = root / "Example"
+            entry_root.mkdir()
+            (entry_root / "mod.info").write_text(
+                "name=Example\nid=Example\n"
+                "poster=trailer.mp4\n"
+                "poster=broken.png\n"
+                "poster=animated.gif\n"
+                "poster=backup.png\n",
+                encoding="utf-8",
+            )
+            (entry_root / "trailer.mp4").write_bytes(b"video fixture")
+            (entry_root / "broken.png").write_bytes(b"not a png")
+            (entry_root / "animated.gif").write_bytes(
+                base64.b64decode(
+                    "R0lGODlhCAAIAIEAAP8AAAAAAAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQADAAAACwAAAAACAAIAAAIDwABCBxIsKDBgwgTKkwYEAAh+QQBDAABACwAAAAACAAIAIEAAP8AAAAAAAAAAAAIDwABCBxIsKDBgwgTKkwYEAA7"
+                )
+            )
+            fallback = QImage(40, 30, QImage.Format.Format_ARGB32)
+            fallback.fill(QColor("#64a7dc"))
+            self.assertTrue(fallback.save(str(entry_root / "backup.png")))
+            entry = scan_mods(local_roots=[root]).entries[0]
+            choices = find_preview_choices_for_candidates(entry, entry.candidates)
+            self.assertEqual(
+                [choice.path.suffix for choice in choices], [".png", ".gif", ".png"]
+            )
+
+            loaded = []
+            worker = PreviewWorker(choices, 1)
+            worker.loaded.connect(lambda *result: loaded.append(result))
+            worker.run()
+
+            self.assertEqual(Path(loaded[0][0]), entry_root / "animated.gif")
+            self.assertFalse(loaded[0][2].isNull())
+
+    def test_build_42_details_keep_the_discovered_name_for_root_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            entry_root = root / "Example"
+            entry_root.mkdir()
+            (entry_root / "mod.info").write_text(
+                "name=Legacy Example\nid=Example\n", encoding="utf-8"
+            )
+            entry = scan_mods(local_roots=[root]).entries[0]
+
+        details = format_entry_details(entry, (entry,), [], "42.21.0")
+        self.assertTrue(details.startswith("Legacy Example\n"))
+        self.assertIn("Build 42 ignores root-level mod files", details)
 
 
 if __name__ == "__main__":

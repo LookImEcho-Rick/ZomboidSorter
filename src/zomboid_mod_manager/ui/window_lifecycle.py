@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Qt, QTimer
 
 from zomboid_mod_manager.ui.theme import apply_theme
 
@@ -82,3 +82,25 @@ class WindowLifecycleMixin:
 
     def _apply_theme(self) -> None:
         apply_theme(self)
+        browse_width = max(
+            button.sizeHint().width() for button in self._settings_browse_buttons
+        )
+        secondary_width = max(
+            button.sizeHint().width() for button in self._settings_secondary_buttons
+        )
+        trailing_width = max(
+            (button.sizeHint().width() for button in self._settings_trailing_buttons),
+            default=20,
+        )
+        for button in self._settings_browse_buttons:
+            button.setFixedWidth(browse_width)
+        for button in self._settings_secondary_buttons:
+            button.setFixedWidth(secondary_width)
+        for button in self._settings_trailing_buttons:
+            button.setFixedWidth(trailing_width)
+        self.detect_all_trailing_spacer.setFixedWidth(trailing_width)
+        for indicator in self._settings_path_health_indicators:
+            indicator.setFixedWidth(trailing_width)
+            indicator.setAlignment(
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+            )

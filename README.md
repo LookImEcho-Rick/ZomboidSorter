@@ -15,31 +15,27 @@ ZomboidSorter brings local and Steam Workshop mods into one workspace. Inspect w
 - **Find and understand your mods.** Search by name or ID, preview descriptions and metadata, and spot missing or duplicate Mod IDs.
 - **Build an order before changing the game.** Enable, disable, drag, and reorder mods in a staged list. Dependency suggestions show a proposed order you can review.
 - **Keep loadouts ready.** Save Mod Packs, preview their changes against the loaded global list, and turn installed items from a public Workshop collection into a pack.
-- **Update the game list safely.** Apply only to the global `Zomboid/mods/default.txt` list through a confirmed action with backup and validation.
+- **Update the game list safely.** Check for missing or duplicate active Mod IDs and declared dependency issues before applying or launching, then update only the global `Zomboid/mods/default.txt` list through a confirmed action with backup and validation.
 - **Investigate issues.** Inspect declared dependencies, potential file overlaps, and selected console-log findings on demand.
 
 A Workshop item may contain several mods. ZomboidSorter tracks each Mod ID separately from its Workshop ID.
 
 ## See it in action
 
-Screenshots from v0.2.0 show the workspace with an installed mod library. The settings view includes local folder paths from the captured machine.
+Screenshots below were captured from the locally installed v0.2.2 app with its real mod library, not fixture data. The workspace capture filters Discover to Viewpoint. This installed binary predates the global-only cleanup in the current source, so its footer still shows the retired **Apply Elsewhere…** control.
 
-![Mod Workspace with Discover, Active Order, and selected mod details](docs/screenshots/workspace-v0.2.0.png)
+![Mod Workspace with installed Viewpoint mods in Discover and Active Order](docs/screenshots/workspace-installed-v0.2.2.jpg)
 
 <details>
-<summary>View Steam Workshop, collection import, and settings</summary>
+<summary>View Steam Workshop and collection import</summary>
 
 **Steam Workshop**
 
-![Steam Workshop open inside ZomboidSorter](docs/screenshots/workshop-v0.2.0.png)
+![Steam Workshop open inside the installed ZomboidSorter app](docs/screenshots/workshop-installed-v0.2.2.jpg)
 
 **Import a Workshop collection**
 
-![Import Collection page and collection review dialog](docs/screenshots/collection-import-v0.2.0.png)
-
-**Paths & Settings**
-
-![Paths & Settings showing scan locations and the global mod list](docs/screenshots/settings-v0.2.0.png)
+![Collection review dialog in the installed app, ready for a public collection URL](docs/screenshots/collection-review-installed-v0.2.2.jpg)
 
 </details>
 
@@ -59,8 +55,8 @@ Screenshots from v0.2.0 show the workspace with an installed mod library. The se
 | --- | --- |
 | Scan, search, reorder, and Suggest Order | Reads installed mods and stages an in-memory list. Suggestions use declared constraints and are not a guarantee of runtime load order. |
 | Save or import a Mod Pack | Writes an app-owned pack. Importing from a public Workshop collection does not subscribe to or download Workshop items. |
-| Apply to Project Zomboid | Previews ordered Mod ID and map changes, then updates only the global `Zomboid/mods/default.txt` after confirmation, backup, concurrent-change check, atomic replacement, and readback validation. |
-| Restore a global-list backup | Choose a timestamped backup beside `default.txt`, preview the Mod ID and map changes, and confirm. The current file is backed up before it is replaced. |
+| Apply to Project Zomboid | Preflights missing or duplicate active Mod IDs and declared dependency issues, then previews ordered Mod ID and map changes. After confirmation it updates only the global `Zomboid/mods/default.txt` with a backup, concurrent-change check, atomic replacement, and readback validation. |
+| Restore a global-list backup | Browse timestamped backups newest first, preview the selected Mod ID and map lists and their changes, then confirm. The current file is backed up before it is replaced. |
 
 **Apply & Launch…** applies staged global changes first, then asks Steam to launch the game; a successful handoff does not confirm that the game opened.
 
@@ -101,7 +97,7 @@ The attestation ties the exact installer to the repository workflow. It does not
 
 Standard installs keep Mod Packs under `%APPDATA%\ProjectZomboidModManager\profiles\` and settings in the current user's Qt registry key. Portable installs keep both in `data\` beside the app; choose **Portable installation** during setup and use a writable folder.
 
-Global-list backups sit beside `default.txt` as `default.txt.bak-<timestamp>`. **Restore Backup…** in Paths & Settings can preview and restore one. Replaced or deleted Mod Packs have recoverable copies in the pack store.
+Global-list backups sit beside `default.txt` as `default.txt.bak-<timestamp>`. **Restore Backup…** in Paths & Settings lists them newest first and previews a selection before the restore confirmation. Before apply or launch, preflight checks the active list against the scanned library and its declared dependencies; findings are advisory and can be reviewed before continuing. Replaced or deleted Mod Packs have recoverable copies in the pack store.
 
 Upgrades and uninstall leave app data, global-list backups, saves, and installed mods in place. The launcher changes only the global mod list; it does not read or write save or server configuration files. Switching between standard and portable modes does not move data; export and import Mod Packs to transfer them. See [packaging details](packaging/README.md) for install modes and release checks.
 

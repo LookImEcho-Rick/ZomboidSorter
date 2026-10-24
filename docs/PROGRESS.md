@@ -1,5 +1,19 @@
 # Progress
 
+## v0.2.3 metadata warnings and media previews (2026-10-24)
+
+- Build 42 diagnostics now explain when an entry has only root-level Build 41 metadata, while the workspace and detail pane keep the discovered mod name instead of replacing it with “No matching metadata.” This reflects The Indie Stone's documented Build 42 folder requirement; it does not imply the scanner failed or repair third-party mod content.
+- Discover now has **Show all**, **Build 41**, and **Build 42** filters based on root versus shared/versioned metadata. The selected build family scopes row warnings and the aggregate metadata/dependency diagnostics, so warnings for the other family are not shown.
+- Preview selection tries declared local poster/icon images and GIFs in order, skips video references, and moves on when a file cannot be decoded. GIFs animate. If the target build has no preview candidate, artwork from another retained candidate may display with its source and an explicit illustration-only compatibility label.
+- Validation passed: all 146 tests passed with one environment-only symlink skip; Ruff check/format, compileall, and `git diff --check` passed. Fixture coverage includes build-family filtering/warning scope, Build 42 root-only metadata, image fallback, GIF playback, global-list preflight, and backup preview. No live game files were read or changed and no game was launched. Hosted packaging and rolling-update publication are pending the 0.2.3 push.
+
+## Global-list preflight, backup browser, and installed-app screenshots (2026-10-24)
+
+- Added an advisory preflight before global-list writes and clean launches. It reports active IDs missing from the scan, duplicate active or installed IDs, and declared dependency findings; the user can cancel or explicitly continue. It does not block based on inferred compatibility.
+- Replaced the native backup file picker with a newest-first browser. Selecting a backup validates and reads it, then previews the Mod IDs, maps, and ordered changes before the existing separate default-No restore confirmation. The guarded restore writer is unchanged.
+- Replaced README screenshots with captures from the installed v0.2.2 app and its live library (23 active IDs; 55 Workshop items and 62 scanned entries). The Discover filter was set to Viewpoint for the workspace capture; scans were read-only and the global list was not changed.
+- The installed v0.2.2 executable predates the current global-only source changes, so it still displays the retired **Apply Elsewhere…** control. The screenshots document the real installed app and do not demonstrate the new preflight or backup-browser UI. A local PyInstaller build completed successfully; Ruff check and format checks passed. Automated tests were not run.
+
 ## Global-list-only launcher scope (2026-10-24)
 
 - Removed per-save apply, backup restore, reset-to-global, and save-list import, along with server settings apply and backup restore. The launcher now manages only the global `Zomboid/mods/default.txt` list; Mod Pack save/load, Workshop collection import, global backup restore, and launch remain available.

@@ -21,6 +21,7 @@ from zomboid_mod_manager.discovery.scanner import (
     ScanCancelled,
     scan_mods,
 )
+from zomboid_mod_manager.ui.mod_details import PreviewChoice
 from zomboid_mod_manager.updates import (
     UpdateCancelled,
     UpdateError,
@@ -142,24 +143,30 @@ class WorkshopDescriptionWorker(QThread):
 class PreviewWorker(QThread):
     loaded = Signal(str, int, object)
 
-    def __init__(self, path: Path, generation: int) -> None:
+    def __init__(self, choices: tuple[PreviewChoice, ...], generation: int) -> None:
         super().__init__()
-        self.path = path
+        self.choices = choices
         self.generation = generation
 
     def run(self) -> None:
-        image = QImage()
-        try:
-            if self.path.stat().st_size <= 25_000_000:
-                reader = QImageReader(str(self.path))
-                reader.setAutoTransform(True)
-                size = reader.size()
-                if size.isValid() and size.width() * size.height() <= 48_000_000:
-                    scaled = size.scaled(
-                        QSize(960, 540), Qt.AspectRatioMode.KeepAspectRatio
-                    )
-                    reader.setScaledSize(scaled)
-                    image = reader.read()
-        except OSError:
-            pass
-        self.loaded.emit(str(self.path), self.generation, image)
+        for choice in self.choices:
+            if self.isInterruptionRequested():
+                break
+            image = QImage()
+            try:
+                if choice.path.stat().st_size <= 25_000_000:
+                    reader = QImageReader(str(choice.path))
+                    reader.setAutoTransform(True)
+                    size = reader.size()
+                    if size.isValid() and size.width() * size.height() <= 48_000_000:
+                        scaled = size.scaled(
+                            QSize(960, 540), Qt.AspectRatioMode.KeepAspectRatio
+                        )
+                        reader.setScaledSize(scaled)
+                        image = reader.read()
+            except OSError:
+                continue
+            if not image.isNull():
+                self.loaded.emit(str(choice.path), self.generation, image)
+                return
+        self.loaded.emit("", self.generation, QImage())

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
 import tempfile
@@ -12,7 +13,7 @@ from unittest.mock import Mock, patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QModelIndex, QPoint, QSettings, Qt, QUrl
-from PySide6.QtGui import QColor, QImage
+from PySide6.QtGui import QColor, QImage, QMovie
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication,
@@ -39,8 +40,10 @@ from zomboid_mod_manager.sorting.user_rules import (
     parse_user_order_rules,
 )
 from zomboid_mod_manager.ui.file_overlap_dialog import FileOverlapDialog
+from zomboid_mod_manager.ui.global_backup_dialog import GlobalBackupDialog
 from zomboid_mod_manager.ui.main_window import MainWindow
 from zomboid_mod_manager.ui.support_report_dialog import SupportReportDialog
+from zomboid_mod_manager.ui.window_widgets import ISSUE_ROLE, PreviewLabel
 from zomboid_mod_manager.ui.workshop_browser import WorkshopBrowserPanel
 from zomboid_mod_manager.ui.workshop_dialog import WorkshopCollectionDialog
 from zomboid_mod_manager.updates import UpdateOutcome, UpdateRelease
@@ -95,7 +98,12 @@ class MainWindowTests(unittest.TestCase):
             active_config_path=config_path,
             profile_store=ProfileStore(root / "profiles"),
         )
-        self.addCleanup(window.close)
+
+        def close_when_workers_finish() -> None:
+            self._wait_for_background_workers(window)
+            window.close()
+
+        self.addCleanup(close_when_workers_finish)
         return window, config_path
 
     def test_update_outcome_dialog_reports_verified_success_and_failure(self) -> None:
@@ -305,6 +313,7 @@ class MainWindowTests(unittest.TestCase):
             active_config_path=config_path,
             profile_store=ProfileStore(root / "profiles"),
         )
+        self._wait_for_background_workers(window)
 
         self.assertFalse(window.launch_game_button.isEnabled())
         self.assertEqual(window.launch_readiness.text(), "Load global list")
@@ -323,6 +332,7 @@ class MainWindowTests(unittest.TestCase):
         window._update_apply_enabled()
         self.assertEqual(window.launch_game_button.text(), "Apply & Launch…")
         with (
+            patch.object(window, "_confirm_configuration_preflight", return_value=True),
             patch(
                 "zomboid_mod_manager.ui.window_configuration.QMessageBox.question",
                 return_value=QMessageBox.StandardButton.No,
@@ -350,6 +360,7 @@ class MainWindowTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name)
         window, config_path = self._make_launch_window(root)
+        self._wait_for_background_workers(window)
         config_path.write_text(
             "VERSION = 1,\n\nmods\n{\n    mod = ChangedOutsideApp,\n}\n\nmaps\n{\n}\n",
             encoding="utf-8",
@@ -376,11 +387,13 @@ class MainWindowTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name)
         window, config_path = self._make_launch_window(root)
+        self._wait_for_background_workers(window)
         original_config = config_path.read_bytes()
         window._staged_mod_ids.append("PendingMod")
         window._update_apply_enabled()
 
         with (
+            patch.object(window, "_confirm_configuration_preflight", return_value=True),
             patch(
                 "zomboid_mod_manager.ui.window_configuration.QMessageBox.question",
                 return_value=QMessageBox.StandardButton.Yes,
@@ -406,6 +419,7 @@ class MainWindowTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         window, _config_path = self._make_launch_window(Path(temporary.name))
+        self._wait_for_background_workers(window)
 
         with patch(
             "zomboid_mod_manager.ui.window_configuration.QDesktopServices.openUrl",
@@ -767,9 +781,12 @@ class MainWindowTests(unittest.TestCase):
             dialog.load_apply_button.click()
             return dialog.result()
 
-        with patch(
-            "zomboid_mod_manager.ui.window_profiles.ModPacksDialog.exec",
-            new=select_weekend_pack,
+        with (
+            patch(
+                "zomboid_mod_manager.ui.window_profiles.ModPacksDialog.exec",
+                new=select_weekend_pack,
+            ),
+            patch.object(window, "_confirm_configuration_preflight", return_value=True),
         ):
             window.load_pack_button.click()
 
@@ -811,17 +828,23 @@ class MainWindowTests(unittest.TestCase):
         )
         self._wait_for_background_workers(window)
 
-        with patch(
-            "zomboid_mod_manager.ui.window_profiles.QMessageBox.question",
-            return_value=QMessageBox.StandardButton.No,
+        with (
+            patch.object(window, "_confirm_configuration_preflight", return_value=True),
+            patch(
+                "zomboid_mod_manager.ui.window_profiles.QMessageBox.question",
+                return_value=QMessageBox.StandardButton.No,
+            ),
         ):
             window._apply_mod_pack(profile)
         self.assertEqual(config_path.read_text(encoding="utf-8"), original)
 
-        with patch(
-            "zomboid_mod_manager.ui.window_profiles.QMessageBox.question",
-            return_value=QMessageBox.StandardButton.Yes,
-        ) as confirm:
+        with (
+            patch.object(window, "_confirm_configuration_preflight", return_value=True),
+            patch(
+                "zomboid_mod_manager.ui.window_profiles.QMessageBox.question",
+                return_value=QMessageBox.StandardButton.Yes,
+            ) as confirm,
+        ):
             window._apply_mod_pack(profile)
         self.assertEqual(confirm.call_count, 1)
         apply_prompt = confirm.call_args.args[2]
@@ -919,6 +942,68 @@ class MainWindowTests(unittest.TestCase):
         self.assertFalse(window.move_down_button.isEnabled())
         window.active_filter.setCurrentText("All active")
         self.assertTrue(window.active_list.dragEnabled())
+        window.close()
+
+    def test_discover_build_filter_scopes_mods_and_metadata_warnings(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        window, _config_path = self._make_launch_window(
+            Path(temporary.name), mods=("LegacyWorkshop",)
+        )
+        deadline = time.monotonic() + 5
+        while (
+            "scan complete" not in window.status.text().casefold()
+            and time.monotonic() < deadline
+        ):
+            self.app.processEvents()
+            QTest.qWait(10)
+
+        self.assertEqual(
+            [
+                window.inactive_build_filter.itemText(index)
+                for index in range(window.inactive_build_filter.count())
+            ],
+            ["Show all", "Build 41", "Build 42"],
+        )
+        window.metadata_preview_target.setCurrentIndex(
+            window.metadata_preview_target.findData("42")
+        )
+        warning_item = next(
+            window.active_list.item(index)
+            for index in range(window.active_list.count())
+            if window.active_list.item(index).data(Qt.ItemDataRole.UserRole)
+            == "LegacyWorkshop"
+        )
+        self.assertTrue(warning_item.data(ISSUE_ROLE))
+
+        window.inactive_build_filter.setCurrentIndex(
+            window.inactive_build_filter.findData("41")
+        )
+        visible_ids = {
+            window.available_list.item(index).data(Qt.ItemDataRole.UserRole)
+            for index in range(window.available_list.count())
+            if not window.available_list.item(index).isHidden()
+        }
+        self.assertIn("RepeatedDescription", visible_ids)
+        self.assertNotIn("BundleAddon", visible_ids)
+        warning_item = next(
+            window.active_list.item(index)
+            for index in range(window.active_list.count())
+            if window.active_list.item(index).data(Qt.ItemDataRole.UserRole)
+            == "LegacyWorkshop"
+        )
+        self.assertFalse(warning_item.data(ISSUE_ROLE))
+
+        window.inactive_build_filter.setCurrentIndex(
+            window.inactive_build_filter.findData("42")
+        )
+        visible_ids = {
+            window.available_list.item(index).data(Qt.ItemDataRole.UserRole)
+            for index in range(window.available_list.count())
+            if not window.available_list.item(index).isHidden()
+        }
+        self.assertIn("BundleAddon", visible_ids)
+        self.assertNotIn("RepeatedDescription", visible_ids)
         window.close()
 
     def test_workspace_shortcuts_stage_only_visible_selected_mods(self) -> None:
@@ -1061,6 +1146,68 @@ class MainWindowTests(unittest.TestCase):
         self.assertEqual(Path(open_url.call_args.args[0].toLocalFile()), entry_root)
         self.assertEqual(config_path.read_bytes(), original)
         window.close()
+
+    def test_preview_label_plays_gif_and_stops_when_cleared(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            gif_path = Path(temporary) / "preview.gif"
+            gif_path.write_bytes(
+                base64.b64decode(
+                    "R0lGODlhCAAIAIEAAP8AAAAAAAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQADAAAACwAAAAACAAIAAAIDwABCBxIsKDBgwgTKkwYEAAh+QQBDAABACwAAAAACAAIAIEAAP8AAAAAAAAAAAAIDwABCBxIsKDBgwgTKkwYEAA7"
+                )
+            )
+            preview = PreviewLabel()
+            preview.resize(160, 90)
+            self.assertTrue(preview.show_movie(gif_path))
+            movie = preview._movie
+            self.assertIsNotNone(movie)
+            self.assertEqual(movie.state(), QMovie.MovieState.Running)
+            frames = []
+            movie.frameChanged.connect(frames.append)
+            QTest.qWait(300)
+            self.assertIn(1, frames)
+            self.assertFalse(preview.image.isNull())
+
+            preview.show_placeholder("No preview")
+            self.assertEqual(movie.state(), QMovie.MovieState.NotRunning)
+            self.assertIsNone(preview._movie)
+            self.app.processEvents()
+
+    def test_build42_root_only_entry_keeps_name_and_uses_its_preview(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            entry_root = root / "LegacyMod"
+            entry_root.mkdir()
+            (entry_root / "mod.info").write_text(
+                "name=Legacy Mod\nid=LegacyMod\nposter=poster.png\n",
+                encoding="utf-8",
+            )
+            image = QImage(40, 30, QImage.Format.Format_ARGB32)
+            image.fill(QColor("#64a7dc"))
+            self.assertTrue(image.save(str(entry_root / "poster.png")))
+            window = MainWindow(
+                DetectedPaths((), (), (), (), root),
+                active_config_path=FIXTURES / "config" / "default.txt",
+                profile_store=ProfileStore(root / "profiles"),
+            )
+            self.addCleanup(window.close)
+            self._wait_for_background_workers(window)
+
+            window.metadata_preview_target.setCurrentIndex(
+                window.metadata_preview_target.findData("42")
+            )
+            window.metadata_build_version.setText("42.21.0")
+            item = window.available_list.item(0)
+            self.assertIn("Legacy Mod", item.text())
+            self.assertTrue(item.data(ISSUE_ROLE))
+            self.assertIn("Build 42 ignores root-level mod files", item.toolTip())
+            window.available_list.setCurrentItem(item)
+            self._wait_for_background_workers(window)
+
+            self.assertFalse(window.preview.pixmap().isNull())
+            self.assertIn("root (Build 41 style)", window.preview_caption.text())
+            self.assertIn(
+                "does not indicate mod compatibility", window.preview_caption.text()
+            )
 
     def test_exact_build_updates_names_details_and_dependency_diagnostics(self) -> None:
         temporary = tempfile.TemporaryDirectory()
@@ -1734,17 +1881,23 @@ class MainWindowTests(unittest.TestCase):
         window._staged_mod_ids.append("AddedMod")
         window._update_apply_enabled()
         self.assertTrue(window.apply_config_button.isEnabled())
-        with patch(
-            "zomboid_mod_manager.ui.window_configuration.QMessageBox.question",
-            return_value=QMessageBox.StandardButton.No,
+        with (
+            patch.object(window, "_confirm_configuration_preflight", return_value=True),
+            patch(
+                "zomboid_mod_manager.ui.window_configuration.QMessageBox.question",
+                return_value=QMessageBox.StandardButton.No,
+            ),
         ):
             window._apply_active_configuration()
         self.assertEqual(config_path.read_bytes(), original)
 
-        with patch(
-            "zomboid_mod_manager.ui.window_configuration.QMessageBox.question",
-            return_value=QMessageBox.StandardButton.Yes,
-        ) as confirm:
+        with (
+            patch.object(window, "_confirm_configuration_preflight", return_value=True),
+            patch(
+                "zomboid_mod_manager.ui.window_configuration.QMessageBox.question",
+                return_value=QMessageBox.StandardButton.Yes,
+            ) as confirm,
+        ):
             window._apply_active_configuration()
         apply_prompt = confirm.call_args.args[2]
         self.assertIn("Added: AddedMod", apply_prompt)
@@ -1786,11 +1939,13 @@ class MainWindowTests(unittest.TestCase):
         self.addCleanup(window.close)
         self._wait_for_background_workers(window)
 
+        def choose_backup(dialog: GlobalBackupDialog) -> QDialog.DialogCode:
+            self.assertIn("PriorMod", dialog.preview.toPlainText())
+            dialog._accept_selected()
+            return QDialog.DialogCode.Accepted
+
         with (
-            patch(
-                "zomboid_mod_manager.ui.window_configuration.QFileDialog.getOpenFileName",
-                return_value=(str(backup_path), "Global mod list backups"),
-            ),
+            patch.object(GlobalBackupDialog, "exec", new=choose_backup),
             patch.object(
                 QMessageBox, "exec", return_value=QMessageBox.StandardButton.Yes
             ),
