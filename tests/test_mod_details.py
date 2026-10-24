@@ -9,6 +9,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtGui import QColor, QImage
+from PySide6.QtWidgets import QApplication
 
 from zomboid_mod_manager.discovery.scanner import scan_mods
 from zomboid_mod_manager.ui.mod_details import (
@@ -23,6 +24,10 @@ from zomboid_mod_manager.ui.window_workers import PreviewWorker
 
 
 class ModDetailsTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
     def test_build_filter_uses_observed_metadata_layouts(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
