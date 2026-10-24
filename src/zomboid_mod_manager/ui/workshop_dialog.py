@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt, QThread, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -87,7 +88,24 @@ class WorkshopCollectionDialog(QDialog):
         self.items.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.items.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.items.horizontalHeader().setStretchLastSection(True)
+        self.items.currentCellChanged.connect(self._update_open_workshop_page_enabled)
         layout.addWidget(self.items, 1)
+
+        item_actions = QHBoxLayout()
+        item_actions.addStretch(1)
+        self.open_missing_workshop_button = QPushButton("Open Selected Missing Item")
+        self.open_missing_workshop_button.setAccessibleName(
+            "Open the selected missing Workshop item page"
+        )
+        self.open_missing_workshop_button.setToolTip(
+            "Open the selected missing Project Zomboid item in Steam Community. This does not subscribe or download it."
+        )
+        self.open_missing_workshop_button.setEnabled(False)
+        self.open_missing_workshop_button.clicked.connect(
+            self._open_selected_missing_workshop_item
+        )
+        item_actions.addWidget(self.open_missing_workshop_button)
+        layout.addLayout(item_actions)
 
         profile_row = QHBoxLayout()
         profile_row.addWidget(QLabel("Save as Mod Pack"))
@@ -161,6 +179,7 @@ class WorkshopCollectionDialog(QDialog):
             for column, value in enumerate(row_data):
                 self.items.setItem(row, column, QTableWidgetItem(value))
 
+        self._update_open_workshop_page_enabled()
         self.import_button.setEnabled(bool(self._plan.workshop_ids))
         missing = len(self._plan.missing_ids)
         ambiguous = len(self._plan.ambiguous_mod_ids)
@@ -175,7 +194,41 @@ class WorkshopCollectionDialog(QDialog):
         self._collection = None
         self._plan = None
         self.import_button.setEnabled(False)
+        self.open_missing_workshop_button.setEnabled(False)
         self.status.setText(f"Could not read this collection: {message}")
+
+    def _selected_missing_workshop_id(self) -> str | None:
+        row = self.items.currentRow()
+        if row < 0:
+            return None
+        title = self.items.item(row, 0)
+        workshop_id = self.items.item(row, 1)
+        installed = self.items.item(row, 2)
+        if (
+            title is None
+            or title.text() == "Other Steam app"
+            or workshop_id is None
+            or not workshop_id.text().isdecimal()
+            or installed is None
+            or installed.text() != "No"
+        ):
+            return None
+        return workshop_id.text()
+
+    def _update_open_workshop_page_enabled(self, *_args) -> None:
+        self.open_missing_workshop_button.setEnabled(
+            self._selected_missing_workshop_id() is not None
+        )
+
+    def _open_selected_missing_workshop_item(self) -> None:
+        workshop_id = self._selected_missing_workshop_id()
+        if workshop_id is None:
+            return
+        QDesktopServices.openUrl(
+            QUrl(
+                f"https://steamcommunity.com/sharedfiles/filedetails/?id={workshop_id}"
+            )
+        )
 
     def _create_profile(self) -> None:
         if self._collection is None or self._plan is None:

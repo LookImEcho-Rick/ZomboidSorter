@@ -85,6 +85,27 @@ class DependencyOrderTests(unittest.TestCase):
             any("NeverInstalled" in message for message in at_version_update.unresolved)
         )
 
+    def test_required_mod_order_matches_build42_selector_validation(self) -> None:
+        # Build 42.21's ModLoadOrderPanel:isCorrectOrder walks the selected
+        # order and rejects a mod whose declared require target is not earlier.
+        proposal = propose_dependency_order(
+            self.entries,
+            ("RequiredOnly", "Core"),
+            target_build="42.21.0",
+        )
+
+        self.assertEqual(proposal.suggested, ("Core", "RequiredOnly"))
+        self.assertLess(
+            proposal.suggested.index("Core"),
+            proposal.suggested.index("RequiredOnly"),
+        )
+        self.assertTrue(
+            any(
+                edge.before == "Core" and edge.after == "RequiredOnly"
+                for edge in proposal.constraints
+            )
+        )
+
     def test_order_cycle_does_not_change_the_original_list(self) -> None:
         original = ("OrderCycleA", "OrderCycleB")
         proposal = propose_dependency_order(self.entries, original)

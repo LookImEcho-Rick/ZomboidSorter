@@ -33,6 +33,8 @@ from zomboid_mod_manager.diagnostics.file_overlaps import (
 from zomboid_mod_manager.discovery.scanner import ScanCancelled
 from zomboid_mod_manager.domain import DetectedPaths, Diagnostic, ScanResult
 from zomboid_mod_manager.gameio.active_mods import read_active_mods
+from zomboid_mod_manager.gameio.save_mods import read_save_mod_target
+from zomboid_mod_manager.gameio.server_settings import read_server_settings
 from zomboid_mod_manager.profiles import ModProfile, ProfileStore
 from zomboid_mod_manager.sorting.user_rules import (
     UserOrderRule,
@@ -44,7 +46,12 @@ from zomboid_mod_manager.ui.mod_packs_dialog import ModPacksDialog
 from zomboid_mod_manager.ui.save_mod_pack_dialog import SaveModPackDialog
 from zomboid_mod_manager.ui.support_report_dialog import SupportReportDialog
 from zomboid_mod_manager.ui.workshop_browser import WorkshopBrowserPanel
+from zomboid_mod_manager.ui.workshop_dialog import WorkshopCollectionDialog
 from zomboid_mod_manager.updates import UpdateOutcome, UpdateRelease
+from zomboid_mod_manager.workshop import (
+    WorkshopCollectionResult,
+    WorkshopItemMetadata,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -1703,6 +1710,154 @@ class MainWindowTests(unittest.TestCase):
         window._show_selected_entry(QModelIndex(), QModelIndex())
         self.assertFalse(window.open_workshop_button.isEnabled())
         window.close()
+
+    def test_collection_dialog_opens_missing_item_but_not_foreign_app_page(
+        self,
+    ) -> None:
+        scan_result = ScanResult(local_entries=(), workshop_items=(), diagnostics=())
+        dialog = WorkshopCollectionDialog(scan_result)
+        collection = WorkshopCollectionResult(
+            collection_id="1000000000",
+            items=(
+                WorkshopItemMetadata(
+                    workshop_id="1111111111",
+                    title="Missing PZ Mod",
+                    description="",
+                    consumer_app_id=108600,
+                    updated_at=None,
+                ),
+            ),
+            unavailable_ids=("2222222222",),
+            foreign_app_ids=("3333333333",),
+        )
+        dialog._show_collection(collection)
+
+        dialog.items.setCurrentCell(0, 0)
+        self.assertTrue(dialog.open_missing_workshop_button.isEnabled())
+        with patch(
+            "zomboid_mod_manager.ui.workshop_dialog.QDesktopServices.openUrl"
+        ) as open_url:
+            dialog.open_missing_workshop_button.click()
+        open_url.assert_called_once_with(
+            QUrl("https://steamcommunity.com/sharedfiles/filedetails/?id=1111111111")
+        )
+
+        dialog.items.setCurrentCell(1, 0)
+        self.assertTrue(dialog.open_missing_workshop_button.isEnabled())
+        with patch(
+            "zomboid_mod_manager.ui.workshop_dialog.QDesktopServices.openUrl"
+        ) as open_url:
+            dialog.open_missing_workshop_button.click()
+        open_url.assert_called_once_with(
+            QUrl("https://steamcommunity.com/sharedfiles/filedetails/?id=2222222222")
+        )
+
+        dialog.items.setCurrentCell(2, 0)
+        self.assertFalse(dialog.open_missing_workshop_button.isEnabled())
+        dialog.close()
+
+    def test_use_installed_build_refreshes_target_and_clears_stale_version(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            game = Path(temporary) / "steamapps" / "common" / "ProjectZomboid"
+            game.mkdir(parents=True)
+            (game.parents[1] / "appmanifest_108600.acf").write_text(
+                '"AppState" { "BetaKey" "legacy41" }', encoding="utf-8"
+            )
+            detected = DetectedPaths(
+                steam_roots=(),
+                steamapps_libraries=(),
+                game_installations=(game,),
+                workshop_roots=(),
+                local_mod_root=FIXTURES / "local_mods",
+            )
+            window = MainWindow(
+                detected,
+                active_config_path=FIXTURES / "config" / "default.txt",
+                profile_store=ProfileStore(Path(temporary) / "profiles"),
+            )
+            self.addCleanup(window.close)
+            window.metadata_preview_target.setCurrentIndex(
+                window.metadata_preview_target.findData("42")
+            )
+            window.metadata_build_version.setText("42.21.0")
+
+            window._use_detected_game_build()
+
+            self.assertEqual(window.metadata_preview_target.currentData(), "41")
+            self.assertEqual(window.metadata_build_version.text(), "")
+            self.assertIn("legacy41", window.game_build_status.text())
+            self._wait_for_background_workers(window)
+
+    def test_apply_elsewhere_save_and_server_actions_use_fixture_targets(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            detected = DetectedPaths(
+                steam_roots=(),
+                steamapps_libraries=(),
+                game_installations=(),
+                workshop_roots=(FIXTURES / "workshop",),
+                local_mod_root=FIXTURES / "local_mods",
+            )
+            window = MainWindow(
+                detected,
+                active_config_path=FIXTURES / "config" / "default.txt",
+                profile_store=ProfileStore(root / "profiles"),
+            )
+            self._wait_for_background_workers(window)
+            window._staged_mod_ids = ["LegacyWorkshop"]
+
+            save_root = root / "Zomboid" / "Saves"
+            save_directory = save_root / "Sandbox" / "UiSave"
+            save_directory.mkdir(parents=True)
+            save_path = save_directory / "mods.txt"
+            save_path.write_text(
+                "VERSION = 1,\n\nmods\n{\n    mod = OldSaveMod,\n}\n\n"
+                "maps\n{\n    map = SaveMap,\n}\n",
+                encoding="utf-8",
+            )
+            with (
+                patch(
+                    "zomboid_mod_manager.ui.window_game_targets.QFileDialog.getExistingDirectory",
+                    side_effect=[str(save_root), str(save_directory)],
+                ),
+                patch(
+                    "zomboid_mod_manager.ui.window_game_targets.QMessageBox.question",
+                    return_value=QMessageBox.StandardButton.Yes,
+                ) as confirm,
+            ):
+                window._apply_staged_to_save()
+            save_result = read_save_mod_target(save_root, save_directory)
+            self.assertEqual(save_result.config.mods, ("LegacyWorkshop",))
+            self.assertEqual(save_result.config.maps, ("SaveMap",))
+            self.assertEqual(len(list(save_directory.glob("mods.txt.bak-*"))), 1)
+            self.assertEqual(confirm.call_args.args[-1], QMessageBox.StandardButton.No)
+
+            server_path = root / "Zomboid" / "Server" / "servertest.ini"
+            server_path.parent.mkdir(parents=True)
+            server_path.write_text(
+                "Mods=OldServerMod\nWorkshopItems=999\nMap=Riverside, KY\n",
+                encoding="utf-8",
+            )
+            with (
+                patch(
+                    "zomboid_mod_manager.ui.window_game_targets.QFileDialog.getOpenFileName",
+                    return_value=(str(server_path), ""),
+                ),
+                patch(
+                    "zomboid_mod_manager.ui.window_game_targets.QMessageBox.question",
+                    return_value=QMessageBox.StandardButton.Yes,
+                ),
+            ):
+                window._apply_staged_to_server()
+            server_result = read_server_settings(server_path)
+            self.assertEqual(server_result.config.mods, ("LegacyWorkshop",))
+            self.assertEqual(server_result.config.workshop_items, ("111111111",))
+            self.assertIn("Map=Riverside, KY", server_path.read_text(encoding="utf-8"))
+            self.assertEqual(len(list(server_path.parent.glob("*.ini.bak-*"))), 1)
+            self._wait_for_background_workers(window)
+            window.close()
 
     def test_bulk_selection_and_internal_order_changes_update_staged_ids(self) -> None:
         temporary = tempfile.TemporaryDirectory()

@@ -5,8 +5,11 @@ import unittest
 from pathlib import Path
 
 from zomboid_mod_manager.gameio.save_mods import (
+    ConcurrentSaveModChangeError,
     SaveModDiscoveryError,
     discover_save_mod_lists,
+    read_save_mod_target,
+    write_save_mod_ids,
 )
 
 FIXTURE = Path(__file__).parent / "fixtures" / "save_profiles"
@@ -65,6 +68,67 @@ class SaveModDiscoveryTests(unittest.TestCase):
                 )
             with self.assertRaisesRegex(SaveModDiscoveryError, "linked folders"):
                 discover_save_mod_lists(linked)
+
+    def test_save_target_write_backs_up_and_preserves_maps_bom_and_crlf(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "Zomboid" / "Saves"
+            save = root / "Sandbox" / "TargetSave"
+            save.mkdir(parents=True)
+            path = save / "mods.txt"
+            original = (
+                b"\xef\xbb\xbfVERSION = 1,\r\n\r\nmods\r\n{\r\n"
+                b"    mod = OldMod,\r\n}\r\n\r\nmaps\r\n{\r\n"
+                b"    map = OldMap,\r\n}\r\n"
+            )
+            path.write_bytes(original)
+
+            snapshot = read_save_mod_target(root, save)
+            backup = write_save_mod_ids(snapshot, ("NewMod", "SecondMod"))
+
+            self.assertIsNotNone(backup)
+            self.assertEqual(backup.read_bytes(), original)
+            updated = path.read_bytes()
+            self.assertTrue(updated.startswith(b"\xef\xbb\xbf"))
+            self.assertNotIn(b"\n", updated.replace(b"\r\n", b""))
+            readback = read_save_mod_target(root, save)
+            self.assertEqual(readback.config.mods, ("NewMod", "SecondMod"))
+            self.assertEqual(readback.config.maps, ("OldMap",))
+            self.assertTrue(readback.config.has_utf8_bom)
+
+    def test_creates_explicit_list_for_save_that_inherits_global(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "Zomboid" / "Saves"
+            save = root / "Sandbox" / "InheritedSave"
+            save.mkdir(parents=True)
+
+            snapshot = read_save_mod_target(root, save)
+            self.assertTrue(snapshot.inherits_global_list)
+            backup = write_save_mod_ids(snapshot, ("Core", "Addon"))
+
+            self.assertIsNone(backup)
+            result = read_save_mod_target(root, save)
+            self.assertFalse(result.inherits_global_list)
+            self.assertEqual(result.config.mods, ("Core", "Addon"))
+            self.assertEqual(result.config.maps, ())
+
+    def test_save_target_stale_snapshot_and_unsafe_path_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "Zomboid" / "Saves"
+            save = root / "Sandbox" / "TargetSave"
+            save.mkdir(parents=True)
+            path = save / "mods.txt"
+            path.write_bytes(
+                FIXTURE.joinpath("Sandbox", "FixtureSave", "mods.txt").read_bytes()
+            )
+            snapshot = read_save_mod_target(root, save)
+            path.write_text("outside edit", encoding="utf-8")
+
+            with self.assertRaises(ConcurrentSaveModChangeError):
+                write_save_mod_ids(snapshot, ("Changed",))
+            self.assertEqual(path.read_text(encoding="utf-8"), "outside edit")
+            self.assertFalse(list(save.glob("mods.txt.bak-*")))
+            with self.assertRaisesRegex(SaveModDiscoveryError, "exactly"):
+                read_save_mod_target(root, root / "Sandbox")
 
 
 if __name__ == "__main__":

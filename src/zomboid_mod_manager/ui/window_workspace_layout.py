@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QListWidget,
+    QMenu,
     QPushButton,
     QSplitter,
     QStyle,
@@ -64,7 +65,7 @@ class WorkspaceLayoutMixin:
         self.configuration_status.setWordWrap(True)
         self.setup_layout.addWidget(self.configuration_status)
         warning = QLabel(
-            "This tab changes only Zomboid/mods/default.txt. Import save lists read-only from Mod Packs."
+            "The path field and primary Apply update only Zomboid/mods/default.txt. Use Apply Elsewhere for a separately confirmed save or server target."
         )
         warning.setWordWrap(True)
         self.setup_layout.addWidget(warning)
@@ -299,6 +300,17 @@ class WorkspaceLayoutMixin:
         )
         self.apply_config_button.clicked.connect(self._apply_active_configuration)
         footer.addWidget(self.apply_config_button)
+        self.apply_other_targets_button = QPushButton("Apply Elsewhere…")
+        self.apply_other_targets_button.setToolTip(
+            "Apply the staged Mod ID order to one selected save or server settings file."
+        )
+        other_targets_menu = QMenu(self.apply_other_targets_button)
+        apply_save_action = other_targets_menu.addAction("Apply to a save…")
+        apply_save_action.triggered.connect(lambda: self._apply_staged_to_save())
+        apply_server_action = other_targets_menu.addAction("Apply to server settings…")
+        apply_server_action.triggered.connect(lambda: self._apply_staged_to_server())
+        self.apply_other_targets_button.setMenu(other_targets_menu)
+        footer.addWidget(self.apply_other_targets_button)
         layout.addLayout(footer)
         self._install_workspace_shortcuts()
         self._update_apply_enabled()

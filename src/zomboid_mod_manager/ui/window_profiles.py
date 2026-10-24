@@ -88,7 +88,7 @@ class ProfileActionsMixin:
             QMessageBox.warning(
                 self,
                 "Unsupported Mod List",
-                "Mod Packs can only be applied to the global Zomboid/mods/default.txt file. Per-save and server lists are protected.",
+                "Mod Packs from this dialog can only be applied to the global Zomboid/mods/default.txt file. Use Apply Elsewhere for a separately confirmed save or server target.",
             )
             return
         try:

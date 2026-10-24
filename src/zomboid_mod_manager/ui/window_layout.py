@@ -28,6 +28,10 @@ from PySide6.QtWidgets import (
 )
 
 from zomboid_mod_manager import __version__
+from zomboid_mod_manager.discovery.game_build import (
+    detect_game_build,
+    format_game_build_detection,
+)
 from zomboid_mod_manager.ui.workshop_browser import WorkshopBrowserPanel
 
 from .window_widgets import ImagePreviewOverlay, PreviewLabel
@@ -63,6 +67,7 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         self.game_path.setPlaceholderText(
             "Optional: select ProjectZomboid install folder"
         )
+        self._game_build_detection = detect_game_build(str(saved_game_path))
         game_row = QHBoxLayout()
         game_row.addWidget(self.game_path)
         game_browse = QPushButton("Browse…")
@@ -159,11 +164,10 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         self.metadata_preview_target.addItem("All candidates", "all")
         self.metadata_preview_target.addItem("Build 41", "41")
         self.metadata_preview_target.addItem("Build 42", "42")
-        saved_metadata_target = (
-            str(self._settings.value("metadata/target", "all"))
-            if use_saved_paths
-            else "all"
-        )
+        if use_saved_paths and self._settings.contains("metadata/target"):
+            saved_metadata_target = str(self._settings.value("metadata/target"))
+        else:
+            saved_metadata_target = self._game_build_detection.major_build or "all"
         saved_target_index = self.metadata_preview_target.findData(
             saved_metadata_target
         )
@@ -178,11 +182,10 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
             self._metadata_preview_target_changed
         )
         target_row.addWidget(self.metadata_preview_target, 1)
-        saved_metadata_build = (
-            self._settings.value("metadata/build_version", "")
-            if use_saved_paths
-            else ""
-        )
+        if use_saved_paths and self._settings.contains("metadata/build_version"):
+            saved_metadata_build = self._settings.value("metadata/build_version", "")
+        else:
+            saved_metadata_build = self._game_build_detection.exact_version or ""
         self.metadata_build_version = QLineEdit(str(saved_metadata_build))
         self.metadata_build_version.setAccessibleName("Exact Build 42 game version")
         self.metadata_build_version.setPlaceholderText("e.g. 42.21.0")
@@ -198,7 +201,24 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
             self.metadata_preview_target.currentData() == "42"
         )
         target_row.addWidget(self.metadata_build_version)
+        self.detect_build_button = QPushButton("Use Installed")
+        self.detect_build_button.setAccessibleName(
+            "Detect the installed Project Zomboid build"
+        )
+        self.detect_build_button.setToolTip(
+            "Detect the installed build family and use a current exact version when Steam's install record supports it. "
+            "You can edit the version field at any time."
+        )
+        self.detect_build_button.clicked.connect(self._use_detected_game_build)
+        target_row.addWidget(self.detect_build_button)
         details_layout.addLayout(target_row)
+        self.game_build_status = QLabel(
+            format_game_build_detection(self._game_build_detection)
+        )
+        self.game_build_status.setObjectName("secondaryText")
+        self.game_build_status.setWordWrap(True)
+        self.game_build_status.setAccessibleName("Detected game build evidence")
+        details_layout.addWidget(self.game_build_status)
         description_panel = QWidget()
         description_layout = QVBoxLayout(description_panel)
         description_layout.setContentsMargins(0, 0, 0, 0)

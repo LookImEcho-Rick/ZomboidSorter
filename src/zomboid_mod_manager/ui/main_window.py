@@ -29,6 +29,7 @@ from .window_configuration import ActiveConfigurationMixin
 from .window_details import DetailsMixin
 from .window_diagnostics import DiagnosticsMixin
 from .window_discovery import DiscoveryMixin
+from .window_game_targets import GameTargetActionsMixin
 from .window_layout import WindowLayoutMixin
 from .window_library import LibraryMixin
 from .window_lifecycle import WindowLifecycleMixin
@@ -52,6 +53,7 @@ class MainWindow(
     LibraryMixin,
     StagingMixin,
     ActiveConfigurationMixin,
+    GameTargetActionsMixin,
     DiscoveryMixin,
     DiagnosticsMixin,
     DetailsMixin,

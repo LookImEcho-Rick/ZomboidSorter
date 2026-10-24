@@ -17,6 +17,10 @@ from PySide6.QtWidgets import (
     QLineEdit,
 )
 
+from zomboid_mod_manager.discovery.game_build import (
+    detect_game_build,
+    format_game_build_detection,
+)
 from zomboid_mod_manager.domain import ScanResult
 
 from .window_workers import (
@@ -28,6 +32,18 @@ _SCAN_CACHE_MIN_SECONDS = 0.25
 
 
 class DiscoveryMixin:
+    def _use_detected_game_build(self) -> None:
+        detection = detect_game_build(self.game_path.text().strip())
+        self._game_build_detection = detection
+        self.game_build_status.setText(format_game_build_detection(detection))
+        if detection.major_build not in {"41", "42"}:
+            return
+        index = self.metadata_preview_target.findData(detection.major_build)
+        if index >= 0:
+            self.metadata_preview_target.setCurrentIndex(index)
+        self.metadata_build_version.setText(detection.exact_version or "")
+        self._metadata_preview_target_changed()
+
     @staticmethod
     def _browse_into(field: QLineEdit) -> None:
         selected = QFileDialog.getExistingDirectory(
