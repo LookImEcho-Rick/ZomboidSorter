@@ -521,6 +521,167 @@ class MainWindowTests(unittest.TestCase):
             self.app.processEvents()
             self.assertGreaterEqual(window.game_path.height(), 25)
             self.assertGreaterEqual(window.local_path.height(), 25)
+            self.assertGreaterEqual(window.game_path.width(), 250)
+            self.assertTrue(window.detect_all_paths_button.isVisible())
+            self.assertTrue(window.game_path_detect_button.isVisible())
+            self.assertTrue(window.game_path_health.isVisible())
+
+    def test_path_detection_buttons_refresh_fields_and_tab_labels(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            window, _ = self._make_launch_window(root)
+            self._wait_for_background_workers(window)
+
+            detected_game = root / "Steam Library" / "ProjectZomboid"
+            detected_local = root / "User" / "Zomboid" / "mods"
+            detected_local.mkdir(parents=True)
+            detected_workshop = root / "Steam Library" / "workshop" / "108600"
+            detected_paths = DetectedPaths(
+                (),
+                (),
+                (detected_game,),
+                (detected_workshop,),
+                detected_local,
+            )
+            with patch(
+                "zomboid_mod_manager.ui.window_discovery.detect_paths",
+                return_value=detected_paths,
+            ):
+                window.game_path_detect_button.click()
+                self.assertEqual(window.game_path.text(), str(detected_game))
+                window.local_path_detect_button.click()
+                self.assertEqual(window.local_path.text(), str(detected_local))
+                window.workshop_paths_detect_button.click()
+                self.assertEqual(window.workshop_paths.text(), str(detected_workshop))
+
+            tab_labels = [
+                window.main_tabs.tabText(index)
+                for index in range(window.main_tabs.count())
+            ]
+            self.assertIn("Paths Settings", tab_labels)
+            self.assertIn("Library Diagnostics", tab_labels)
+            self.assertTrue(all("_" not in label for label in tab_labels))
+
+            previous_game_path = window.game_path.text()
+            with patch(
+                "zomboid_mod_manager.ui.window_discovery.detect_paths",
+                return_value=DetectedPaths((), (), (), (), detected_local),
+            ):
+                window.game_path_detect_button.click()
+            self.assertEqual(window.game_path.text(), previous_game_path)
+            self.assertIn("current game folder was kept", window.status.text())
+
+    def test_detect_all_updates_each_available_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            window, _ = self._make_launch_window(root)
+            self._wait_for_background_workers(window)
+
+            game = root / "Steam Library" / "ProjectZomboid"
+            local = root / "User" / "Zomboid" / "mods"
+            workshop = root / "Steam Library" / "workshop" / "108600"
+            for path in (game, local, workshop):
+                path.mkdir(parents=True)
+            detected = DetectedPaths((), (), (game,), (workshop,), local)
+            with patch(
+                "zomboid_mod_manager.ui.window_discovery.detect_paths",
+                return_value=detected,
+            ):
+                window.detect_all_paths_button.click()
+
+            self.assertEqual(window.game_path.text(), str(game))
+            self.assertEqual(window.local_path.text(), str(local))
+            self.assertEqual(window.workshop_paths.text(), str(workshop))
+            self.assertIn(
+                "Updated game folder, local mods folder, Workshop folders",
+                window.status.text(),
+            )
+
+            previous_game = window.game_path.text()
+            previous_workshop = window.workshop_paths.text()
+            undetected = DetectedPaths((), (), (), (), root / "Fallback mods")
+            with patch(
+                "zomboid_mod_manager.ui.window_discovery.detect_paths",
+                return_value=undetected,
+            ):
+                window.detect_all_paths_button.click()
+            self.assertEqual(window.game_path.text(), previous_game)
+            self.assertEqual(window.workshop_paths.text(), previous_workshop)
+            self.assertIn("game folder (not found)", window.status.text())
+            self.assertIn("Workshop folders (not found)", window.status.text())
+
+    def test_game_path_auto_detect_lets_user_choose_installation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            window, _ = self._make_launch_window(root)
+            self._wait_for_background_workers(window)
+            first = root / "Steam A" / "ProjectZomboid"
+            second = root / "Steam B" / "ProjectZomboid"
+            detected = DetectedPaths((), (), (first, second), (), root / "mods")
+
+            with (
+                patch(
+                    "zomboid_mod_manager.ui.window_discovery.detect_paths",
+                    return_value=detected,
+                ),
+                patch(
+                    "zomboid_mod_manager.ui.window_discovery.QInputDialog.getItem",
+                    return_value=(str(second), True),
+                ) as choose_installation,
+            ):
+                window.game_path_detect_button.click()
+
+            self.assertEqual(window.game_path.text(), str(second))
+            self.assertEqual(choose_installation.call_count, 1)
+
+            previous = window.game_path.text()
+            with (
+                patch(
+                    "zomboid_mod_manager.ui.window_discovery.detect_paths",
+                    return_value=detected,
+                ),
+                patch(
+                    "zomboid_mod_manager.ui.window_discovery.QInputDialog.getItem",
+                    return_value=("", False),
+                ),
+            ):
+                window.game_path_detect_button.click()
+            self.assertEqual(window.game_path.text(), previous)
+            self.assertIn("selection cancelled", window.status.text())
+
+    def test_path_health_labels_report_found_missing_and_wrong_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            window, _ = self._make_launch_window(root)
+            self._wait_for_background_workers(window)
+            found = root / "Found Folder"
+            found.mkdir()
+            wrong_folder = root / "not-a-folder.txt"
+            wrong_folder.write_text("file", encoding="utf-8")
+            missing = root / "Missing Folder"
+
+            window.game_path.setText(str(missing))
+            window._update_path_health()
+            self.assertEqual(window.game_path_health.text(), "!")
+            self.assertIn("Missing", window.game_path_health.toolTip())
+
+            window.game_path.setText(str(found))
+            window.local_path.setText(str(wrong_folder))
+            window.workshop_paths.setText(f"{found};{missing}")
+            window._update_path_health()
+
+            self.assertEqual(window.game_path_health.text(), "✓")
+            self.assertEqual(window.local_path_health.text(), "!")
+            self.assertEqual(window.workshop_paths_health.text(), "!")
+            self.assertIn("Not a folder", window.local_path_health.toolTip())
+            self.assertIn("Zomboid/mods", window.local_path_health.toolTip())
+            self.assertIn(
+                "1 of 2 Workshop folders", window.workshop_paths_health.toolTip()
+            )
+
+            window.workshop_paths.setText(str(wrong_folder))
+            window._update_path_health()
+            self.assertIn("Not a folder", window.workshop_paths_health.toolTip())
 
     def test_mod_pack_save_captures_current_order(self) -> None:
         temporary = tempfile.TemporaryDirectory()

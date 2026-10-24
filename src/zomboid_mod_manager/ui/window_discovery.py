@@ -8,12 +8,14 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import (
+    QFileInfo,
     Qt,
     QThread,
 )
 from PySide6.QtGui import QStandardItem
 from PySide6.QtWidgets import (
     QFileDialog,
+    QInputDialog,
     QLineEdit,
 )
 
@@ -21,7 +23,8 @@ from zomboid_mod_manager.discovery.game_build import (
     detect_game_build,
     format_game_build_detection,
 )
-from zomboid_mod_manager.domain import ScanResult
+from zomboid_mod_manager.discovery.paths import detect_paths
+from zomboid_mod_manager.domain import DetectedPaths, ScanResult
 
 from .window_workers import (
     ScanWorker,
@@ -32,6 +35,209 @@ _SCAN_CACHE_MIN_SECONDS = 0.25
 
 
 class DiscoveryMixin:
+    def _refresh_detected_paths(self) -> DetectedPaths:
+        self._detected = detect_paths()
+        self._update_diagnostics()
+        return self._detected
+
+    def _choose_game_installation(self, installations: tuple[Path, ...]) -> Path | None:
+        if not installations:
+            return None
+        if len(installations) == 1:
+            return installations[0]
+        choices = [str(path) for path in installations]
+        selection, accepted = QInputDialog.getItem(
+            self,
+            "Choose Game Installation",
+            "Multiple Project Zomboid installations were found:",
+            choices,
+            0,
+            False,
+        )
+        if not accepted:
+            return None
+        try:
+            return installations[choices.index(selection)]
+        except ValueError:
+            return None
+
+    def _auto_detect_all_paths(self) -> None:
+        detected = self._refresh_detected_paths()
+        updated: list[str] = []
+        kept: list[str] = []
+
+        game_installation = self._choose_game_installation(detected.game_installations)
+        if game_installation is None:
+            kept.append(
+                "game folder (selection cancelled)"
+                if detected.game_installations
+                else "game folder (not found)"
+            )
+        else:
+            self.game_path.setText(str(game_installation))
+            self._use_detected_game_build()
+            updated.append("game folder")
+
+        self.local_path.setText(str(detected.local_mod_root))
+        updated.append("local mods folder")
+
+        if detected.workshop_roots:
+            self.workshop_paths.setText(";".join(map(str, detected.workshop_roots)))
+            updated.append("Workshop folders")
+        else:
+            kept.append("Workshop folders (not found)")
+
+        result_parts = []
+        if updated:
+            result_parts.append("Updated " + ", ".join(updated))
+        if kept:
+            result_parts.append("kept " + ", ".join(kept))
+        self.status.setText("Auto-detect complete: " + "; ".join(result_parts) + ".")
+
+    def _auto_detect_game_path(self) -> None:
+        detected = self._refresh_detected_paths()
+        if not detected.game_installations:
+            self.status.setText(
+                "Project Zomboid was not detected; the current game folder was kept."
+            )
+            return
+        game_installation = self._choose_game_installation(detected.game_installations)
+        if game_installation is None:
+            self.status.setText(
+                "Game folder selection cancelled; the current path was kept."
+            )
+            return
+        self.game_path.setText(str(game_installation))
+        self._use_detected_game_build()
+        self.status.setText("Game folder updated from the detected Steam installation.")
+
+    def _auto_detect_local_path(self) -> None:
+        detected = self._refresh_detected_paths()
+        self.local_path.setText(str(detected.local_mod_root))
+        if detected.local_mod_root.is_dir():
+            self.status.setText("Local mods path updated to the detected folder.")
+        else:
+            self.status.setText(
+                "Local mods path reset to the standard folder; it does not exist yet."
+            )
+
+    def _auto_detect_workshop_paths(self) -> None:
+        detected = self._refresh_detected_paths()
+        if not detected.workshop_roots:
+            self.status.setText(
+                "No Workshop folders were detected; the current paths were kept."
+            )
+            return
+        self.workshop_paths.setText(";".join(map(str, detected.workshop_roots)))
+        count = len(detected.workshop_roots)
+        self.status.setText(
+            f"Workshop content paths updated from {count} detected Steam "
+            f"librar{'y' if count == 1 else 'ies'}."
+        )
+
+    @staticmethod
+    def _folder_health(path_text: str, expected: str) -> tuple[str, str, str]:
+        value = path_text.strip()
+        if not value:
+            return "unset", "Not set", f"No folder is set. Expected {expected}."
+
+        path = str(Path(value).expanduser())
+        info = QFileInfo(path)
+        if not info.exists():
+            return "missing", "Missing", f"Folder not found. Expected {expected}."
+        if not info.isDir():
+            return (
+                "invalid",
+                "Not a folder",
+                f"Select a folder. Expected {expected}.",
+            )
+        if not info.isReadable():
+            return (
+                "unreadable",
+                "Unreadable",
+                f"Folder cannot be read. Expected {expected}.",
+            )
+        return "ready", "Found", f"Folder is available. Expected {expected}."
+
+    @staticmethod
+    def _set_path_health(label, state: str, text: str, description: str) -> None:
+        indicator = {
+            "ready": "✓",
+            "missing": "!",
+            "unreadable": "×",
+            "invalid": "!",
+            "partial": "!",
+            "unset": "·",
+        }.get(state, "?")
+        detail = f"{text}. {description}"
+        label.setText(indicator)
+        label.setToolTip(detail)
+        label.setAccessibleDescription(detail)
+        if label.property("health") != state:
+            label.setProperty("health", state)
+            label.style().unpolish(label)
+            label.style().polish(label)
+
+    def _update_path_health(self) -> None:
+        game = self._folder_health(
+            self.game_path.text(),
+            "the Project Zomboid installation folder containing the game files",
+        )
+        self._set_path_health(self.game_path_health, *game)
+
+        local = self._folder_health(
+            self.local_path.text(), "the user's Zomboid/mods folder"
+        )
+        self._set_path_health(self.local_path_health, *local)
+
+        workshop_paths = [
+            part.strip()
+            for part in self.workshop_paths.text().split(";")
+            if part.strip()
+        ]
+        if not workshop_paths:
+            workshop = (
+                "unset",
+                "Not set",
+                "No Workshop folders are set. Expected steamapps/workshop/content/108600.",
+            )
+        else:
+            checks = [
+                self._folder_health(
+                    path, "a Project Zomboid steamapps/workshop/content/108600 folder"
+                )
+                for path in workshop_paths
+            ]
+            found_count = sum(state == "ready" for state, _, _ in checks)
+            if found_count == len(checks):
+                state = "ready"
+                text = "Found" if len(checks) == 1 else f"{found_count} Found"
+            elif found_count:
+                state = "partial"
+                text = f"{found_count}/{len(checks)} Found"
+            elif any(state == "unreadable" for state, _, _ in checks):
+                state, text = "unreadable", "Unreadable"
+            elif any(state == "invalid" for state, _, _ in checks):
+                state, text = "invalid", "Not a folder"
+            else:
+                state, text = "missing", "Missing"
+            failures = [
+                description
+                for check_state, _, description in checks
+                if check_state != "ready"
+            ]
+            description = (
+                f"{found_count} of {len(checks)} Workshop folders are available. "
+                "Expected steamapps/workshop/content/108600."
+            )
+            if failures:
+                description += " " + " ".join(failures)
+            workshop = (state, text, description)
+        self._set_path_health(self.workshop_paths_health, *workshop)
+
+    def _schedule_path_health_update(self) -> None:
+        self._path_health_timer.start()
+
     def _use_detected_game_build(self) -> None:
         detection = detect_game_build(self.game_path.text().strip())
         self._game_build_detection = detection

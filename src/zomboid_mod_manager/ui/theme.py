@@ -23,6 +23,13 @@ QLabel#sectionKicker, QLabel#panelHeading {
 }
 QLabel#sectionKicker { color: #b8c66d; letter-spacing: 1px; }
 QLabel#secondaryText { color: #a4b2ab; }
+QLabel#pathHealth {
+    color: #84928a; font-size: 13pt; font-weight: 700;
+}
+QLabel#pathHealth[health="ready"] { color: #a6c77c; }
+QLabel#pathHealth[health="missing"], QLabel#pathHealth[health="partial"],
+QLabel#pathHealth[health="invalid"] { color: #e5b66c; }
+QLabel#pathHealth[health="unreadable"] { color: #e9907e; }
 QLabel#workflowHint { color: #b8c7b7; padding-left: 12px; }
 QLabel#issueSummary { color: #e5b66c; padding: 4px 2px; }
 QLabel#dirtyIndicator { color: #b8c7b7; padding: 4px; }

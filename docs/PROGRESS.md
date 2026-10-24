@@ -1,5 +1,10 @@
 # Progress
 
+## v0.2.2 path setup UX polish (2026-10-24)
+
+- Renamed the tabs to **Paths Settings** and **Library Diagnostics**. Added per-field **Auto Detect** actions and **Detect All**. All path detection is read-only; unavailable game or Workshop paths are kept, and multiple game installations prompt for a choice. Compact indicators show path health; tooltips and accessibility descriptions give the found, missing, unreadable, invalid, or partial state and expected location.
+- All 52 UI tests passed, covering path updates, missing-path handling, multiple-install selection and cancellation, health indicators, minimum-window layout, and tab captions. A focused invalid-Workshop-path regression check also passed after review. Ruff and `git diff --check` passed. Detection follows known Steam libraries, so non-Steam game installs still require Browse. No live game files were changed.
+
 ## v0.2.1 apply previews and save/server backup restore (2026-10-24)
 
 - Global, save, and server apply confirmations now preview ordered Mod ID changes; global and save previews include maps, while server previews include Workshop IDs. The Mod Pack manager compares the selected pack with the loaded global list before Apply. Long lists are shortened with counts.

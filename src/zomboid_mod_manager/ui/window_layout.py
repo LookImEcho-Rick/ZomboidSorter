@@ -7,6 +7,7 @@ from pathlib import Path
 from PySide6.QtCore import (
     QSortFilterProxyModel,
     Qt,
+    QTimer,
 )
 from PySide6.QtGui import QAction, QStandardItemModel
 from PySide6.QtWidgets import (
@@ -73,9 +74,19 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         setup_intro.setObjectName("secondaryText")
         setup_intro.setWordWrap(True)
         self.setup_layout.addWidget(setup_intro)
+        scan_heading_row = QHBoxLayout()
         scan_heading = QLabel("SCAN LOCATIONS")
         scan_heading.setObjectName("sectionKicker")
-        self.setup_layout.addWidget(scan_heading)
+        scan_heading_row.addWidget(scan_heading)
+        scan_heading_row.addStretch(1)
+        self.detect_all_paths_button = QPushButton("Detect All")
+        self.detect_all_paths_button.setAccessibleName("Auto-detect all scan paths")
+        self.detect_all_paths_button.setToolTip(
+            "Refresh discovery and update all game, local mods, and Workshop paths."
+        )
+        self.detect_all_paths_button.clicked.connect(self._auto_detect_all_paths)
+        scan_heading_row.addWidget(self.detect_all_paths_button)
+        self.setup_layout.addLayout(scan_heading_row)
 
         paths_form = QFormLayout()
         default_game_path = (
@@ -89,6 +100,7 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
             else default_game_path
         )
         self.game_path = QLineEdit(str(saved_game_path))
+        self.game_path.setAccessibleName("Project Zomboid game folder")
         self.game_path.setPlaceholderText(
             "Optional: select ProjectZomboid install folder"
         )
@@ -98,6 +110,19 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         game_browse = QPushButton("Browse…")
         game_browse.clicked.connect(lambda: self._browse_into(self.game_path))
         game_row.addWidget(game_browse)
+        self.game_path_detect_button = QPushButton("Auto Detect")
+        self.game_path_detect_button.setAccessibleName("Auto-detect game folder")
+        self.game_path_detect_button.setToolTip(
+            "Find the Project Zomboid installation in the detected Steam libraries."
+        )
+        self.game_path_detect_button.clicked.connect(self._auto_detect_game_path)
+        game_row.addWidget(self.game_path_detect_button)
+        self.game_path_health = QLabel("·")
+        self.game_path_health.setObjectName("pathHealth")
+        self.game_path_health.setAccessibleName("Game folder path health")
+        self.game_path_health.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.game_path_health.setFixedWidth(28)
+        game_row.addWidget(self.game_path_health)
         paths_form.addRow("Game folder", game_row)
 
         saved_local_path = (
@@ -106,11 +131,25 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
             else self._detected.local_mod_root
         )
         self.local_path = QLineEdit(str(saved_local_path))
+        self.local_path.setAccessibleName("Project Zomboid local mods folder")
         local_row = QHBoxLayout()
         local_row.addWidget(self.local_path)
         local_browse = QPushButton("Browse…")
         local_browse.clicked.connect(lambda: self._browse_into(self.local_path))
         local_row.addWidget(local_browse)
+        self.local_path_detect_button = QPushButton("Auto Detect")
+        self.local_path_detect_button.setAccessibleName("Auto-detect local mods folder")
+        self.local_path_detect_button.setToolTip(
+            "Reset to the standard Project Zomboid local mods folder."
+        )
+        self.local_path_detect_button.clicked.connect(self._auto_detect_local_path)
+        local_row.addWidget(self.local_path_detect_button)
+        self.local_path_health = QLabel("·")
+        self.local_path_health.setObjectName("pathHealth")
+        self.local_path_health.setAccessibleName("Local mods path health")
+        self.local_path_health.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.local_path_health.setFixedWidth(28)
+        local_row.addWidget(self.local_path_health)
         paths_form.addRow("Local mods", local_row)
 
         default_workshop_paths = ";".join(map(str, self._detected.workshop_roots))
@@ -120,6 +159,9 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
             else default_workshop_paths
         )
         self.workshop_paths = QLineEdit(str(saved_workshop_paths))
+        self.workshop_paths.setAccessibleName(
+            "Project Zomboid Workshop content folders"
+        )
         self.workshop_paths.setPlaceholderText(
             "One or more Workshop content folders, separated by semicolons"
         )
@@ -128,8 +170,33 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         workshop_browse = QPushButton("Add Folder…")
         workshop_browse.clicked.connect(self._add_workshop_folder)
         workshop_row.addWidget(workshop_browse)
+        self.workshop_paths_detect_button = QPushButton("Auto Detect")
+        self.workshop_paths_detect_button.setAccessibleName(
+            "Auto-detect Workshop content folders"
+        )
+        self.workshop_paths_detect_button.setToolTip(
+            "Find Project Zomboid Workshop folders in the detected Steam libraries."
+        )
+        self.workshop_paths_detect_button.clicked.connect(
+            self._auto_detect_workshop_paths
+        )
+        workshop_row.addWidget(self.workshop_paths_detect_button)
+        self.workshop_paths_health = QLabel("·")
+        self.workshop_paths_health.setObjectName("pathHealth")
+        self.workshop_paths_health.setAccessibleName("Workshop paths health")
+        self.workshop_paths_health.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.workshop_paths_health.setFixedWidth(28)
+        workshop_row.addWidget(self.workshop_paths_health)
         paths_form.addRow("Workshop content", workshop_row)
         self.setup_layout.addLayout(paths_form)
+
+        self._path_health_timer = QTimer(self)
+        self._path_health_timer.setSingleShot(True)
+        self._path_health_timer.setInterval(250)
+        self._path_health_timer.timeout.connect(self._update_path_health)
+        for path_field in (self.game_path, self.local_path, self.workshop_paths):
+            path_field.textChanged.connect(self._schedule_path_health_update)
+        self._update_path_health()
 
         controls = QHBoxLayout()
         self.search = QLineEdit()
@@ -364,10 +431,10 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         self.import_collection_page = self._build_import_collection_tab()
         self.main_tabs.addTab(self.import_collection_page, "Import Collection")
         self.setup_layout.addStretch(1)
-        self.main_tabs.addTab(self.setup_page, "Paths & Settings")
+        self.main_tabs.addTab(self.setup_page, "Paths Settings")
         self.library_page = library_page
         self.library_tab_index = self.main_tabs.addTab(
-            self.library_page, "Library & Diagnostics"
+            self.library_page, "Library Diagnostics"
         )
         header = QHBoxLayout()
         identity = QVBoxLayout()
