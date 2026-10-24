@@ -35,6 +35,7 @@ class DiagnosticsMixin:
         library_warning_count = 0
         active_warning_count = 0
         error_count = 0
+        first_library_diagnostic: str | None = None
         if self._user_rule_settings_error:
             line = (
                 "WARNING [invalid-user-order-rules]: Stored rules were ignored: "
@@ -46,29 +47,43 @@ class DiagnosticsMixin:
         result = self._last_result
         if result is not None:
             for diagnostic in result.diagnostics:
-                lines.append(
-                    f"{diagnostic.level.upper()}: {diagnostic.message}"
-                    + (f"\n  {diagnostic.path}" if diagnostic.path else "")
-                )
+                line = f"{diagnostic.level.upper()}: {diagnostic.message}"
+                if diagnostic.path:
+                    line += f"\n  {diagnostic.path}"
+                lines.append(line)
                 if diagnostic.level == "warning":
                     library_warning_count += 1
+                    if first_library_diagnostic is None:
+                        first_library_diagnostic = line
                 elif diagnostic.level == "error":
                     error_count += 1
+                    if first_library_diagnostic is None:
+                        first_library_diagnostic = line
             for item in result.workshop_items:
                 for diagnostic in item.diagnostics:
                     if diagnostic not in result.diagnostics:
-                        lines.append(
-                            f"{diagnostic.level.upper()}: {diagnostic.message}\n  {diagnostic.path}"
+                        line = (
+                            f"{diagnostic.level.upper()}: {diagnostic.message}"
+                            f"\n  {diagnostic.path}"
                         )
+                        lines.append(line)
                         if diagnostic.level == "warning":
                             library_warning_count += 1
+                            if first_library_diagnostic is None:
+                                first_library_diagnostic = line
                         elif diagnostic.level == "error":
                             error_count += 1
+                            if first_library_diagnostic is None:
+                                first_library_diagnostic = line
             for entry in result.entries:
                 messages = self._entry_diagnostics_for_target(
                     entry, self._metadata_target_build()
                 )
-                lines.extend(f"WARNING: {message}" for message in messages)
+                for message in messages:
+                    line = f"WARNING: {message}"
+                    lines.append(line)
+                    if first_library_diagnostic is None:
+                        first_library_diagnostic = line
                 library_warning_count += len(messages)
 
             installed_workshop_ids = {
@@ -80,10 +95,13 @@ class DiagnosticsMixin:
                 if workshop_id not in installed_workshop_ids
             ]
             if missing_workshop_ids:
-                lines.append(
+                line = (
                     "WARNING [missing-workshop-items]: Profile references Workshop items not installed locally: "
                     + ", ".join(missing_workshop_ids)
                 )
+                lines.append(line)
+                if first_library_diagnostic is None:
+                    first_library_diagnostic = line
                 library_warning_count += 1
 
             if self._active_config is not None:
@@ -140,6 +158,10 @@ class DiagnosticsMixin:
         warning_count = library_warning_count + active_warning_count
         self._library_warning_count = library_warning_count
         self._library_error_count = error_count
+        self._library_diagnostic_text = first_library_diagnostic
+        self.review_library_findings_button.setVisible(
+            first_library_diagnostic is not None
+        )
         if active_warning_count == 0:
             summary = "Active order: no issues"
         else:
@@ -160,11 +182,18 @@ class DiagnosticsMixin:
             self.diagnostics.appendPlainText(extra)
         return warning_count
 
+    def _review_library_findings(self) -> None:
+        self._review_diagnostic(self._library_diagnostic_text)
+
     def _review_active_order_issues(self) -> None:
+        self._review_diagnostic(self._active_diagnostic_text)
+
+    def _review_diagnostic(self, diagnostic_text: str | None) -> None:
         self.main_tabs.setCurrentWidget(self.library_page)
         self.diagnostics.setFocus()
-        if self._active_diagnostic_text:
-            cursor = self.diagnostics.document().find(self._active_diagnostic_text)
+        if diagnostic_text:
+            first_line = diagnostic_text.splitlines()[0]
+            cursor = self.diagnostics.document().find(first_line)
             if not cursor.isNull():
                 self.diagnostics.setTextCursor(cursor)
                 self.diagnostics.centerCursor()

@@ -621,6 +621,11 @@ class MainWindowTests(unittest.TestCase):
                 window.review_active_order_button.geometry().right(),
                 window.review_active_order_button.parentWidget().rect().right(),
             )
+            self.assertTrue(window.review_library_findings_button.isVisible())
+            self.assertLessEqual(
+                window.review_library_findings_button.geometry().right(),
+                window.review_library_findings_button.parentWidget().rect().right(),
+            )
 
             window.main_tabs.setCurrentWidget(window.setup_page)
             self.app.processEvents()
@@ -1622,6 +1627,7 @@ class MainWindowTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         window, _config_path = self._make_launch_window(Path(temporary.name))
+        window.show()
         deadline = time.monotonic() + 5
         while (
             "scan complete" not in window.status.text().casefold()
@@ -1631,6 +1637,59 @@ class MainWindowTests(unittest.TestCase):
             QTest.qWait(10)
         self.assertEqual(window.issue_summary.text(), "Active order: no issues")
         self.assertTrue(window.review_active_order_button.isHidden())
+        self.assertGreater(window._library_warning_count, 0)
+        self.assertFalse(window.review_library_findings_button.isHidden())
+        self.assertEqual(
+            window.review_library_findings_button.accessibleName(),
+            "Review library findings",
+        )
+        self.assertTrue(
+            window.review_library_findings_button.focusPolicy()
+            & Qt.FocusPolicy.TabFocus
+        )
+        window.manage_search.setFocus()
+        QTest.keyClick(
+            window.manage_search,
+            Qt.Key.Key_Tab,
+            Qt.KeyboardModifier.ShiftModifier,
+        )
+        self.app.processEvents()
+        self.assertIs(QApplication.focusWidget(), window.review_library_findings_button)
+        QTest.keyClick(window.review_library_findings_button, Qt.Key.Key_Space)
+        self.assertIs(window.main_tabs.currentWidget(), window.library_page)
+        self.assertTrue(
+            window.diagnostics.textCursor()
+            .block()
+            .text()
+            .startswith(("WARNING:", "ERROR:"))
+        )
+
+        first_library_line = window._library_diagnostic_text.splitlines()[0]
+        window._show_scan_failure("Scan failed: fixture folder became unavailable.")
+        self.assertIn(first_library_line, window.diagnostics.toPlainText())
+        self.assertIn(
+            "fixture folder became unavailable", window.diagnostics.toPlainText()
+        )
+        self.assertIn("Previous scan results remain in use", window.status.text())
+        window.review_library_findings_button.click()
+        self.assertEqual(
+            window.diagnostics.textCursor().block().text(), first_library_line
+        )
+
+        window._show_result(ScanResult((), (), ()))
+        self.assertTrue(window.review_library_findings_button.isHidden())
+        window._show_result(
+            ScanResult(
+                (), (), (Diagnostic("Broken library entry", Path("mod.info"), "error"),)
+            )
+        )
+        self.assertFalse(window.review_library_findings_button.isHidden())
+        window.review_library_findings_button.click()
+        self.assertEqual(
+            window.diagnostics.textCursor().block().text(),
+            "ERROR: Broken library entry",
+        )
+
         self.assertIn("appear more than once", window.issue_summary.toolTip())
         window._staged_mod_ids.append("MissingMod")
         window._update_diagnostics()

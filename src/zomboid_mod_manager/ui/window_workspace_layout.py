@@ -135,7 +135,20 @@ class WorkspaceLayoutMixin:
         self.available_intro = QLabel("Installed mods you can add to the load order")
         self.available_intro.setObjectName("secondaryText")
         self.available_intro.setWordWrap(True)
-        available_column.addWidget(self.available_intro)
+        available_intro_row = QHBoxLayout()
+        available_intro_row.addWidget(self.available_intro, 1)
+        self.review_library_findings_button = QPushButton("Review")
+        self.review_library_findings_button.setObjectName("subtleAction")
+        self.review_library_findings_button.setAccessibleName("Review library findings")
+        self.review_library_findings_button.setToolTip(
+            "Open Library Diagnostics at the first library warning or error."
+        )
+        self.review_library_findings_button.clicked.connect(
+            self._review_library_findings
+        )
+        self.review_library_findings_button.hide()
+        available_intro_row.addWidget(self.review_library_findings_button)
+        available_column.addLayout(available_intro_row)
         self.manage_search = QLineEdit()
         self.manage_search.setPlaceholderText("Search installed mods or IDs")
         self.manage_search.setClearButtonEnabled(True)

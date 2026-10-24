@@ -119,6 +119,7 @@ class MainWindow(
         self._diagnostic_worker: DiagnosticWorker | None = None
         self._extra_diagnostics: dict[str, str] = {}
         self._issue_error_count = 0
+        self._library_diagnostic_text: str | None = None
         self._preview_worker: PreviewWorker | None = None
         self._preview_pending: tuple[tuple[PreviewChoice, ...], int] | None = None
         self._preview_choices: tuple[PreviewChoice, ...] = ()

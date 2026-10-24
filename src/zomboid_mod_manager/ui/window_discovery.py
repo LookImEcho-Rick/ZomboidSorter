@@ -384,12 +384,18 @@ class DiscoveryMixin:
         self._scan_result_received = True
         self.scan_button.setEnabled(True)
         self.workspace_scan_button.setEnabled(True)
-        self.status.setText(message)
         if self._last_result is None:
+            self.status.setText(message)
             self.issue_summary.setText("Active order: not checked")
             self.available_list.empty_text = "Scan failed · check Paths & Settings"
             self.available_list.viewport().update()
-        self.diagnostics.setPlainText(message)
+            self.diagnostics.setPlainText(message)
+            return
+        self.status.setText(f"{message} Previous scan results remain in use.")
+        self._update_diagnostics()
+        self.diagnostics.appendPlainText(
+            f"\n\n{message}\nPrevious scan results remain in use."
+        )
 
     def _finish_scan(self) -> None:
         self._worker = None
