@@ -5,6 +5,7 @@ from pathlib import Path
 
 from zomboid_mod_manager.diagnostics.dependencies import (
     analyze_dependencies,
+    format_dependency_finding,
     parse_mod_references,
 )
 from zomboid_mod_manager.discovery.scanner import scan_mods
@@ -39,10 +40,24 @@ class DependencyTests(unittest.TestCase):
         )
         self.assertTrue(
             any(
-                f.kind == "incompatible" and "Consumer" in f.message
+                f.kind == "incompatible" and f.mod_id in {"Consumer", "Other"}
                 for f in report.findings
             )
         )
+
+    def test_formatted_finding_names_source_mod_and_candidate_once(self) -> None:
+        report = analyze_dependencies(self.entries, ("Consumer",))
+        finding = next(
+            finding
+            for finding in report.findings
+            if finding.kind == "missing-dependency"
+        )
+
+        self.assertEqual(finding.mod_id, "Consumer")
+        self.assertNotIn("Candidate:", finding.message)
+        formatted = format_dependency_finding(finding)
+        self.assertIn("Mod 'Consumer':", formatted)
+        self.assertEqual(formatted.count(str(finding.candidate_path)), 1)
 
     def test_dependency_cycles_are_reported_for_active_mods(self) -> None:
         report = analyze_dependencies(self.entries, ("CycleA", "CycleB"))

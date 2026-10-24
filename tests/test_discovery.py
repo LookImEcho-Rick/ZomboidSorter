@@ -117,6 +117,12 @@ class DiscoveryTests(unittest.TestCase):
             "First description line\n\nFinal description line",
         )
         self.assertEqual(candidate.fields["poster"], "poster.png\nshowcase.png")
+        self.assertEqual(
+            candidate.fields["pack"], "ExampleTexturePack\nExampleOverlayPack"
+        )
+        self.assertEqual(
+            candidate.fields["tiledef"], "example_tiles 1000\nexample_overlays 2000"
+        )
         self.assertFalse(
             any(
                 "Duplicate metadata key 'description'" in d
@@ -125,6 +131,12 @@ class DiscoveryTests(unittest.TestCase):
         )
         self.assertFalse(
             any("Duplicate metadata key 'poster'" in d for d in candidate.diagnostics)
+        )
+        self.assertFalse(
+            any("Duplicate metadata key 'pack'" in d for d in candidate.diagnostics)
+        )
+        self.assertFalse(
+            any("Duplicate metadata key 'tiledef'" in d for d in candidate.diagnostics)
         )
 
     def test_oversized_and_unreadable_metadata_are_diagnosed_without_stopping_scan(

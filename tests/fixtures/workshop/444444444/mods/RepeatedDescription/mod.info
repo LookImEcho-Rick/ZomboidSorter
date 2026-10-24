@@ -5,3 +5,7 @@ description=
 description=Final description line
 poster=poster.png
 poster=showcase.png
+pack=ExampleTexturePack
+pack=ExampleOverlayPack
+tiledef=example_tiles 1000
+tiledef=example_overlays 2000

@@ -12,7 +12,10 @@ from zomboid_mod_manager.diagnostics.console_log import (
     analyze_console_log,
     format_console_log_report,
 )
-from zomboid_mod_manager.diagnostics.dependencies import analyze_dependencies
+from zomboid_mod_manager.diagnostics.dependencies import (
+    analyze_dependencies,
+    format_dependency_finding,
+)
 from zomboid_mod_manager.diagnostics.file_overlaps import (
     FileOverlapReport,
     analyze_file_overlaps,
@@ -28,14 +31,15 @@ from .window_workers import (
 class DiagnosticsMixin:
     def _update_diagnostics(self) -> int:
         lines = [f"INFO: {message}" for message in self._detected.diagnostics]
-        warning_count = 0
+        library_warning_count = 0
+        active_warning_count = 0
         error_count = 0
         if self._user_rule_settings_error:
             lines.append(
                 "WARNING [invalid-user-order-rules]: Stored rules were ignored: "
                 + self._user_rule_settings_error
             )
-            warning_count += 1
+            active_warning_count += 1
         result = self._last_result
         if result is not None:
             for diagnostic in result.diagnostics:
@@ -44,7 +48,7 @@ class DiagnosticsMixin:
                     + (f"\n  {diagnostic.path}" if diagnostic.path else "")
                 )
                 if diagnostic.level == "warning":
-                    warning_count += 1
+                    library_warning_count += 1
                 elif diagnostic.level == "error":
                     error_count += 1
             for item in result.workshop_items:
@@ -54,15 +58,15 @@ class DiagnosticsMixin:
                             f"{diagnostic.level.upper()}: {diagnostic.message}\n  {diagnostic.path}"
                         )
                         if diagnostic.level == "warning":
-                            warning_count += 1
+                            library_warning_count += 1
                         elif diagnostic.level == "error":
                             error_count += 1
             for entry in result.entries:
                 messages = self._entry_diagnostics_for_target(
-                    entry, self._discover_target_build()
+                    entry, self._metadata_target_build()
                 )
                 lines.extend(f"WARNING: {message}" for message in messages)
-                warning_count += len(messages)
+                library_warning_count += len(messages)
 
             installed_workshop_ids = {
                 item.workshop_id for item in result.workshop_items
@@ -77,30 +81,62 @@ class DiagnosticsMixin:
                     "WARNING [missing-workshop-items]: Profile references Workshop items not installed locally: "
                     + ", ".join(missing_workshop_ids)
                 )
-                warning_count += 1
+                library_warning_count += 1
 
             if self._active_config is not None:
+                entries_by_id: dict[str, list] = {}
+                for entry in result.entries:
+                    if entry.mod_id:
+                        entries_by_id.setdefault(entry.mod_id, []).append(entry)
+                active_counts: dict[str, int] = {}
+                for mod_id in self._staged_mod_ids:
+                    active_counts[mod_id] = active_counts.get(mod_id, 0) + 1
+                for mod_id, count in active_counts.items():
+                    if count > 1:
+                        lines.append(
+                            f"WARNING [duplicate-active-mod-id]: '{mod_id}' appears "
+                            f"{count} times in the active order."
+                        )
+                        active_warning_count += 1
+                    installed = entries_by_id.get(mod_id, ())
+                    if not installed:
+                        lines.append(
+                            f"WARNING [missing-active-mod-id]: '{mod_id}' is active "
+                            "but was not found in the scanned library."
+                        )
+                        active_warning_count += 1
+                    elif len(installed) > 1:
+                        lines.append(
+                            f"WARNING [ambiguous-active-mod-id]: '{mod_id}' matches "
+                            f"{len(installed)} installed entries."
+                        )
+                        active_warning_count += 1
+
                 report = analyze_dependencies(
                     result.entries,
                     self._staged_mod_ids,
-                    target_build=self._discover_target_build(),
+                    target_build=self._metadata_target_build(),
                 )
                 for finding in report.findings:
                     level = "INFO" if finding.kind == "normalization" else "WARNING"
                     lines.append(
-                        f"{level} [{finding.kind}]: {finding.message}"
-                        + (
-                            f"\n  {finding.candidate_path}"
-                            if finding.candidate_path
-                            else ""
-                        )
+                        f"{level} [{finding.kind}]: "
+                        f"{format_dependency_finding(finding)}"
                     )
                     if level == "WARNING":
-                        warning_count += 1
+                        active_warning_count += 1
         self._issue_error_count = error_count
-        self.issue_summary.setText(
-            f"⚠ {warning_count} warning(s)  ·  ● {error_count} error(s)"
-        )
+        warning_count = library_warning_count + active_warning_count
+        self._library_warning_count = library_warning_count
+        self._library_error_count = error_count
+        if active_warning_count == 0:
+            summary = "Active order: no issues"
+        else:
+            issue_label = "issue" if active_warning_count == 1 else "issues"
+            summary = f"Active order: {active_warning_count} {issue_label}"
+        self.issue_summary.setText(summary)
+        if self._last_result is not None:
+            self._filter_available_mods(self.manage_search.text())
         self.diagnostics.setPlainText("\n".join(lines) or "No diagnostics.")
         if self._extra_diagnostics:
             extra = "\n\n".join(

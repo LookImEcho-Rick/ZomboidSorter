@@ -12,7 +12,10 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
 )
 
-from zomboid_mod_manager.discovery.version_selection import resolve_entry_metadata
+from zomboid_mod_manager.discovery.version_selection import (
+    declared_version_range_diagnostics,
+    resolve_entry_metadata,
+)
 from zomboid_mod_manager.domain import ModEntry
 
 from .window_widgets import (
@@ -29,7 +32,11 @@ class LibraryMixin:
     def _refresh_management_lists(self) -> None:
         selected_id = None
         selected_ids: set[str] = set()
-        for widget in (self.active_list, self.available_list):
+        list_widgets = (self.active_list, self.available_list)
+        scroll_positions = {
+            widget: widget.verticalScrollBar().value() for widget in list_widgets
+        }
+        for widget in list_widgets:
             if widget.currentItem() is not None:
                 selected_id = widget.currentItem().data(Qt.ItemDataRole.UserRole)
             selected_ids.update(
@@ -56,16 +63,13 @@ class LibraryMixin:
             item = QListWidgetItem(label)
             item.setData(Qt.ItemDataRole.UserRole, mod_id)
             item.setToolTip(label)
-            self._set_list_item_metadata(item, mod_id, matches)
+            self._set_list_item_metadata(
+                item, mod_id, matches, include_discovery_issues=False
+            )
             if len(matches) != 1:
                 item.setText("⚠  " + label)
                 item.setToolTip(
                     f"{label}\n\nThe configured Mod ID is missing or has multiple installed copies."
-                )
-            elif self._entry_issue_messages(matches[0]):
-                item.setText("⚠  " + label)
-                item.setToolTip(
-                    label + "\n\n" + "\n".join(self._entry_issue_messages(matches[0]))
                 )
             self._mark_recently_added_workshop_entry(item, matches)
             self.active_list.addItem(item)
@@ -109,8 +113,10 @@ class LibraryMixin:
             self.available_list.addItem(item)
         self._filter_available_mods(self.manage_search.text())
         self._filter_active_mods(self.active_search.text())
+        for widget in list_widgets:
+            widget.verticalScrollBar().setValue(scroll_positions[widget])
         if selected_id:
-            for widget in (self.active_list, self.available_list):
+            for widget in list_widgets:
                 for row in range(widget.count()):
                     item = widget.item(row)
                     if item.data(Qt.ItemDataRole.UserRole) == selected_id:
@@ -136,9 +142,13 @@ class LibraryMixin:
         )
 
     def _set_list_item_metadata(
-        self, item: QListWidgetItem, mod_id: str, matches: list[ModEntry]
+        self,
+        item: QListWidgetItem,
+        mod_id: str,
+        matches: list[ModEntry],
+        *,
+        include_discovery_issues: bool = True,
     ) -> None:
-        target_build = self._discover_target_build()
         item.setData(
             SEARCH_ROLE,
             " ".join(
@@ -156,10 +166,10 @@ class LibraryMixin:
             BUILD_42_ROLE,
             any(resolve_entry_metadata(entry, "42").candidates for entry in matches),
         )
-        item.setData(
-            ISSUE_ROLE,
-            len(matches) != 1
-            or any(
+        has_issue = len(matches) != 1
+        if include_discovery_issues:
+            target_build = self._metadata_target_build()
+            has_issue = has_issue or any(
                 bool(self._entry_issue_messages(entry))
                 or any(
                     candidate.diagnostics
@@ -168,8 +178,8 @@ class LibraryMixin:
                     ).candidates
                 )
                 for entry in matches
-            ),
-        )
+            )
+        item.setData(ISSUE_ROLE, has_issue)
 
     def _metadata_target_build(self) -> str:
         target = self.metadata_preview_target.currentData()
@@ -194,7 +204,7 @@ class LibraryMixin:
     def _entry_diagnostics_for_target(
         self, entry: ModEntry, target_build: str | None = None
     ) -> tuple[str, ...]:
-        target_build = target_build or self._discover_target_build()
+        target_build = target_build or self._metadata_target_build()
         selection = resolve_entry_metadata(entry, target_build)
         messages = list(entry.diagnostics)
         if selection.status in {
@@ -214,12 +224,32 @@ class LibraryMixin:
                     for candidate in entry.candidates
                 )
             ]
-        if selection.status in {"invalid", "missing", "ambiguous"}:
+        if (
+            selection.status in {"invalid", "missing", "ambiguous"}
+            or not selection.candidates
+        ):
             messages.append(selection.message)
+        if selection.candidates:
+            exact_target = self._exact_compatibility_target(target_build)
+            if exact_target is not None:
+                for candidate in selection.candidates:
+                    messages.extend(
+                        declared_version_range_diagnostics(candidate, exact_target)
+                    )
         return tuple(messages)
 
     def _entry_issue_messages(self, entry: ModEntry) -> tuple[str, ...]:
-        return self._entry_diagnostics_for_target(entry)
+        return self._entry_diagnostics_for_target(entry, self._metadata_target_build())
+
+    def _exact_compatibility_target(self, target_build: str) -> str | None:
+        if target_build not in {"41", "42", "all"}:
+            return target_build
+        if target_build != "41":
+            return None
+        detection = self._game_build_detection
+        if detection.major_build == target_build:
+            return detection.exact_version
+        return None
 
     @staticmethod
     def _matches_list_filter(item: QListWidgetItem, query: str, mode: str) -> bool:
@@ -254,7 +284,18 @@ class LibraryMixin:
             for row in range(total)
         )
         new_label = f"  ·  {new_count} new" if new_count else ""
-        self.inactive_heading.setText(f"DISCOVER  ·  {count}{new_label}")
+        library_warning_count = getattr(self, "_library_warning_count", 0)
+        library_error_count = getattr(self, "_library_error_count", 0)
+        diagnostics_label = ""
+        if self._last_result is not None:
+            warning_word = "warning" if library_warning_count == 1 else "warnings"
+            diagnostics_label = f"  ·  Library: {library_warning_count} {warning_word}"
+            if library_error_count:
+                error_word = "error" if library_error_count == 1 else "errors"
+                diagnostics_label += f"  ·  {library_error_count} {error_word}"
+        self.inactive_heading.setText(
+            f"DISCOVER  ·  {count}{new_label}{diagnostics_label}"
+        )
         self.available_list.empty_text = (
             "No mods match this search or filter"
             if query or mode != "All sources" or build != "all"

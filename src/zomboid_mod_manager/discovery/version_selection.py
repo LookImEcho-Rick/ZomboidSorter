@@ -44,6 +44,37 @@ def is_numeric_game_build(value: str) -> bool:
     return _version_key(value) is not None
 
 
+def declared_version_range_diagnostics(
+    candidate: MetadataCandidate, target_build: str
+) -> tuple[str, ...]:
+    """Report declared min/max game-version bounds that exclude an exact target."""
+    target_version = _version_key(target_build)
+    if target_version is None or "." not in target_build:
+        return ()
+
+    def compare(left: tuple[int, ...], right: tuple[int, ...]) -> int:
+        width = max(len(left), len(right))
+        left_padded = left + (0,) * (width - len(left))
+        right_padded = right + (0,) * (width - len(right))
+        return (left_padded > right_padded) - (left_padded < right_padded)
+
+    diagnostics: list[str] = []
+    minimum_raw = candidate.fields.get("versionmin", "").strip()
+    minimum = _version_key(minimum_raw)
+    if minimum is not None and compare(target_version, minimum) < 0:
+        diagnostics.append(
+            f"Declared minimum game version is {minimum_raw}; target is {target_build}."
+        )
+
+    maximum_raw = candidate.fields.get("versionmax", "").strip()
+    maximum = _version_key(maximum_raw)
+    if maximum is not None and compare(target_version, maximum) > 0:
+        diagnostics.append(
+            f"Declared maximum game version is {maximum_raw}; target is {target_build}."
+        )
+    return tuple(diagnostics)
+
+
 def _missing_build_42_message(
     candidates: tuple[MetadataCandidate, ...],
     directory_candidates: tuple[MetadataCandidate, ...],
@@ -86,11 +117,18 @@ def resolve_metadata_candidates(
             for candidate in candidates
             if candidate.layout == "root (Build 41 style)"
         )
-        message = (
-            "Using root metadata for Build 41."
-            if root_candidates
-            else "No Build 41 root metadata candidate was found."
-        )
+        if root_candidates:
+            message = "Using root metadata for Build 41."
+        elif any(
+            candidate.layout == "common (shared)" or candidate.version_folder
+            for candidate in candidates
+        ):
+            message = (
+                "Only Build 42 shared or versioned metadata is available for this "
+                "Mod ID; Build 41 requires root-level metadata."
+            )
+        else:
+            message = "No Build 41 root metadata candidate was found."
         return CandidateSelection(root_candidates, "build-41", message)
 
     if target_build == "42":

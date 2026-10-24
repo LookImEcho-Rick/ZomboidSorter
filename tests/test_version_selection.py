@@ -5,7 +5,10 @@ import unittest
 from pathlib import Path
 
 from zomboid_mod_manager.discovery.scanner import scan_mods
-from zomboid_mod_manager.discovery.version_selection import resolve_entry_metadata
+from zomboid_mod_manager.discovery.version_selection import (
+    declared_version_range_diagnostics,
+    resolve_entry_metadata,
+)
 
 
 class VersionSelectionTests(unittest.TestCase):
@@ -65,6 +68,19 @@ class VersionSelectionTests(unittest.TestCase):
         self.assertIn("root (Build 41 style)", preview.message)
         self.assertIn("Build 42 ignores root-level mod files", exact.message)
 
+    def test_explains_build42_only_metadata_is_not_available_to_build_41(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            entries = self._scan_entry(
+                Path(temporary),
+                {"42/mod.info": "name=Modern Example\nid=Example\n"},
+            )
+
+        selected = resolve_entry_metadata(entries["Example"], "41")
+        self.assertEqual(selected.status, "build-41")
+        self.assertFalse(selected.candidates)
+        self.assertIn("Only Build 42", selected.message)
+        self.assertIn("Build 41 requires root-level metadata", selected.message)
+
     def test_versioned_id_supersedes_common_id_for_the_same_folder(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             entries = self._scan_entry(
@@ -95,6 +111,30 @@ class VersionSelectionTests(unittest.TestCase):
         selected = resolve_entry_metadata(entries["Example"], "42.beta")
         self.assertEqual(selected.status, "invalid")
         self.assertFalse(selected.candidates)
+
+    def test_declared_game_version_bounds_are_checked_against_exact_target(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            entries = self._scan_entry(
+                Path(temporary),
+                {
+                    "42/mod.info": (
+                        "name=Example\nid=Example\n"
+                        "versionMin=42.20.0\nversionMax=42.22.0\n"
+                    ),
+                },
+            )
+
+        candidate = entries["Example"].candidates[0]
+        too_old = declared_version_range_diagnostics(candidate, "42.19.0")
+        too_new = declared_version_range_diagnostics(candidate, "42.23.0")
+        compatible = declared_version_range_diagnostics(candidate, "42.21.0")
+        self.assertEqual(len(too_old), 1)
+        self.assertIn("minimum game version is 42.20.0", too_old[0])
+        self.assertEqual(len(too_new), 1)
+        self.assertIn("maximum game version is 42.22.0", too_new[0])
+        self.assertEqual(compatible, ())
 
 
 if __name__ == "__main__":

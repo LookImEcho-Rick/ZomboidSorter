@@ -6,6 +6,7 @@ import os
 import tempfile
 import time
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from threading import Event
 from unittest.mock import Mock, patch
@@ -531,6 +532,59 @@ class MainWindowTests(unittest.TestCase):
         self._wait_for_background_workers(window)
         window.close()
 
+    def test_workspace_rebuild_preserves_active_and_discover_scroll_positions(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            window, _config_path = self._make_launch_window(Path(temporary))
+            self._wait_for_background_workers(window)
+            base_entry = window._last_result.entries[0]
+            base_candidate = base_entry.candidates[0]
+            entries = []
+            for index in range(60):
+                mod_id = f"ScrollTest{index:02d}"
+                name = f"Scroll Test {index:02d}"
+                candidate = replace(
+                    base_candidate,
+                    fields={**base_candidate.fields, "id": mod_id, "name": name},
+                )
+                entries.append(
+                    replace(
+                        base_entry,
+                        key=mod_id,
+                        mod_id=mod_id,
+                        name=name,
+                        source="local",
+                        workshop_id=None,
+                        candidates=(candidate,),
+                    )
+                )
+            window._last_result = ScanResult(tuple(entries), (), ())
+            window._staged_mod_ids = [entry.mod_id for entry in entries[:30]]
+            window.resize(1400, 800)
+            window.show()
+            window._refresh_management_lists()
+            self.app.processEvents()
+
+            active_scroll = window.active_list.verticalScrollBar()
+            available_scroll = window.available_list.verticalScrollBar()
+            self.assertGreater(active_scroll.maximum(), 0)
+            self.assertGreater(available_scroll.maximum(), 0)
+            active_scroll.setValue(min(8, active_scroll.maximum()))
+            available_scroll.setValue(min(11, available_scroll.maximum()))
+            expected_active = active_scroll.value()
+            expected_available = available_scroll.value()
+
+            window._refresh_management_lists()
+            self.app.processEvents()
+
+            self.assertEqual(active_scroll.value(), expected_active)
+            self.assertEqual(available_scroll.value(), expected_available)
+            self.assertEqual(
+                window._staged_mod_ids, [entry.mod_id for entry in entries[:30]]
+            )
+            window.close()
+
     def test_small_window_keeps_paths_and_primary_actions_readable(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             window, _ = self._make_launch_window(Path(temporary))
@@ -991,7 +1045,15 @@ class MainWindowTests(unittest.TestCase):
             if window.active_list.item(index).data(Qt.ItemDataRole.UserRole)
             == "LegacyWorkshop"
         )
-        self.assertTrue(warning_item.data(ISSUE_ROLE))
+        self.assertFalse(warning_item.data(ISSUE_ROLE))
+        self.assertNotIn(
+            "Build 42 ignores root-level mod files", warning_item.toolTip()
+        )
+        self.assertIn(
+            "Build 42 ignores root-level mod files",
+            window.diagnostics.toPlainText(),
+        )
+        summary_for_target = window.issue_summary.text()
 
         window.inactive_build_filter.setCurrentIndex(
             window.inactive_build_filter.findData("41")
@@ -1003,6 +1065,18 @@ class MainWindowTests(unittest.TestCase):
         }
         self.assertIn("RepeatedDescription", visible_ids)
         self.assertNotIn("BundleAddon", visible_ids)
+        self.assertEqual(window.issue_summary.text(), summary_for_target)
+        repeated_description = next(
+            window.available_list.item(index)
+            for index in range(window.available_list.count())
+            if window.available_list.item(index).data(Qt.ItemDataRole.UserRole)
+            == "RepeatedDescription"
+        )
+        self.assertTrue(repeated_description.data(ISSUE_ROLE))
+        self.assertIn(
+            "Build 42 ignores root-level mod files",
+            repeated_description.toolTip(),
+        )
         warning_item = next(
             window.active_list.item(index)
             for index in range(window.active_list.count())
@@ -1022,6 +1096,50 @@ class MainWindowTests(unittest.TestCase):
         self.assertIn("BundleAddon", visible_ids)
         self.assertNotIn("RepeatedDescription", visible_ids)
         window.close()
+
+    def test_declared_game_version_mismatch_is_a_discover_issue(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            workshop_root = root / "workshop"
+            metadata = (
+                workshop_root
+                / "888888888"
+                / "mods"
+                / "VersionBound"
+                / "42"
+                / "mod.info"
+            )
+            metadata.parent.mkdir(parents=True)
+            metadata.write_text(
+                "name=Version Bound\nid=VersionBound\n"
+                "versionMin=42.20.0\nversionMax=42.22.0\n",
+                encoding="utf-8",
+            )
+            config_path = root / "Zomboid" / "mods" / "default.txt"
+            config_path.parent.mkdir(parents=True)
+            config_path.write_text(
+                "VERSION = 1,\n\nmods\n{\n}\n\nmaps\n{\n}\n",
+                encoding="utf-8",
+            )
+            window = MainWindow(
+                DetectedPaths((), (), (), (workshop_root,), root / "local-mods"),
+                active_config_path=config_path,
+                profile_store=ProfileStore(root / "profiles"),
+            )
+            self.addCleanup(window.close)
+            self._wait_for_background_workers(window)
+            window.metadata_preview_target.setCurrentIndex(
+                window.metadata_preview_target.findData("42")
+            )
+            window.metadata_build_version.setText("42.19.0")
+
+            item = window.available_list.item(0)
+            self.assertTrue(item.data(ISSUE_ROLE))
+            self.assertIn("Declared minimum game version is 42.20.0", item.toolTip())
+            self.assertIn("target is 42.19.0", window.diagnostics.toPlainText())
+
+            window.metadata_build_version.setText("42.21.0")
+            self.assertFalse(window.available_list.item(0).data(ISSUE_ROLE))
 
     def test_workspace_shortcuts_stage_only_visible_selected_mods(self) -> None:
         temporary = tempfile.TemporaryDirectory()
@@ -1285,6 +1403,63 @@ class MainWindowTests(unittest.TestCase):
         self.assertNotIn("MissingBase", diagnostics)
         window.close()
 
+    def test_dependency_diagnostic_names_declaring_mod_and_shows_candidate_once(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config_path = root / "Zomboid" / "mods" / "default.txt"
+            config_path.parent.mkdir(parents=True)
+            config_path.write_text(
+                "VERSION = 1,\n\nmods\n{\n    mod = Consumer,\n}\n\nmaps\n{\n}\n",
+                encoding="utf-8",
+            )
+            window = MainWindow(
+                DetectedPaths(
+                    (), (), (), (FIXTURES / "dependencies",), root / "local-mods"
+                ),
+                active_config_path=config_path,
+                profile_store=ProfileStore(root / "profiles"),
+            )
+            self.addCleanup(window.close)
+            self._wait_for_background_workers(window)
+            window.metadata_preview_target.setCurrentIndex(
+                window.metadata_preview_target.findData("42")
+            )
+            window.metadata_build_version.setText("42.20.0")
+
+            metadata_path = (
+                FIXTURES
+                / "dependencies"
+                / "555555555"
+                / "mods"
+                / "Consumer"
+                / "42.20"
+                / "mod.info"
+            )
+            lines = window.diagnostics.toPlainText().splitlines()
+            missing_index = next(
+                index
+                for index, line in enumerate(lines)
+                if "[missing-dependency]" in line and "MissingMod" in line
+            )
+            self.assertIn(
+                "Mod 'Consumer': Requires 'MissingMod', which is not installed.",
+                lines[missing_index],
+            )
+            self.assertEqual(
+                lines[missing_index + 1].strip(), f"Metadata file: {metadata_path}"
+            )
+            self.assertNotIn("Candidate:", lines[missing_index])
+
+            warning = next(
+                warning
+                for warning in window._configuration_preflight_warnings()
+                if "[missing-dependency]" in warning and "MissingMod" in warning
+            )
+            self.assertIn("Mod 'Consumer'", warning)
+            self.assertEqual(warning.count(str(metadata_path)), 1)
+
     def test_metadata_target_and_build_are_restored_from_settings(self) -> None:
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -1340,8 +1515,8 @@ class MainWindowTests(unittest.TestCase):
         while not window.progress.isHidden() and time.monotonic() < deadline:
             self.app.processEvents()
             QTest.qWait(10)
-        self.assertIn("warning(s)", window.issue_summary.text())
-        self.assertIn("0 error(s)", window.issue_summary.text())
+        self.assertIn("Active order:", window.issue_summary.text())
+        self.assertIn("warnings", window.inactive_heading.text())
         self.assertTrue(window.progress.isHidden())
 
         original_ids = list(window._staged_mod_ids)
@@ -1363,7 +1538,7 @@ class MainWindowTests(unittest.TestCase):
         self.assertEqual(window.dirty_indicator.text(), "No unapplied changes")
 
         window._show_result(ScanResult((), (), (Diagnostic("Broken", level="error"),)))
-        self.assertIn("1 error(s)", window.issue_summary.text())
+        self.assertIn("1 error", window.inactive_heading.text())
         window._start_diagnostic("phase-d-test", lambda: "Completed")
         self.assertFalse(window.progress.isHidden())
         deadline = time.monotonic() + 5
@@ -1373,6 +1548,71 @@ class MainWindowTests(unittest.TestCase):
         self.assertTrue(window.progress.isHidden())
         self.assertEqual(config_path.read_bytes(), original_bytes)
         window.close()
+
+    def test_finding_counts_use_natural_singular_plural_labels(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        window, _config_path = self._make_launch_window(Path(temporary.name))
+        deadline = time.monotonic() + 5
+        while (
+            "scan complete" not in window.status.text().casefold()
+            and time.monotonic() < deadline
+        ):
+            self.app.processEvents()
+            QTest.qWait(10)
+        self.assertEqual(window.issue_summary.text(), "Active order: no issues")
+        self.assertIn("appear more than once", window.issue_summary.toolTip())
+        window._staged_mod_ids.append("MissingMod")
+        window._update_diagnostics()
+        self.assertEqual(window.issue_summary.text(), "Active order: 1 issue")
+
+        dialogs: list[QMessageBox] = []
+
+        def capture_dialog(dialog: QMessageBox) -> int:
+            dialogs.append(dialog)
+            return 0
+
+        with (
+            patch.object(
+                window,
+                "_configuration_preflight_warnings",
+                return_value=("Missing mod",),
+            ),
+            patch(
+                "zomboid_mod_manager.ui.window_configuration.QMessageBox.exec",
+                capture_dialog,
+            ),
+        ):
+            window._confirm_configuration_preflight("applying")
+        self.assertIn("1 possible issue", dialogs[-1].text())
+        self.assertIn("requirements each mod lists", dialogs[-1].informativeText())
+
+        warnings = tuple(f"Warning {number}" for number in range(41))
+        with (
+            patch.object(
+                window, "_configuration_preflight_warnings", return_value=warnings
+            ),
+            patch(
+                "zomboid_mod_manager.ui.window_configuration.QMessageBox.exec",
+                capture_dialog,
+            ),
+        ):
+            window._confirm_configuration_preflight("applying")
+        self.assertIn("41 possible issues", dialogs[-1].text())
+        self.assertIn("…and 1 more issue", dialogs[-1].detailedText())
+        window.close()
+
+    def test_active_order_does_not_look_clear_before_first_scan(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            with patch("zomboid_mod_manager.ui.window_discovery.ScanWorker.start"):
+                window, _config_path = self._make_launch_window(Path(temporary))
+
+            self.assertEqual(window.issue_summary.text(), "Active order: checking…")
+            window._scan_cancelled()
+            self.assertEqual(window.issue_summary.text(), "Active order: not checked")
+            window._show_failure("The scan could not be completed.")
+            self.assertEqual(window.issue_summary.text(), "Active order: not checked")
+            window.close()
 
     def test_cancel_scan_button_stops_scan_and_keeps_previous_results(self) -> None:
         temporary = tempfile.TemporaryDirectory()
@@ -1385,6 +1625,7 @@ class MainWindowTests(unittest.TestCase):
             QTest.qWait(5)
         self.assertIsNotNone(window._last_result)
         previous_result = window._last_result
+        previous_summary = window.issue_summary.text()
 
         scan_started = Event()
 
@@ -1410,6 +1651,7 @@ class MainWindowTests(unittest.TestCase):
 
         self.assertIsNone(window._worker)
         self.assertIs(window._last_result, previous_result)
+        self.assertEqual(window.issue_summary.text(), previous_summary)
         self.assertTrue(window.cancel_scan_button.isHidden())
         self.assertIn("cancelled", window.status.text().casefold())
         window.close()

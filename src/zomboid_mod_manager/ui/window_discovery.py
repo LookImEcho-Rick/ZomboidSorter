@@ -326,6 +326,7 @@ class DiscoveryMixin:
         self.workspace_scan_button.setEnabled(False)
         self.status.setText("Scanning selected folders…")
         if self._last_result is None:
+            self.issue_summary.setText("Active order: checking…")
             self.available_list.empty_text = "Scanning installed mods…"
             self.available_list.viewport().update()
         self.progress.show()
@@ -367,6 +368,7 @@ class DiscoveryMixin:
         self._scan_result_received = True
         self._scan_again_after_current = False
         if self._last_result is None:
+            self.issue_summary.setText("Active order: not checked")
             self.available_list.empty_text = (
                 "Scan cancelled · select Refresh to try again"
             )

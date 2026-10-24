@@ -20,6 +20,7 @@ from zomboid_mod_manager.domain import (
 
 _VERSION_FOLDER = re.compile(r"^\d+(?:\.\d+)*$")
 _MAX_METADATA_BYTES = 1024 * 1024
+_REPEATABLE_METADATA_FIELDS = {"description", "poster", "pack", "tiledef"}
 _LINK_SKIP_MESSAGE = (
     "Skipped symbolic link or junction; discovery does not follow linked paths."
 )
@@ -210,11 +211,10 @@ def _parse_metadata(
             current_key = None
             continue
         if key in fields:
-            if key in {"description", "poster"}:
-                # Real Build 42 mods commonly split long descriptions across
-                # repeated description= lines. The Build 42.21 mod.info
-                # reference also permits multiple poster= images. Preserve
-                # both supported repeatable fields instead of flagging them.
+            if key in _REPEATABLE_METADATA_FIELDS:
+                # Project Zomboid metadata can declare multiple descriptions,
+                # posters, texture packs, and tile definitions. Preserve all
+                # values instead of reporting supported repeats as duplicates.
                 fields[key] += "\n" + value.strip()
                 current_key = key
                 continue

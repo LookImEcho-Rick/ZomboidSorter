@@ -33,6 +33,15 @@ class DependencyReport:
     cycles: tuple[tuple[str, ...], ...]
 
 
+def format_dependency_finding(finding: DependencyFinding) -> str:
+    """Format a finding with its source Mod ID and candidate evidence once."""
+    source = f"Mod '{finding.mod_id}': " if finding.mod_id else ""
+    message = f"{source}{finding.message}"
+    if finding.candidate_path is not None:
+        message += f"\n  Metadata file: {finding.candidate_path}"
+    return message
+
+
 def parse_mod_references(raw: str, *, field_name: str) -> ParsedIdentifiers:
     """Parse comma-separated mod references; keep unsupported syntax explicit.
 
@@ -182,7 +191,7 @@ def analyze_dependencies(
                 findings.append(
                     DependencyFinding(
                         "metadata",
-                        f"{diagnostic} Candidate: {location}",
+                        diagnostic,
                         mod_id,
                         location,
                     )
@@ -191,7 +200,7 @@ def analyze_dependencies(
                 findings.append(
                     DependencyFinding(
                         "metadata",
-                        f"{diagnostic} Candidate: {location}",
+                        diagnostic,
                         mod_id,
                         location,
                     )
@@ -212,7 +221,7 @@ def analyze_dependencies(
                     findings.append(
                         DependencyFinding(
                             "missing-dependency",
-                            f"Requires '{required_id}', which is not installed. Candidate: {location}",
+                            f"Requires '{required_id}', which is not installed.",
                             mod_id,
                             location,
                         )
@@ -221,7 +230,7 @@ def analyze_dependencies(
                     findings.append(
                         DependencyFinding(
                             "ambiguous-dependency",
-                            f"Requires '{required_id}', but {len(providers)} installed entries share that Mod ID. Candidate: {location}",
+                            f"Requires '{required_id}', but {len(providers)} installed entries share that Mod ID.",
                             mod_id,
                             location,
                         )
@@ -230,7 +239,7 @@ def analyze_dependencies(
                     findings.append(
                         DependencyFinding(
                             "inactive-dependency",
-                            f"Requires '{required_id}', which is installed but not active. Candidate: {location}",
+                            f"Requires '{required_id}', which is installed but not active.",
                             mod_id,
                             location,
                         )
@@ -245,7 +254,7 @@ def analyze_dependencies(
                     findings.append(
                         DependencyFinding(
                             "incompatible",
-                            f"Active mod '{mod_id}' declares '{incompatible_id}' incompatible. Candidate: {location}",
+                            f"'{incompatible_id}' is declared incompatible with this active mod.",
                             mod_id,
                             location,
                         )

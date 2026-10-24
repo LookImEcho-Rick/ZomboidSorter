@@ -165,7 +165,7 @@ class WorkspaceLayoutMixin:
         self.inactive_build_filter.addItem("Build 42", "42")
         self.inactive_build_filter.setAccessibleName("Discover game build filter")
         self.inactive_build_filter.setToolTip(
-            "Filter Discover by metadata layout: root files for Build 41, or shared and versioned files for Build 42."
+            "Filter which metadata layouts appear in Discover. Compatibility warnings follow Target metadata, not this list filter."
         )
         self.inactive_build_filter.currentIndexChanged.connect(
             lambda _index: self._refresh_management_lists()
@@ -258,7 +258,7 @@ class WorkspaceLayoutMixin:
         active_column.addWidget(self.active_search)
         self.active_filter = QComboBox()
         self.active_filter.addItems(
-            ["All active", "Workshop", "Local", "Warnings", "Missing / duplicate"]
+            ["All active", "Workshop", "Local", "Missing / duplicate"]
         )
         self.active_filter.currentIndexChanged.connect(
             lambda _index: self._filter_active_mods(self.active_search.text())
@@ -291,12 +291,13 @@ class WorkspaceLayoutMixin:
             lambda point: self._show_list_context_menu(self.active_list, point)
         )
         active_column.addWidget(self.active_list, 1)
-        self.issue_summary = QLabel("0 warnings  ·  0 errors")
+        self.issue_summary = QLabel("Active order: not checked")
         self.issue_summary.setObjectName("issueSummary")
-        self.issue_summary.setAccessibleName("Warning and error counts")
+        self.issue_summary.setAccessibleName("Active-order issues")
         self.issue_summary.setToolTip(
-            "Counts from discovery and declared dependency checks. "
-            "Optional file and log analyses are shown in Library & diagnostics."
+            "Counts mods in the active list that are missing or appear more than once, plus requirement issues. "
+            "Library warnings and errors are shown in Discover. "
+            "Optional file and log checks are shown in Library & diagnostics."
         )
         active_column.addWidget(self.issue_summary)
         active_actions = QGridLayout()

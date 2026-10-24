@@ -25,7 +25,10 @@ from zomboid_mod_manager.configuration import (
     restore_active_configuration,
     selected_path_matches_configuration,
 )
-from zomboid_mod_manager.diagnostics.dependencies import analyze_dependencies
+from zomboid_mod_manager.diagnostics.dependencies import (
+    analyze_dependencies,
+    format_dependency_finding,
+)
 from zomboid_mod_manager.gameio.active_mods import (
     ActiveModConfigError,
     ConcurrentConfigChangeError,
@@ -420,7 +423,7 @@ class ActiveConfigurationMixin:
                 target_build=self._metadata_target_build(),
             )
             warnings.extend(
-                f"[{finding.kind}] {finding.message}"
+                f"[{finding.kind}] {format_dependency_finding(finding)}"
                 for finding in report.findings
                 if finding.kind != "normalization"
             )
@@ -433,12 +436,15 @@ class ActiveConfigurationMixin:
         shown = warnings[:40]
         details = "\n".join(f"• {warning}" for warning in shown)
         if len(warnings) > len(shown):
-            details += f"\n• …and {len(warnings) - len(shown)} more finding(s)"
+            remaining = len(warnings) - len(shown)
+            issue_label = "issue" if remaining == 1 else "issues"
+            details += f"\n• …and {remaining} more {issue_label}"
         action_title = "Apply" if action == "applying" else "Launch"
+        issue_label = "issue" if len(warnings) == 1 else "issues"
         box = QMessageBox(
             QMessageBox.Icon.Warning,
             f"Review Before {action_title}",
-            f"Preflight found {len(warnings)} possible issue(s) in the active Mod IDs.",
+            f"We found {len(warnings)} possible {issue_label} in the active mod list.",
             QMessageBox.StandardButton.NoButton,
             self,
         )
@@ -447,7 +453,7 @@ class ActiveConfigurationMixin:
         )
         cancel = box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
         box.setInformativeText(
-            "These checks use the scanned library and mod.info declarations. Review them before continuing."
+            "These checks compare your active list with installed mods and the requirements each mod lists. Review them before continuing."
         )
         box.setDetailedText(details)
         box.setDefaultButton(cancel)
