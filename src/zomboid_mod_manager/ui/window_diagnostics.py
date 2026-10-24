@@ -31,14 +31,17 @@ from .window_workers import (
 class DiagnosticsMixin:
     def _update_diagnostics(self) -> int:
         lines = [f"INFO: {message}" for message in self._detected.diagnostics]
+        active_diagnostic_lines: list[str] = []
         library_warning_count = 0
         active_warning_count = 0
         error_count = 0
         if self._user_rule_settings_error:
-            lines.append(
+            line = (
                 "WARNING [invalid-user-order-rules]: Stored rules were ignored: "
                 + self._user_rule_settings_error
             )
+            lines.append(line)
+            active_diagnostic_lines.append(line)
             active_warning_count += 1
         result = self._last_result
         if result is not None:
@@ -93,23 +96,29 @@ class DiagnosticsMixin:
                     active_counts[mod_id] = active_counts.get(mod_id, 0) + 1
                 for mod_id, count in active_counts.items():
                     if count > 1:
-                        lines.append(
+                        line = (
                             f"WARNING [duplicate-active-mod-id]: '{mod_id}' appears "
                             f"{count} times in the active order."
                         )
+                        lines.append(line)
+                        active_diagnostic_lines.append(line)
                         active_warning_count += 1
                     installed = entries_by_id.get(mod_id, ())
                     if not installed:
-                        lines.append(
+                        line = (
                             f"WARNING [missing-active-mod-id]: '{mod_id}' is active "
                             "but was not found in the scanned library."
                         )
+                        lines.append(line)
+                        active_diagnostic_lines.append(line)
                         active_warning_count += 1
                     elif len(installed) > 1:
-                        lines.append(
+                        line = (
                             f"WARNING [ambiguous-active-mod-id]: '{mod_id}' matches "
                             f"{len(installed)} installed entries."
                         )
+                        lines.append(line)
+                        active_diagnostic_lines.append(line)
                         active_warning_count += 1
 
                 report = analyze_dependencies(
@@ -119,11 +128,13 @@ class DiagnosticsMixin:
                 )
                 for finding in report.findings:
                     level = "INFO" if finding.kind == "normalization" else "WARNING"
-                    lines.append(
+                    line = (
                         f"{level} [{finding.kind}]: "
                         f"{format_dependency_finding(finding)}"
                     )
+                    lines.append(line)
                     if level == "WARNING":
+                        active_diagnostic_lines.append(line)
                         active_warning_count += 1
         self._issue_error_count = error_count
         warning_count = library_warning_count + active_warning_count
@@ -135,6 +146,10 @@ class DiagnosticsMixin:
             issue_label = "issue" if active_warning_count == 1 else "issues"
             summary = f"Active order: {active_warning_count} {issue_label}"
         self.issue_summary.setText(summary)
+        self._active_diagnostic_text = (
+            active_diagnostic_lines[0] if active_diagnostic_lines else None
+        )
+        self.review_active_order_button.setVisible(active_warning_count > 0)
         if self._last_result is not None:
             self._filter_available_mods(self.manage_search.text())
         self.diagnostics.setPlainText("\n".join(lines) or "No diagnostics.")
@@ -144,6 +159,15 @@ class DiagnosticsMixin:
             )
             self.diagnostics.appendPlainText(extra)
         return warning_count
+
+    def _review_active_order_issues(self) -> None:
+        self.main_tabs.setCurrentWidget(self.library_page)
+        self.diagnostics.setFocus()
+        if self._active_diagnostic_text:
+            cursor = self.diagnostics.document().find(self._active_diagnostic_text)
+            if not cursor.isNull():
+                self.diagnostics.setTextCursor(cursor)
+                self.diagnostics.centerCursor()
 
     def _analyze_file_overlaps(self) -> None:
         if self._last_result is None:

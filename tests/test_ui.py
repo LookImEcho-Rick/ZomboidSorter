@@ -592,11 +592,21 @@ class MainWindowTests(unittest.TestCase):
             window.show()
             self._wait_for_background_workers(window)
             self.app.processEvents()
+            window._staged_mod_ids.append("MissingMod")
+            window._update_diagnostics()
+            window.active_list.setFocus()
+            QTest.keyClick(window.active_list, Qt.Key.Key_Tab)
+            self.assertIs(QApplication.focusWidget(), window.review_active_order_button)
 
             self.assertEqual(window.launch_game_button.text(), "Launch Game")
             self.assertEqual(window.apply_config_button.text(), "Apply Global List…")
             self.assertEqual(window.detail_tabs.count(), 2)
             self.assertFalse(window.workflow_hint.isVisible())
+            self.assertTrue(window.review_active_order_button.isVisible())
+            self.assertLessEqual(
+                window.review_active_order_button.geometry().right(),
+                window.review_active_order_button.parentWidget().rect().right(),
+            )
 
             window.main_tabs.setCurrentWidget(window.setup_page)
             self.app.processEvents()
@@ -606,6 +616,51 @@ class MainWindowTests(unittest.TestCase):
             self.assertTrue(window.detect_all_paths_button.isVisible())
             self.assertTrue(window.game_path_detect_button.isVisible())
             self.assertTrue(window.game_path_health.isVisible())
+
+    def test_small_window_keyboard_path_reaches_discover_action_and_details(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            window, _ = self._make_launch_window(Path(temporary))
+            window.resize(980, 680)
+            window.show()
+            self._wait_for_background_workers(window)
+            self.app.processEvents()
+
+            self.assertEqual(window.available_list.count(), 5)
+            self.assertTrue(window.select_filtered_button.isEnabled())
+            window.available_list.setCurrentRow(0)
+            self.app.processEvents()
+            self.assertTrue(window.activate_button.isEnabled())
+            window.manage_search.setFocus()
+            self.app.processEvents()
+            self.assertIs(window.focusWidget(), window.manage_search)
+
+            focus_path: list[QWidget] = []
+            for _ in range(20):
+                focused = window.focusWidget()
+                self.assertIsNotNone(focused)
+                QTest.keyClick(focused, Qt.Key.Key_Tab)
+                self.app.processEvents()
+                focused = window.focusWidget()
+                if focused is not None:
+                    focus_path.append(focused)
+                if focused is window.detail_tabs.tabBar():
+                    break
+
+            self.assertIn(window.select_filtered_button, focus_path)
+            self.assertIn(window.activate_button, focus_path)
+            self.assertIn(window.active_search, focus_path)
+            self.assertIn(window.metadata_preview_target, focus_path)
+            self.assertLess(
+                focus_path.index(window.select_filtered_button),
+                focus_path.index(window.activate_button),
+            )
+            self.assertLess(
+                focus_path.index(window.activate_button),
+                focus_path.index(window.active_search),
+            )
+            self.assertIs(window.focusWidget(), window.detail_tabs.tabBar())
 
     def test_path_detection_buttons_refresh_fields_and_tab_labels(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -1561,10 +1616,21 @@ class MainWindowTests(unittest.TestCase):
             self.app.processEvents()
             QTest.qWait(10)
         self.assertEqual(window.issue_summary.text(), "Active order: no issues")
+        self.assertTrue(window.review_active_order_button.isHidden())
         self.assertIn("appear more than once", window.issue_summary.toolTip())
         window._staged_mod_ids.append("MissingMod")
         window._update_diagnostics()
         self.assertEqual(window.issue_summary.text(), "Active order: 1 issue")
+        self.assertFalse(window.review_active_order_button.isHidden())
+        self.assertTrue(
+            window.review_active_order_button.focusPolicy() & Qt.FocusPolicy.TabFocus
+        )
+        QTest.keyClick(window.review_active_order_button, Qt.Key.Key_Space)
+        self.assertIs(window.main_tabs.currentWidget(), window.library_page)
+        self.assertIn(
+            "WARNING [missing-active-mod-id]",
+            window.diagnostics.textCursor().block().text(),
+        )
 
         dialogs: list[QMessageBox] = []
 

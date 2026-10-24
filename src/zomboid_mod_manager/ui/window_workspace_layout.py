@@ -299,7 +299,21 @@ class WorkspaceLayoutMixin:
             "Library warnings and errors are shown in Discover. "
             "Optional file and log checks are shown in Library & diagnostics."
         )
-        active_column.addWidget(self.issue_summary)
+        active_issue_row = QHBoxLayout()
+        active_issue_row.setSpacing(6)
+        active_issue_row.addWidget(self.issue_summary, 1)
+        self.review_active_order_button = QPushButton("Review")
+        self.review_active_order_button.setObjectName("subtleAction")
+        self.review_active_order_button.setAccessibleName("Review active-order issues")
+        self.review_active_order_button.setToolTip(
+            "Open Library Diagnostics at the first active-order finding."
+        )
+        self.review_active_order_button.clicked.connect(
+            self._review_active_order_issues
+        )
+        self.review_active_order_button.hide()
+        active_issue_row.addWidget(self.review_active_order_button)
+        active_column.addLayout(active_issue_row)
         active_actions = QGridLayout()
         active_actions.setSpacing(6)
         active_actions.addWidget(self.deactivate_button, 0, 0)
@@ -321,6 +335,9 @@ class WorkspaceLayoutMixin:
         if saved_splitter is not None:
             self.workspace_splitter.restoreState(saved_splitter)
         layout.addWidget(self.workspace_splitter, 1)
+        QWidget.setTabOrder(self.available_list, self.select_filtered_button)
+        QWidget.setTabOrder(self.select_filtered_button, self.activate_button)
+        QWidget.setTabOrder(self.activate_button, self.active_search)
 
         footer_rule = QFrame()
         footer_rule.setFrameShape(QFrame.Shape.HLine)

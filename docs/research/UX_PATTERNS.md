@@ -46,6 +46,7 @@ The inspected projects identify GPL-3.0 licensing (MO2's `LICENSE` is GPLv3; Rim
 ## Related ZomboidSorter code and checks
 
 - `src/zomboid_mod_manager/ui/window_library.py` rebuilds active and Discover lists and retains row selection and scroll offsets.
-- `src/zomboid_mod_manager/ui/window_diagnostics.py` separates library warnings from active-order issues and shows the declaring mod for dependency findings.
-- `tests/test_ui.py` covers warning scope, dependency source/path context, scroll preservation after rebuilding an unchanged list, plain singular/plural issue counts, and pre-scan status.
+- `src/zomboid_mod_manager/ui/window_workspace_layout.py` places the Discover bulk actions explicitly in the keyboard path before Active Order; a 980×680 fixture test follows that path into Details.
+- `src/zomboid_mod_manager/ui/window_diagnostics.py` separates library warnings from active-order issues, shows the declaring mod for dependency findings, and routes **Review** to the first active-order finding.
+- `tests/test_ui.py` covers warning scope, dependency source/path context, scroll preservation after rebuilding an unchanged list, plain singular/plural issue counts, pre-scan status, keyboard activation of **Review**, and minimum-size traversal through Discover, Active Order, and Details.
 - Current performance evidence: [Project Zomboid research](PROJECT_ZOMBOID.md) records real-library scan timing; no virtualization threshold has been established.

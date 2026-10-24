@@ -1,5 +1,18 @@
 # Progress
 
+## Minimum-window keyboard traversal (2026-10-24)
+
+- A 980×680 keyboard review found that Tab moved from the Discover list into Active Order before reaching the visible **Select Filtered** and **Enable** actions. The workspace now gives those actions an explicit place after the Discover list and before Active Order.
+- A minimum-size UI regression follows focus from Discover search through its filters and bulk actions, across Active Order, into the metadata target and Description/Metadata tabs. No visual layout changed, so the current-source README screenshot remains accurate.
+- Validation: all 55 UI tests passed; Ruff check/format and `git diff --check` passed. The traversal test uses disposable fixtures; no Project Zomboid configuration or save files were changed.
+- Next useful review: verify keyboard switching between Description and Metadata and moving from Details to the global Apply and Launch actions.
+
+## Active-order issue review shortcut (2026-10-24)
+
+- The workspace now shows a **Review** action beside the Active Order issue count when active-order findings exist. It opens **Library Diagnostics** and selects the first matching active-order finding; the action stays hidden when there are no active-order issues.
+- UI regressions verify the route and selected missing-Mod-ID finding, Tab focus eligibility, Space activation, and that Tab reaches **Review** from Active Order at 980×680. All 54 UI tests passed; the strengthened keyboard and minimum-size checks also passed on focused reruns. Ruff check/format and `git diff --check` passed.
+- Refreshed the README workspace image from the current v0.2.3 source using disposable fixture data. The older Workshop and collection captures are labeled as v0.2.2 examples. No live game configuration, installed mod, or save was accessed or changed.
+
 ## v0.2.3 metadata warnings and media previews (2026-10-24)
 
 - Build 42 diagnostics now explain when an entry has only root-level Build 41 metadata, while the workspace and detail pane keep the discovered mod name instead of replacing it with “No matching metadata.” This reflects The Indie Stone's documented Build 42 folder requirement; it does not imply the scanner failed or repair third-party mod content.

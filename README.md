@@ -22,12 +22,14 @@ A Workshop item may contain several mods. ZomboidSorter tracks each Mod ID separ
 
 ## See it in action
 
-Screenshots below were captured from the locally installed v0.2.2 app with its real mod library, not fixture data. The workspace capture filters Discover to Viewpoint. This installed binary predates the global-only cleanup in the current source, so its footer still shows the retired **Apply Elsewhere…** control.
+The workspace screenshot shows the current v0.2.3 source with a disposable fixture library. **Optional Addon** is staged in memory so you can see the review path; the capture does not change any game files.
 
-![Mod Workspace with installed Viewpoint mods in Discover and Active Order](docs/screenshots/workspace-installed-v0.2.2.jpg)
+![Mod Workspace with Discover, Active Order, selected mod details, and a direct Review action for active-order issues](docs/screenshots/workspace-source-v0.2.3.jpg)
 
 <details>
-<summary>View Steam Workshop and collection import</summary>
+<summary>View older Steam Workshop and collection import examples</summary>
+
+These two panel captures are from the locally installed v0.2.2 app. Their layouts may differ slightly from the current source.
 
 **Steam Workshop**
 
