@@ -14,7 +14,6 @@ from PySide6.QtCore import (
 from PySide6.QtGui import (
     QImage,
     QImageReader,
-    QMovie,
 )
 
 from zomboid_mod_manager import __version__
@@ -160,23 +159,11 @@ class PreviewWorker(QThread):
                     reader.setAutoTransform(True)
                     size = reader.size()
                     if size.isValid() and size.width() * size.height() <= 48_000_000:
-                        is_oversized = size.width() > 960 or size.height() > 540
                         scaled = size.scaled(
                             QSize(960, 540), Qt.AspectRatioMode.KeepAspectRatio
                         )
-                        if choice.path.suffix.casefold() == ".gif":
-                            movie = QMovie(str(choice.path))
-                            if movie.isValid():
-                                if is_oversized:
-                                    movie.setScaledSize(scaled)
-                                if movie.jumpToFrame(0):
-                                    image = movie.currentImage()
-                            movie.stop()
-                            del movie
-                        if image.isNull():
-                            if is_oversized:
-                                reader.setScaledSize(scaled)
-                            image = reader.read()
+                        reader.setScaledSize(scaled)
+                        image = reader.read()
             except OSError:
                 continue
             if not image.isNull():
