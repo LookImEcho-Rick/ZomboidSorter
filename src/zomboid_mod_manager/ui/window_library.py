@@ -30,15 +30,29 @@ from .window_widgets import (
 
 class LibraryMixin:
     def _refresh_management_lists(self) -> None:
-        selected_id = None
+        current_ids = {
+            widget: (
+                widget.currentItem().data(Qt.ItemDataRole.UserRole)
+                if widget.currentItem() is not None
+                else None
+            )
+            for widget in (self.active_list, self.available_list)
+        }
+        inspected_id = self._last_management_mod_id
+        inspected_widget = next(
+            (
+                widget
+                for widget, mod_id in current_ids.items()
+                if mod_id == inspected_id
+            ),
+            None,
+        )
         selected_ids: set[str] = set()
         list_widgets = (self.active_list, self.available_list)
         scroll_positions = {
             widget: widget.verticalScrollBar().value() for widget in list_widgets
         }
         for widget in list_widgets:
-            if widget.currentItem() is not None:
-                selected_id = widget.currentItem().data(Qt.ItemDataRole.UserRole)
             selected_ids.update(
                 item.data(Qt.ItemDataRole.UserRole) for item in widget.selectedItems()
             )
@@ -113,16 +127,32 @@ class LibraryMixin:
             self.available_list.addItem(item)
         self._filter_available_mods(self.manage_search.text())
         self._filter_active_mods(self.active_search.text())
+        inspected_item = None
+        items_to_select = []
+        for widget in list_widgets:
+            for row in range(widget.count()):
+                item = widget.item(row)
+                mod_id = item.data(Qt.ItemDataRole.UserRole)
+                if mod_id == current_ids[widget]:
+                    widget.setCurrentItem(item)
+                if mod_id in selected_ids:
+                    items_to_select.append(item)
+                if mod_id == inspected_id:
+                    inspected_item = item
+        if inspected_item is not None:
+            owner = inspected_item.listWidget()
+            if owner.currentItem() is not inspected_item:
+                owner.setCurrentItem(inspected_item)
+            self._show_management_item(inspected_item, None)
+        for item in items_to_select:
+            item.setSelected(True)
         for widget in list_widgets:
             widget.verticalScrollBar().setValue(scroll_positions[widget])
-        if selected_id:
-            for widget in list_widgets:
-                for row in range(widget.count()):
-                    item = widget.item(row)
-                    if item.data(Qt.ItemDataRole.UserRole) == selected_id:
-                        widget.setCurrentItem(item)
-                    if item.data(Qt.ItemDataRole.UserRole) in selected_ids:
-                        item.setSelected(True)
+        if (
+            inspected_item is not None
+            and inspected_item.listWidget() is not inspected_widget
+        ):
+            inspected_item.listWidget().scrollToItem(inspected_item)
         self._update_diagnostics()
         self._update_workspace_actions()
 
@@ -344,20 +374,28 @@ class LibraryMixin:
                 for row in range(self.available_list.count())
             )
         )
-        row = self.active_list.currentRow()
+        selected_rows = self._selected_active_rows()
         unfiltered = (
             not self.active_search.text().strip()
             and self.active_filter.currentIndex() == 0
         )
-        self.move_up_button.setEnabled(unfiltered and row > 0)
+        self.move_up_button.setEnabled(
+            unfiltered
+            and any(row > 0 and row - 1 not in selected_rows for row in selected_rows)
+        )
         self.move_down_button.setEnabled(
-            unfiltered and 0 <= row < self.active_list.count() - 1
+            unfiltered
+            and any(
+                row < self.active_list.count() - 1 and row + 1 not in selected_rows
+                for row in selected_rows
+            )
         )
 
     def _show_management_item(self, current, _previous) -> None:
         if current is None:
             return
         mod_id = current.data(Qt.ItemDataRole.UserRole)
+        self._last_management_mod_id = mod_id
         matches = [
             entry
             for entry in (self._last_result.entries if self._last_result else ())
@@ -366,18 +404,4 @@ class LibraryMixin:
         if len(matches) == 1:
             self._display_entry(matches[0])
         else:
-            self._clear_preview(
-                "NO PREVIEW AVAILABLE", "No unique installed entry is available."
-            )
-            self.open_workshop_button.setProperty("workshopId", None)
-            self.open_workshop_button.setEnabled(False)
-            self.open_folder_button.setProperty("entryPath", None)
-            self.open_folder_button.setEnabled(False)
-            self.details.setPlainText(
-                f"Mod ID: {mod_id}\n"
-                + (
-                    "Multiple installed entries use this ID."
-                    if matches
-                    else "This Mod ID is not installed."
-                )
-            )
+            self._display_unresolved_mod_id(mod_id, duplicate=bool(matches))

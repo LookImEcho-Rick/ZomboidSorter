@@ -334,7 +334,7 @@ class DiscoveryMixin:
         self._active_scan_key = scan_key
         self._active_scan_started_at = time.monotonic()
         self._worker.result_ready.connect(self._show_result)
-        self._worker.failed.connect(self._show_failure)
+        self._worker.failed.connect(self._show_scan_failure)
         self._worker.progress.connect(self._scan_progress)
         self._worker.cancelled.connect(self._scan_cancelled)
         self._worker.finished.connect(self._finish_scan)
@@ -374,6 +374,19 @@ class DiscoveryMixin:
             )
             self.available_list.viewport().update()
         self.status.setText("Scan cancelled; previous results are unchanged.")
+
+    def _show_scan_failure(self, message: str) -> None:
+        if self._shutdown_requested:
+            return
+        self._scan_result_received = True
+        self.scan_button.setEnabled(True)
+        self.workspace_scan_button.setEnabled(True)
+        self.status.setText(message)
+        if self._last_result is None:
+            self.issue_summary.setText("Active order: not checked")
+            self.available_list.empty_text = "Scan failed · check Paths & Settings"
+            self.available_list.viewport().update()
+        self.diagnostics.setPlainText(message)
 
     def _finish_scan(self) -> None:
         self._worker = None

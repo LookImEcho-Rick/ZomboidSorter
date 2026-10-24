@@ -570,6 +570,11 @@ class MainWindowTests(unittest.TestCase):
             available_scroll = window.available_list.verticalScrollBar()
             self.assertGreater(active_scroll.maximum(), 0)
             self.assertGreater(available_scroll.maximum(), 0)
+            available_id = window.available_list.item(0).data(Qt.ItemDataRole.UserRole)
+            active_id = window.active_list.item(1).data(Qt.ItemDataRole.UserRole)
+            window.available_list.setCurrentRow(0)
+            window.active_list.setCurrentRow(1)
+            self.assertIn(f"Mod ID: {active_id}", window.details.toPlainText())
             active_scroll.setValue(min(8, active_scroll.maximum()))
             available_scroll.setValue(min(11, available_scroll.maximum()))
             expected_active = active_scroll.value()
@@ -580,6 +585,15 @@ class MainWindowTests(unittest.TestCase):
 
             self.assertEqual(active_scroll.value(), expected_active)
             self.assertEqual(available_scroll.value(), expected_available)
+            self.assertEqual(
+                window.active_list.currentItem().data(Qt.ItemDataRole.UserRole),
+                active_id,
+            )
+            self.assertEqual(
+                window.available_list.currentItem().data(Qt.ItemDataRole.UserRole),
+                available_id,
+            )
+            self.assertIn(f"Mod ID: {active_id}", window.details.toPlainText())
             self.assertEqual(
                 window._staged_mod_ids, [entry.mod_id for entry in entries[:30]]
             )
@@ -1676,7 +1690,7 @@ class MainWindowTests(unittest.TestCase):
             self.assertEqual(window.issue_summary.text(), "Active order: checking…")
             window._scan_cancelled()
             self.assertEqual(window.issue_summary.text(), "Active order: not checked")
-            window._show_failure("The scan could not be completed.")
+            window._show_scan_failure("The scan could not be completed.")
             self.assertEqual(window.issue_summary.text(), "Active order: not checked")
             window.close()
 
@@ -2446,8 +2460,15 @@ class MainWindowTests(unittest.TestCase):
             item = window.available_list.item(index)
             if item.data(Qt.ItemDataRole.UserRole) in wanted:
                 item.setSelected(True)
+                if item.data(Qt.ItemDataRole.UserRole) == "LegacyWorkshop":
+                    window.available_list.setCurrentItem(item)
         window._stage_activate()
         self.assertTrue(wanted.issubset(window._staged_mod_ids))
+        self.assertEqual(
+            window.active_list.currentItem().data(Qt.ItemDataRole.UserRole),
+            "LegacyWorkshop",
+        )
+        self.assertIn("Mod ID: LegacyWorkshop", window.details.toPlainText())
 
         original = list(window._staged_mod_ids)
         moved = window.active_list.takeItem(0)
@@ -2471,6 +2492,71 @@ class MainWindowTests(unittest.TestCase):
         window._stage_deactivate()
         self.assertTrue(removed.isdisjoint(window._staged_mod_ids))
         window.close()
+
+    def test_move_buttons_shift_all_selected_active_mods_one_place(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            window, _ = self._make_launch_window(Path(temporary))
+            self._wait_for_background_workers(window)
+            window._staged_mod_ids = list("ABCDEF")
+            window._refresh_management_lists()
+            window.active_list.setCurrentRow(2)
+            for row in (1, 2, 4):
+                window.active_list.item(row).setSelected(True)
+            self.assertEqual(
+                {
+                    item.data(Qt.ItemDataRole.UserRole)
+                    for item in window.active_list.selectedItems()
+                },
+                {"B", "C", "E"},
+            )
+
+            window.move_up_button.click()
+            self.assertEqual(window._staged_mod_ids, list("BCAEDF"))
+            self.assertEqual(
+                {
+                    item.data(Qt.ItemDataRole.UserRole)
+                    for item in window.active_list.selectedItems()
+                },
+                {"B", "C", "E"},
+            )
+            self.assertEqual(
+                window.active_list.currentItem().data(Qt.ItemDataRole.UserRole), "C"
+            )
+
+            window.move_down_button.click()
+            self.assertEqual(window._staged_mod_ids, list("ABCDEF"))
+            window.active_list.clearSelection()
+            for row in (0, 1):
+                window.active_list.item(row).setSelected(True)
+            self.assertFalse(window.move_up_button.isEnabled())
+            self.assertTrue(window.move_down_button.isEnabled())
+
+    def test_missing_active_mod_clears_previous_description(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            window, _ = self._make_launch_window(Path(temporary))
+            self._wait_for_background_workers(window)
+            window._staged_mod_ids.append("MissingMod")
+            window._refresh_management_lists()
+            local_item = next(
+                window.available_list.item(row)
+                for row in range(window.available_list.count())
+                if window.available_list.item(row).data(Qt.ItemDataRole.UserRole)
+                == "LocalShared"
+            )
+            window.available_list.setCurrentItem(local_item)
+            self.assertIsNotNone(window._selected_entry)
+
+            window.active_list.setCurrentRow(0)
+            self.assertIn("Mod ID: MissingMod", window.details.toPlainText())
+            self.assertIsNone(window._selected_entry)
+            self.assertIn("No description", window.description.toPlainText())
+            self.assertFalse(window.open_folder_button.isEnabled())
+            self.assertFalse(window.open_workshop_button.isEnabled())
+            window.metadata_preview_target.setCurrentIndex(
+                window.metadata_preview_target.findData("41")
+            )
+            self.assertIsNone(window._selected_entry)
+            self.assertIn("No description", window.description.toPlainText())
 
     def test_read_only_file_and_console_diagnostics_are_connected_to_ui(self) -> None:
         temporary = tempfile.TemporaryDirectory()

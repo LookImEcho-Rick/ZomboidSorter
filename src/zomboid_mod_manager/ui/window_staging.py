@@ -95,6 +95,12 @@ class StagingMixin:
             items = [current]
         return items
 
+    def _selected_active_rows(self) -> set[int]:
+        return {
+            self.active_list.row(item)
+            for item in self._actionable_items(self.active_list)
+        }
+
     def _show_list_context_menu(self, widget: QListWidget, point) -> None:
         clicked = widget.itemAt(point)
         if (
@@ -241,16 +247,32 @@ class StagingMixin:
             self._update_diagnostics()
 
     def _move_active(self, offset: int) -> None:
-        row = self.active_list.currentRow()
-        destination = row + offset
-        if row < 0 or not 0 <= destination < len(self._staged_mod_ids):
+        if (
+            offset not in (-1, 1)
+            or self.active_search.text().strip()
+            or self.active_filter.currentIndex() != 0
+        ):
             return
-        self._staged_mod_ids[row], self._staged_mod_ids[destination] = (
-            self._staged_mod_ids[destination],
-            self._staged_mod_ids[row],
-        )
+        selected_rows = self._selected_active_rows()
+        selected_ids = {self._staged_mod_ids[row] for row in selected_rows}
+        moved = False
+        for row in sorted(selected_rows, reverse=offset > 0):
+            destination = row + offset
+            if (
+                0 <= destination < len(self._staged_mod_ids)
+                and self._staged_mod_ids[destination] not in selected_ids
+            ):
+                self._staged_mod_ids[row], self._staged_mod_ids[destination] = (
+                    self._staged_mod_ids[destination],
+                    self._staged_mod_ids[row],
+                )
+                moved = True
+        if not moved:
+            return
         self._refresh_management_lists()
-        self.active_list.setCurrentRow(destination)
+        current = self.active_list.currentItem()
+        if current is not None:
+            self.active_list.scrollToItem(current)
         self._update_apply_enabled()
 
     def _suggest_dependency_order(self) -> None:

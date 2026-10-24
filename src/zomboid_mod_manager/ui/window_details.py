@@ -91,6 +91,29 @@ class DetailsMixin:
         if self._last_result is not None:
             self._refresh_management_lists()
 
+    def _display_unresolved_mod_id(self, mod_id: str, *, duplicate: bool) -> None:
+        self._selected_entry = None
+        self._workshop_description_requested_id = None
+        self._workshop_description_pending = None
+        self.description_source.setText("No unique installed mod")
+        self.description_source.setToolTip("")
+        self.description.setPlainText("No description is available for this Mod ID.")
+        self._clear_preview(
+            "NO PREVIEW AVAILABLE", "No unique installed entry is available."
+        )
+        self.open_workshop_button.setProperty("workshopId", None)
+        self.open_workshop_button.setEnabled(False)
+        self.open_folder_button.setProperty("entryPath", None)
+        self.open_folder_button.setEnabled(False)
+        self.details.setPlainText(
+            f"Mod ID: {mod_id}\n"
+            + (
+                "Multiple installed entries use this ID."
+                if duplicate
+                else "This Mod ID is not installed."
+            )
+        )
+
     def _display_entry(self, entry: ModEntry) -> None:
         self._selected_entry = entry
         self.open_workshop_button.setProperty("workshopId", entry.workshop_id)

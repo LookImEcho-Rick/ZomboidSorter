@@ -1,5 +1,29 @@
 # Progress
 
+## Unresolved Mod ID details (2026-10-24)
+
+- Selecting a missing or duplicate active Mod ID updated Metadata and the preview but left the prior installed mod's Description and selected-entry state in memory. The unresolved-ID display now clears the old description, pending Workshop description request, selected entry, preview, and folder/Workshop actions before showing the missing or duplicate explanation.
+- A focused UI regression first reproduced the stale state, then passed after the fix. It also checks that changing the metadata target does not bring the old description back. All 57 UI tests passed afterward. This is fixture/UI evidence only; no live Workshop response, game config, or packaged binary was involved.
+- Next: inspect selection transitions under search/build filters with visible and hidden rows. Keep the existing selection-preservation behavior unless a concrete misleading state is found.
+
+## Scan failure handler ownership (2026-10-24)
+
+- A state review found that `ScanWorker.failed` called a scan-specific handler located in the updater mixin. The unchanged handler now lives in `window_discovery.py` as `_show_scan_failure`; the updater mixin no longer owns scan state. There was one implementation and one caller, so no persisted data or behavior changed.
+- The focused pre-scan failure-state UI test passed after the move. Ruff check/format and diff checks passed. The full 156-test suite above was run before this narrow ownership change; no packaged or real-game verification was run for it.
+- Next: inspect actual filter transitions with selected rows at small window sizes. Preserve search and selection unless a concrete stale Details or action-state defect is reproduced.
+
+## Active Order multi-selection movement (2026-10-24)
+
+- **Move Up** and **Move Down** previously changed only the current row even when several Active Order mods were selected. Each click now shifts every selected block one place, keeps their relative order and selection, and disables a direction when no selected row can move. The action remains unavailable while Active Order is filtered, preserving the staged-order invariant.
+- A new UI regression covers separate selected blocks moving up and back down, retained selection/current Mod ID, and a blocked top-edge move. This also exposed an interaction with list refresh: restoring the current row could clear an earlier selected row. Selection is now restored after all current-row changes.
+- Validation: all 156 tests passed with one environment-only symlink skip; Ruff check, formatting, compileall, and diff checks passed. Tests used disposable configuration fixtures and offscreen Qt. No live game configuration, installed mod, packaged binary, or game runtime was changed or checked. The next bounded priority remains filter/scan state inspection.
+
+## Workspace list state after refresh (2026-10-24)
+
+- A fixture exposed two related refresh defects: restoring a selected row jumped Discover from scroll position 11 to 0, and the last inspected Active Order mod could be replaced in Details by Discover's older current row. Each list now restores its own current row and selection, the last inspected Mod ID controls Details, and scroll offsets are restored after row selection. When staging moves that inspected ID to the other list, the new row is kept visible.
+- The existing large-list UI fixture now checks both current rows, Details, and scroll offsets after an equivalent rebuild. The bulk-staging fixture checks that a moved mod remains current in Active Order. Both focused tests and all 55 UI tests passed. Ruff check/format passed after formatting; no layout changed, so no new screenshot was captured. These are offscreen fixture checks; no live game config or packaged app was touched.
+- A separate 980×680 offscreen keyboard inspection found a path from the Details tabs through Refresh, Apply & Launch, Discard, and Apply when those actions are enabled. Native Windows focus appearance remains unverified. Next, inspect filter changes and scan failures for stale Details/selection state before changing that behavior.
+
 ## Minimum-window keyboard traversal (2026-10-24)
 
 - A 980×680 keyboard review found that Tab moved from the Discover list into Active Order before reaching the visible **Select Filtered** and **Enable** actions. The workspace now gives those actions an explicit place after the Discover list and before Active Order.

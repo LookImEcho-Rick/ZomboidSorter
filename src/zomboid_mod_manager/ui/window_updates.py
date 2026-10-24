@@ -149,16 +149,3 @@ class UpdateActionsMixin:
             return
         self.status.setText("Applying update. ZomboidSorter will relaunch when ready.")
         QApplication.quit()
-
-    def _show_failure(self, message: str) -> None:
-        if self._shutdown_requested:
-            return
-        self._scan_result_received = True
-        self.scan_button.setEnabled(True)
-        self.workspace_scan_button.setEnabled(True)
-        self.status.setText(message)
-        if self._last_result is None:
-            self.issue_summary.setText("Active order: not checked")
-            self.available_list.empty_text = "Scan failed · check Paths & Settings"
-            self.available_list.viewport().update()
-        self.diagnostics.setPlainText(message)

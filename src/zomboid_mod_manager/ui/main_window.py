@@ -124,6 +124,7 @@ class MainWindow(
         self._preview_generation = 0
         self._preview_cache: OrderedDict[str, QImage] = OrderedDict()
         self._selected_entry: ModEntry | None = None
+        self._last_management_mod_id: str | None = None
         self._workshop_description_worker: WorkshopDescriptionWorker | None = None
         self._workshop_description_pending: str | None = None
         self._workshop_description_requested_id: str | None = None
