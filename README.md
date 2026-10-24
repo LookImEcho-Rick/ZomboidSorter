@@ -22,11 +22,26 @@ A Workshop item may contain several mods. ZomboidSorter tracks each Mod ID separ
 
 ## See it in action
 
-These v0.2.0 captures use fixtures and a temporary example pack. They show the app's layout, not a real-game compatibility test.
+Screenshots from v0.2.0 show the workspace with an installed mod library. The settings view includes local folder paths from the captured machine.
 
-![Mod Workspace showing discovery, staged order, and selected mod details](docs/screenshots/workspace-fixture.png)
+![Mod Workspace with Discover, Active Order, and selected mod details](docs/screenshots/workspace-v0.2.0.png)
 
-![Mod Packs dialog previewing an example load order and maps](docs/screenshots/mod-packs-fixture.png)
+<details>
+<summary>View Steam Workshop, collection import, and settings</summary>
+
+**Steam Workshop**
+
+![Steam Workshop open inside ZomboidSorter](docs/screenshots/workshop-v0.2.0.png)
+
+**Import a Workshop collection**
+
+![Import Collection page and collection review dialog](docs/screenshots/collection-import-v0.2.0.png)
+
+**Paths & Settings**
+
+![Paths & Settings showing scan locations and the global mod list](docs/screenshots/settings-v0.2.0.png)
+
+</details>
 
 ## Quick start
 
