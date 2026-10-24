@@ -1,15 +1,17 @@
 # Progress
 
-## v0.2.5 release preparation (2026-10-24)
+## v0.2.5 hosted release verification (2026-10-24)
 
-- Prepared v0.2.5 with the current workspace usability changes: bounds startup geometry, a reachable Library Diagnostics review route, scan-evidence wording, clearer empty states and count summaries, and Library table and staging-action polish. No runtime dependency or global-list format changed.
-- Local validation before push: all 166 tests passed with one environment-only symlink skip; Ruff check/format, compileall, and `git diff --check` passed. Hosted Windows installer, upgrade, and rolling-update checks are pending.
+- Pushed three commits beyond the previous `origin/main` as release commit `e00107e606041152028151580d4ed9a110541036`; annotated tag `v0.2.5` points to it. The [Windows release workflow](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/40106822790) passed tests/lint, tagged build, upgrade from v0.2.4, standard and portable installer smoke, provenance attestation, and stable publication.
+- The [rolling Windows update workflow](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/40106823041) passed quality checks, packaged install/launch smoke, checksum verification, provenance, and in-app update smoke from the previous stable app before moving the rolling tag.
+- The stable versionless installer is 121,032,729 bytes with SHA-256 `cc91f176b803d356100279176b3574ee3f9ef0efef7a122d0e22047164562a67`; its sidecar matches GitHub's reported asset digest. The rolling installer is 121,033,983 bytes with SHA-256 `b5f7ffaf6595af00459625c9bdf591e254ede88b19f129b9c6e2682f81a5c038`; its v0.2.5 manifest, build ID, asset size, and sidecar agree. [Stable release](https://github.com/LookImEcho-Rick/ZomboidSorter/releases/tag/v0.2.5).
+- These are hosted Windows 2022 packaging and update checks. No game configuration, save, installed mod, Workshop subscription, or live gameplay was changed or tested.
 
 ## Library table and staged action clarity (2026-10-24)
 
 - A live source run at 1440×900 showed the Library & Diagnostics table's installed-folder column clipped behind a horizontal scrollbar, while an empty search left a blank table with no recovery cue. The table now fits its main columns at normal width, shows the installed folder name with the full path on hover, and explains empty-library, no-match, scan-in-progress, cancellation, and scan-failure states.
 - The mod-detail build selector now names the Project Zomboid build directly and uses **Detect Build**. Discover's **Add** and Active Order's **Remove** actions explain that they stage list changes; Remove also confirms installed mod files stay in place. The Paths & Settings and Library & Diagnostics tab names now match their page headings.
-- A native source run was visually reviewed at 1440×900; the table displayed without a horizontal scrollbar and the folder name was readable. Regression tests cover the no-results guidance, full-path tooltip, normal-width table, small-window keyboard path, and existing staged-list behavior. Validation: full suite passed (166 tests, one environment-only symlink skip); Ruff check/format, compileall, and `git diff --check` passed. No game configuration, save, installed mod, Workshop subscription, or packaged binary was changed or tested.
+- A native source run was visually reviewed at 1440×900; the table displayed without a horizontal scrollbar and the folder name was readable. Regression tests cover the no-results guidance, full-path tooltip, normal-width table, small-window keyboard path, and existing staged-list behavior. Validation: full suite passed (166 tests, one environment-only symlink skip); Ruff check/format, compileall, and `git diff --check` passed. The hosted package and update checks for this source are recorded above.
 
 ## High-DPI startup window bounds (2026-10-24)
 
