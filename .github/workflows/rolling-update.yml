@@ -8,6 +8,7 @@ on:
       - ".github/workflows/rolling-update.yml"
       - "assets/**"
       - "LICENSE"
+      - "README.md"
       - "packaging/build_installer.ps1"
       - "packaging/build_windows.ps1"
       - "packaging/constraints-windows.txt"

@@ -2,94 +2,105 @@
 
 ![ZomboidSorter wordmark](assets/zomboidsorter-wordmark.png)
 
-**A mod workspace for Project Zomboid.**
+**Make sense of your Project Zomboid mod list.**
+
+[Download for Windows](https://github.com/LookImEcho-Rick/ZomboidSorter/releases) · [Quick start](#quick-start) · [View screenshots](#see-it-in-action)
 
 </div>
 
-ZomboidSorter discovers local and Steam Workshop mods, shows metadata and warnings, lets you stage a load order, and saves reusable Mod Packs. Apply the staged IDs to the global list, one save, or one server settings file through separate guarded actions. It is an independent fan tool and is not affiliated with The Indie Stone.
+ZomboidSorter brings local and Steam Workshop mods into one workspace. Inspect what is installed, arrange a load order, save it as a Mod Pack, and choose exactly where to apply it. Built for people who want a clearer view of a growing mod library without editing game files by hand.
 
-**Development note:** AI tools assisted with portions of the code and documentation. Maintainers remain responsible for reviewing changes and validating releases. The screenshots below are captures of the running app with fixture data.
+## What you can do
 
-## Compatibility and evidence
+- **Find and understand your mods.** Search by name or ID, preview descriptions and metadata, and spot missing or duplicate Mod IDs.
+- **Build an order before changing the game.** Enable, disable, drag, and reorder mods in a staged list. Dependency suggestions show a proposed order you can review.
+- **Keep loadouts ready.** Save Mod Packs, import a save's mod list, and turn installed items from a public Workshop collection into a pack.
+- **Choose the target.** Apply to the global list, one save, or one server configuration through separate confirmed actions with backups and validation.
+- **Investigate issues.** Inspect declared dependencies, potential file overlaps, and selected console-log findings on demand.
 
-| Platform | Status |
+A Workshop item may contain several mods. ZomboidSorter tracks each Mod ID separately from its Workshop ID.
+
+## See it in action
+
+These v0.2.0 captures use fixtures and a temporary example pack. They show the app's layout, not a real-game compatibility test.
+
+![Mod Workspace showing discovery, staged order, and selected mod details](docs/screenshots/workspace-fixture.png)
+
+![Mod Packs dialog previewing an example load order and maps](docs/screenshots/mod-packs-fixture.png)
+
+## Quick start
+
+1. Download **`ZomboidSorter-windows-setup.exe`** from the [latest stable release](https://github.com/LookImEcho-Rick/ZomboidSorter/releases). The installer includes Python and Qt; a separate Python installation is not needed.
+2. Launch Project Zomboid through Steam at least once. If `Zomboid/mods/default.txt` does not exist yet, open the game's Mods screen so it can create the global list.
+3. Open **Paths & Settings** to confirm your game, local-mod, Workshop, and global-list paths. Select **Refresh** in Mod Workspace to scan. Scanning only reads installed folders.
+4. In **Mod Workspace**, move mods from **Discover** to **Active Order** and arrange them. Select a mod to read its **Description** or **Metadata**. Nothing is written to the game while you stage changes.
+5. Save the order as a **Mod Pack** if you want to reuse it. When ready, use the primary **Apply** action for the global list, or **Other Targets… / Apply Elsewhere…** for one save or server.
+
+**Use Installed** in the details pane selects the detected Build 41 or 42 metadata family. An exact Build 42 version can select an appropriate versioned `mod.info` candidate. This helps display metadata and suggest an order; it does not prove that a mod's content works in that game build.
+
+## Know what each action changes
+
+| Action | Result |
 | --- | --- |
-| Windows 11, 64-bit | Verified target; development and packaged launch checked on this machine. Release packaging and installer smoke checks run on Windows Server 2022. |
-| Windows 10, 64-bit | Not a verified support target. No Windows 10 run was performed. Windows 10 Home and Pro reached end of support on October 14, 2025 ([Microsoft lifecycle](https://learn.microsoft.com/en-us/lifecycle/products/windows-10-home-and-pro)). |
-| Project Zomboid Build 42 | Build 42.21.0 metadata selection was checked against the local Workshop library; the preserved game installation was inspected read-only. Disposable global, save, and server-list flows passed. A source-derived required-mod ordering check passed; an isolated runtime probe stopped during Lua startup before loading test mods. Gameplay and loader behavior remain unverified. |
-| Project Zomboid Build 41 | Steam `legacy41` Build 41.78.21 is installed. The local Workshop library and Build 41 metadata selection were checked read-only. Disposable global-list flows passed. Gameplay and loader behavior remain unverified. |
+| Scan, search, reorder, and Suggest Order | Reads installed mods and stages an in-memory list. Suggestions use declared constraints and are not a guarantee of runtime load order. |
+| Save or import a Mod Pack | Writes an app-owned pack. Importing from a save or public Workshop collection does not change the save or subscribe to Workshop items. |
+| Apply to Project Zomboid | Updates only the global `Zomboid/mods/default.txt` after confirmation, backup, concurrent-change check, atomic replacement, and readback validation. |
+| Apply to a save | Updates one selected immediate save's `mods.txt`; existing maps are preserved. |
+| Apply to server settings | Updates only `Mods` and `WorkshopItems` in one selected server `.ini`; other settings remain in place. |
 
-Discovery is read-only. It skips symbolic links and junctions and limits each `mod.info` read to 1 MiB; unreadable, oversized, or undecodable files are reported with their path. The primary **Apply To Project Zomboid…** action changes only the global `Zomboid/mods/default.txt` list after confirmation. It creates a timestamped backup, checks for concurrent edits, writes atomically, and verifies the result. **Apply Elsewhere…** offers separate confirmed actions for one immediate per-save `mods.txt` or one `<Zomboid>/Server/<name>.ini`; save maps and other server settings are preserved. Existing files are backed up, and target snapshots are checked before writing. **Mod Packs → From Save…** remains read-only and copies ordered Mod IDs and map IDs into an app-owned pack. Saves without `mods.txt` are reported as inheriting the global list. No live save or server file was changed during the feature validation. A previous global-list apply and restore was verified with the local Build 42.21.0 installation: the startup log showed the marker Mod ID, and the original list was restored byte-for-byte. A later isolated loader probe stopped during Lua startup before loading its test mods. Gameplay behavior and loading a save remain unverified.
+Existing save and server files are also backed up before a write. Stop the game or server and close its settings editor before applying. **Apply & Launch…** applies staged global changes first, then asks Steam to launch the game; a successful handoff does not confirm that the game opened.
 
-## Download and install
+## Compatibility and limits
 
-1. Open [Releases](https://github.com/LookImEcho-Rick/ZomboidSorter/releases) and download `ZomboidSorter-windows-setup.exe` from the latest stable release. The app version appears in the window title and installer details. The adjacent `.sha256` file contains its SHA-256 checksum.
-2. Run the installer. It installs for the current Windows user and adds a Start menu shortcut. If SmartScreen warns you, see [Windows SmartScreen warning](#windows-smartscreen-warning) below.
-3. Launch **ZomboidSorter** from Start. The PySide6/Qt runtime and embedded Workshop browser are included; Python is not required.
+| Target | Current evidence |
+| --- | --- |
+| Windows 11, 64-bit | Verified development target; packaged launch and installer smoke checks run locally and on hosted Windows Server 2022. |
+| Windows 10 | Not a verified support target. [Windows 10 Home and Pro support ended in 2025](https://learn.microsoft.com/en-us/lifecycle/products/windows-10-home-and-pro). |
+| Project Zomboid Build 42 | Build 42.21.0 metadata selection and disposable configuration flows were checked. Gameplay and full loader behavior remain unverified. |
+| Project Zomboid Build 41 | The installed `legacy41` branch and Build 41 metadata selection were checked. Disposable global-list flows passed; gameplay remains unverified. |
 
-Use **Check for Updates** in the app header to check for a new build published from pushed changes. The app downloads the installer only after GitHub's tests and install smoke checks pass, verifies the build ID, size, and SHA-256, then closes, applies the update, and relaunches. The helper checks the installed build ID after setup; the app reports success or failure on launch and gives the error-log path when available. Stable releases use the same versionless installer filename.
+Discovery skips links and junctions, limits each `mod.info` read to 1 MiB, and reports unreadable or invalid metadata. Sorting, overlap, and console findings are evidence to review, not claims of an in-game conflict. See [validation history](docs/PROGRESS.md) for the exact checks and limitations.
 
-If there is no Release with a downloadable installer yet, use the source instructions below. Do not download an installer from an unofficial mirror.
+## Updates and download verification
 
-## Windows SmartScreen warning
+The **Check for Updates** button looks for a Windows installer published after GitHub's build and smoke checks pass. It verifies the package build ID, size, and SHA-256 before handing off to the installer, then reports the result after relaunch. It never applies raw source commits. Stable and rolling channels both use the versionless filename `ZomboidSorter-windows-setup.exe`.
 
-![Windows SmartScreen warning for the ZomboidSorter installer](assets/smartscreen-warning.png)
+The installer is **unsigned**, so Windows SmartScreen may show **Unknown publisher**. Download only from the [official Releases page](https://github.com/LookImEcho-Rick/ZomboidSorter/releases), compare the adjacent `.sha256` file with `Get-FileHash .\ZomboidSorter-windows-setup.exe -Algorithm SHA256`, and proceed only if they match. On the SmartScreen dialog, **More info → Run anyway** may be available. If the filename or checksum differs, choose **Don't run**. [Why SmartScreen warns](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation).
 
-The screenshot shows v0.1.0; the current version appears in the app title and installer details. Windows may display **“Windows protected your PC”** and **“Unknown publisher”** because the ZomboidSorter installer is not digitally signed, so SmartScreen cannot verify its publisher. SmartScreen also considers the reputation of the publisher and the specific file, including its download history. This warning is expected for this project and does not by itself mean the installer is malware. See Microsoft's [SmartScreen reputation guidance](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation).
+<details>
+<summary>See an example SmartScreen dialog and verify GitHub build provenance</summary>
 
-It is okay to continue when you downloaded the installer from the official [ZomboidSorter Releases page](https://github.com/LookImEcho-Rick/ZomboidSorter/releases) and its SHA-256 matches the adjacent `.sha256` file. If Windows shows **More info**, select it, then select **Run anyway**. If Windows does not offer that option, or the filename or checksum differs, choose **Don’t run**; for a managed PC, ask its administrator rather than trying to bypass its policy. Download the installer again only from the official Releases page.
+![Example SmartScreen warning from an older unsigned release](assets/smartscreen-warning.png)
 
-For releases built by the attestation-enabled workflow, GitHub CLI can also verify the installer's signed build provenance. In the download folder, run:
+The example is from v0.1.0; the current version appears in the app and installer metadata. For releases with an artifact attestation, run this in the download folder:
 
 ```powershell
 $installer = Get-Item .\ZomboidSorter-windows-setup.exe
 gh attestation verify $installer.FullName --repo LookImEcho-Rick/ZomboidSorter --signer-workflow LookImEcho-Rick/ZomboidSorter/.github/workflows/release-windows.yml
 ```
 
-The attestation identifies the repository and workflow that built the exact file. It does not Authenticode-sign the installer or suppress SmartScreen. Releases published before the attestation workflow was added do not have this attestation.
+The attestation ties the exact installer to the repository workflow. It does not sign the installer or suppress SmartScreen.
 
-To compare the hash in PowerShell, run `Get-FileHash .\ZomboidSorter-windows-setup.exe -Algorithm SHA256` in the download folder and compare its `Hash` value with the `.sha256` file.
+</details>
 
-## First launch and basic use
+## Your data and backups
 
-1. Install and launch Project Zomboid through Steam at least once. Open its Mods screen to let the game create the global list if `default.txt` is missing.
-2. In **Paths & Settings**, confirm the detected local mods folder, Workshop folder, and global `Zomboid/mods/default.txt` path. Use **Refresh** to scan; the scan is read-only and can be cancelled while it runs.
-3. In **Mod Workspace**, select entries under **Discover** and enable them into **Active Order**. Drag or use the move buttons to stage an order. The list headings show visible results when you filter. The right pane has separate **Description** and **Metadata** tabs for the selected mod. Warnings identify missing and duplicate IDs; an order suggestion is a proposal, not a guarantee of the game's runtime order.
-   Under **Target metadata**, choose **Use Installed** to detect the Build 41/42 family. When the current Steam manifest and `Zomboid/version.txt` provide a matching current exact version, the app fills it in; you can select the family or edit the version manually. The app selects the newest compatible version folder at or below that version; this chooses metadata for details, dependency checks, and order suggestions, but does not prove the mod's content is compatible.
-4. Use **Save as Pack…** to keep the staged Mod IDs and the loaded global map list in an app-owned Mod Pack. **Mod Packs…** previews each pack's ordered IDs and maps before you apply it, and can import, export, and recover packs. Choose **From Save…** to preview a save's explicit Mod IDs and map IDs and copy both ordered lists into a new pack. Applying a map-aware pack asks before replacing the global map list and creates a backup. Older packs without a saved map list leave current maps unchanged.
-5. Select **Apply To Project Zomboid…** to confirm a global-list write. **Apply & Launch…** applies staged changes first and asks Windows to hand the game link to Steam; successful handoff does not prove that the game started.
-6. Open **Apply Elsewhere…** to apply the staged Mod IDs to a chosen save or server configuration. Save apply preserves existing maps and creates an explicit list for saves that inherit the global list. Server apply updates only `Mods` and `WorkshopItems`; Workshop IDs are derived from uniquely matched scanned entries. Stop the game/server and close its settings editor before applying.
+Standard installs keep Mod Packs under `%APPDATA%\ProjectZomboidModManager\profiles\` and settings in the current user's Qt registry key. Portable installs keep both in `data\` beside the app; choose **Portable installation** during setup and use a writable folder.
 
-The Steam collection importer reads public Workshop data and saves a pack; it does not subscribe, download, or update mods. For a selected missing or unavailable numeric collection item, **Open Selected Missing Item** opens its Steam Community page without subscribing. **Library & Diagnostics** is available directly from the main tabs; select a row and choose **Inspect Selected** to see its preview and metadata in Mod Workspace. The optional file-overlap check uses the selected metadata target and staged active Mod IDs by default. Clear **Staged active mods only** to include every discovered mod, or select **All candidates** under Target metadata to inspect every metadata version. Its search covers every analyzed shared path; results load in pages. Overlaps and console-log checks report evidence, not confirmed in-game conflicts.
+Global-list backups sit beside `default.txt` as `default.txt.bak-<timestamp>`. **Restore Backup…** in Paths & Settings can preview and restore one. Save and server backups sit beside the file they protect and can be restored manually after review. Replaced or deleted Mod Packs have recoverable copies in the pack store.
 
-## Screenshots
-
-These v0.2.0 screenshots use test fixtures and a temporary example Mod Pack. The warning rows and mod names are examples, not a real-game test.
-
-![Mod workspace with fixture entries](docs/screenshots/workspace-fixture.png)
-
-![Mod Pack manager previewing a temporary example pack](docs/screenshots/mod-packs-fixture.png)
-
-## Data, backups, and uninstall
-
-- Standard install Mod Packs: `%APPDATA%\ProjectZomboidModManager\profiles\`. Replaced packs have copies in `backups\`; deleted packs move to `deleted\` for recovery.
-- Standard install app settings, chosen paths, ordering rules, and window state: `HKEY_CURRENT_USER\Software\ZomboidSorter\ProjectZomboidModManager` via Qt settings.
-- Portable install settings and Mod Packs: the `data\` folder beside the application. Choose the installer's **Portable installation** type to enable this mode. Install it in a folder where you can write files; copy the whole folder to move the app and its data.
-- Game-list backups: alongside the selected global file as `Zomboid\mods\default.txt.bak-<timestamp>`. Use **Restore Backup…** in Paths & Settings to review and restore one.
-- Save-list and server settings backups: beside the selected `mods.txt` or `.ini` as `<filename>.bak-<timestamp>`. Restore one manually after reviewing it; the app's backup-restore dialog currently covers only the global list.
-
-The installer remembers the selected Standard or Portable mode on upgrades. Changing modes requires an interactive install and displays a warning: the existing settings and Mod Packs stay where they are, and the newly selected mode starts with a separate data location. Export/import Mod Packs to move them; settings are not migrated. Silent upgrades cannot change modes. The installer also lets you choose whether to create a Start menu shortcut or a desktop shortcut. Uninstall from **Windows Settings → Apps** or the Start menu shortcut. Uninstall leaves Mod Packs, settings, game-list backups, saves, and installed mods intact. Remove app-owned settings and packs manually only if you want to discard them.
+Upgrades and uninstall leave app data, game-list backups, saves, and installed mods in place. Switching between standard and portable modes does not move data; export and import Mod Packs to transfer them. See [packaging details](packaging/README.md) for install modes and release checks.
 
 ## Troubleshooting
 
-- **No mods found:** check Paths & Settings, the Steam library, and whether Workshop content is installed. A Workshop item can contain several Mod IDs.
-- **Cannot load or apply globally:** choose the global `Zomboid/mods/default.txt`. Unknown syntax, linked targets, and externally changed files are refused. Reload after another program edits it. Use **Apply Elsewhere…** for one save or server file; unsupported or changed targets are refused there too. Save lists can be imported read-only from **Mod Packs → From Save…**.
-- **Workshop page or description unavailable:** check Steam/network access. Local metadata remains usable.
-- **Launch did not start the game:** open it in Steam directly. The app can confirm only that Windows accepted the Steam link.
-- **Need help diagnosing a problem:** choose **Help → Save Support Report…**. Review the preview before saving; the report includes app/system versions and aggregate path/scan health, but omits folder paths, mod names and IDs, Workshop IDs, logs, and file contents.
-- **Problems after an apply:** close the game/server and restore the appropriate sibling `.bak-<timestamp>` copy after reviewing it. Mod Pack backups are managed inside **Mod Packs…**.
+- **No mods found:** check Paths & Settings and whether Steam has installed the Workshop content. One Workshop item can provide multiple Mod IDs.
+- **Cannot apply:** load the global `Zomboid/mods/default.txt` or choose the separate save/server target. The app refuses unknown syntax, links, unsafe targets, and files changed since loading.
+- **Workshop page or description unavailable:** check Steam or network access; local metadata remains usable.
+- **Launch did not start the game:** open it from Steam directly. The app can confirm only that Windows accepted the Steam link.
+- **Need diagnostic help:** choose **Help → Save Support Report…**. Review its preview before saving; it omits paths, names and IDs, logs, and file contents.
+- **Need to roll back:** use **Restore Backup…** for the global list, or review the sibling backup of a save or server file before restoring it manually.
 
-## Run or build from source
+## Run from source
 
 Use Python 3.14+ on Windows:
 
@@ -99,14 +110,6 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m zomboid_mod_manager
 ```
 
-Run checks and build the installer with Inno Setup 6 installed:
+For tests, lint, and installer instructions, see [packaging/README.md](packaging/README.md). The original code is [GPL-3.0-or-later](LICENSE); bundled components have their own terms. ZomboidSorter is an independent fan tool and is not affiliated with The Indie Stone.
 
-```powershell
-$env:PYTHONPATH = (Join-Path (Get-Location) 'src')
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
-.\.venv\Scripts\ruff.exe check src tests
-.\.venv\Scripts\ruff.exe format --check src tests
-.\packaging\build_installer.ps1
-```
-
-See [packaging/README.md](packaging/README.md) for the build, license review, and release process; [docs/PROGRESS.md](docs/PROGRESS.md) for validation evidence and limits. The original code is licensed under [GPL-3.0-or-later](LICENSE). The installer bundles third-party components with separate terms.
+**Development note:** AI tools assisted with portions of the code and documentation. Maintainers remain responsible for review and release validation.
