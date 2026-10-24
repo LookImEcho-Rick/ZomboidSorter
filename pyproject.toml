@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "project-zomboid-mod-manager"
-version = "0.1.9"
+version = "0.2.0"
 description = "A Windows-first desktop mod manager for Project Zomboid."
 license = "GPL-3.0-or-later"
 requires-python = ">=3.14"

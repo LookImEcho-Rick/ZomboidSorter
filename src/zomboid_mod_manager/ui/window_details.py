@@ -31,6 +31,7 @@ from .window_workers import (
 class DetailsMixin:
     def _show_selected_entry(self, current, _previous) -> None:
         if not current.isValid():
+            self.inspect_library_button.setEnabled(False)
             self.open_workshop_button.setProperty("workshopId", None)
             self.open_workshop_button.setEnabled(False)
             self.open_folder_button.setProperty("entryPath", None)
@@ -39,11 +40,42 @@ class DetailsMixin:
         key = current.sibling(current.row(), 0).data(Qt.ItemDataRole.UserRole)
         entry = self._entries.get(key)
         if entry is None:
+            self.inspect_library_button.setEnabled(False)
             self.open_workshop_button.setProperty("workshopId", None)
             self.open_workshop_button.setEnabled(False)
             self.open_folder_button.setProperty("entryPath", None)
             self.open_folder_button.setEnabled(False)
             return
+        self.inspect_library_button.setEnabled(True)
+        self._display_entry(entry)
+
+    def _open_library_entry(self, _index=None) -> None:
+        current = self.table.currentIndex()
+        if not current.isValid():
+            return
+        key = current.sibling(current.row(), 0).data(Qt.ItemDataRole.UserRole)
+        entry = self._entries.get(key)
+        if entry is None:
+            return
+        self.main_tabs.setCurrentWidget(self.workspace_page)
+        if entry.mod_id:
+            widget = (
+                self.active_list
+                if entry.mod_id in self._staged_mod_ids
+                else self.available_list
+            )
+            for row in range(widget.count()):
+                item = widget.item(row)
+                if item.data(Qt.ItemDataRole.UserRole) == entry.mod_id:
+                    if item.isHidden():
+                        if widget is self.active_list:
+                            self.active_search.clear()
+                            self.active_filter.setCurrentIndex(0)
+                        else:
+                            self.manage_search.clear()
+                            self.inactive_filter.setCurrentIndex(0)
+                    widget.setCurrentItem(item)
+                    break
         self._display_entry(entry)
 
     def _metadata_preview_target_changed(self, _value=None) -> None:

@@ -105,24 +105,6 @@ class LibraryMixin:
             self._set_list_item_metadata(item, mod_id, matches)
             self._mark_recently_added_workshop_entry(item, matches)
             self.available_list.addItem(item)
-        new_inactive_count = sum(
-            bool(self.available_list.item(index).data(NEW_WORKSHOP_ROLE))
-            for index in range(self.available_list.count())
-        )
-        new_active_count = sum(
-            bool(self.active_list.item(index).data(NEW_WORKSHOP_ROLE))
-            for index in range(self.active_list.count())
-        )
-        inactive_new_label = (
-            f"  ·  {new_inactive_count} new" if new_inactive_count else ""
-        )
-        active_new_label = f"  ·  {new_active_count} new" if new_active_count else ""
-        self.inactive_heading.setText(
-            f"DISCOVER  ·  {self.available_list.count()}{inactive_new_label}"
-        )
-        self.active_heading.setText(
-            f"ACTIVE ORDER  ·  {self.active_list.count()}{active_new_label}"
-        )
         self._filter_available_mods(self.manage_search.text())
         self._filter_active_mods(self.active_search.text())
         if selected_id:
@@ -134,6 +116,7 @@ class LibraryMixin:
                     if item.data(Qt.ItemDataRole.UserRole) in selected_ids:
                         item.setSelected(True)
         self._update_diagnostics()
+        self._update_workspace_actions()
 
     def _mark_recently_added_workshop_entry(
         self, item: QListWidgetItem, matches: list[ModEntry]
@@ -244,12 +227,22 @@ class LibraryMixin:
             item.setHidden(not match)
             visible += match
         self.available_list.visible_count = visible
+        total = self.available_list.count()
+        count = f"{visible} of {total}" if visible != total else str(total)
+        new_count = sum(
+            not self.available_list.item(row).isHidden()
+            and bool(self.available_list.item(row).data(NEW_WORKSHOP_ROLE))
+            for row in range(total)
+        )
+        new_label = f"  ·  {new_count} new" if new_count else ""
+        self.inactive_heading.setText(f"DISCOVER  ·  {count}{new_label}")
         self.available_list.empty_text = (
             "No mods match this search or filter"
             if query or mode != "All sources"
             else "No inactive mods found in the scanned folders"
         )
         self.available_list.viewport().update()
+        self._update_workspace_actions()
 
     def _filter_active_mods(self, query: str) -> None:
         mode = self.active_filter.currentText()
@@ -260,6 +253,15 @@ class LibraryMixin:
             item.setHidden(not match)
             visible += match
         self.active_list.visible_count = visible
+        total = self.active_list.count()
+        count = f"{visible} of {total}" if visible != total else str(total)
+        new_count = sum(
+            not self.active_list.item(row).isHidden()
+            and bool(self.active_list.item(row).data(NEW_WORKSHOP_ROLE))
+            for row in range(total)
+        )
+        new_label = f"  ·  {new_count} new" if new_count else ""
+        self.active_heading.setText(f"ACTIVE ORDER  ·  {count}{new_label}")
         self.active_list.empty_text = (
             "No active mods match this search or filter"
             if query or mode != "All active"
@@ -268,8 +270,29 @@ class LibraryMixin:
         self.active_list.viewport().update()
         unfiltered = not query.strip() and self.active_filter.currentIndex() == 0
         self.active_list.setDragEnabled(unfiltered)
-        self.move_up_button.setEnabled(unfiltered)
-        self.move_down_button.setEnabled(unfiltered)
+        self._update_workspace_actions()
+
+    def _update_workspace_actions(self) -> None:
+        available = self._actionable_items(self.available_list)
+        active = self._actionable_items(self.active_list)
+        self.activate_button.setEnabled(bool(available))
+        self.deactivate_button.setEnabled(bool(active))
+        self.select_filtered_button.setEnabled(
+            any(
+                not self.available_list.item(row).isHidden()
+                and self.available_list.item(row).flags() & Qt.ItemFlag.ItemIsEnabled
+                for row in range(self.available_list.count())
+            )
+        )
+        row = self.active_list.currentRow()
+        unfiltered = (
+            not self.active_search.text().strip()
+            and self.active_filter.currentIndex() == 0
+        )
+        self.move_up_button.setEnabled(unfiltered and row > 0)
+        self.move_down_button.setEnabled(
+            unfiltered and 0 <= row < self.active_list.count() - 1
+        )
 
     def _show_management_item(self, current, _previous) -> None:
         if current is None:

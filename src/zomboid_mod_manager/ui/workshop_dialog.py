@@ -58,11 +58,17 @@ class WorkshopCollectionDialog(QDialog):
         self._plan: WorkshopImportPlan | None = None
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(10)
+        heading = QLabel("Review a Workshop Collection")
+        heading.setObjectName("pageHeading")
+        layout.addWidget(heading)
         explanation = QLabel(
-            "Fetch public collection metadata using Steam's read-only API. "
-            "No items will be subscribed, downloaded, or updated."
+            "Enter a public collection URL or ID, review which items are installed, "
+            "then save the matching Mod IDs as a Mod Pack. Steam remains responsible for subscriptions and downloads."
         )
         explanation.setWordWrap(True)
+        explanation.setObjectName("secondaryText")
         layout.addWidget(explanation)
         input_row = QHBoxLayout()
         self.collection_input = QLineEdit()
@@ -70,6 +76,7 @@ class WorkshopCollectionDialog(QDialog):
             "Paste a Steam collection URL or numeric ID"
         )
         self.collection_input.setAccessibleName("Steam collection URL or ID")
+        self.collection_input.setClearButtonEnabled(True)
         input_row.addWidget(self.collection_input, 1)
         self.fetch_button = QPushButton("Fetch Collection")
         self.fetch_button.clicked.connect(self._fetch)
@@ -77,6 +84,7 @@ class WorkshopCollectionDialog(QDialog):
         layout.addLayout(input_row)
 
         self.status = QLabel("Ready. Collection contents are read-only.")
+        self.status.setObjectName("secondaryText")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
 
@@ -87,7 +95,11 @@ class WorkshopCollectionDialog(QDialog):
         )
         self.items.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.items.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.items.setAlternatingRowColors(True)
         self.items.horizontalHeader().setStretchLastSection(True)
+        self.items.setColumnWidth(0, 270)
+        self.items.setColumnWidth(1, 125)
+        self.items.setColumnWidth(2, 90)
         self.items.currentCellChanged.connect(self._update_open_workshop_page_enabled)
         layout.addWidget(self.items, 1)
 
@@ -112,8 +124,11 @@ class WorkshopCollectionDialog(QDialog):
         self.profile_name = QLineEdit()
         self.profile_name.setPlaceholderText("Mod Pack name")
         self.profile_name.setAccessibleName("Mod Pack name")
+        self.profile_name.setMaxLength(80)
+        self.profile_name.textChanged.connect(self._update_create_enabled)
         profile_row.addWidget(self.profile_name, 1)
         self.import_button = QPushButton("Create Mod Pack")
+        self.import_button.setObjectName("primaryAction")
         self.import_button.setEnabled(False)
         self.import_button.clicked.connect(self._create_profile)
         profile_row.addWidget(self.import_button)
@@ -132,6 +147,10 @@ class WorkshopCollectionDialog(QDialog):
             return
         self.fetch_button.setEnabled(False)
         self.import_button.setEnabled(False)
+        self._collection = None
+        self._plan = None
+        self.items.setRowCount(0)
+        self.open_missing_workshop_button.setEnabled(False)
         self.status.setText("Fetching collection details from Steam…")
         self._worker = CollectionWorker(value)
         self._worker.result_ready.connect(self._show_collection)
@@ -180,7 +199,7 @@ class WorkshopCollectionDialog(QDialog):
                 self.items.setItem(row, column, QTableWidgetItem(value))
 
         self._update_open_workshop_page_enabled()
-        self.import_button.setEnabled(bool(self._plan.workshop_ids))
+        self._update_create_enabled()
         missing = len(self._plan.missing_ids)
         ambiguous = len(self._plan.ambiguous_mod_ids)
         self.status.setText(
@@ -195,7 +214,15 @@ class WorkshopCollectionDialog(QDialog):
         self._plan = None
         self.import_button.setEnabled(False)
         self.open_missing_workshop_button.setEnabled(False)
+        self.items.setRowCount(0)
         self.status.setText(f"Could not read this collection: {message}")
+
+    def _update_create_enabled(self) -> None:
+        self.import_button.setEnabled(
+            self._plan is not None
+            and bool(self._plan.workshop_ids)
+            and bool(self.profile_name.text().strip())
+        )
 
     def _selected_missing_workshop_id(self) -> str | None:
         row = self.items.currentRow()

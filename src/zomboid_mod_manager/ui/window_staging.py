@@ -56,9 +56,9 @@ class StagingMixin:
     def _focus_workspace_search(self) -> None:
         focused = QApplication.focusWidget()
         search = (
-            self.manage_search
-            if focused in (self.available_list, self.manage_search)
-            else self.active_search
+            self.active_search
+            if focused in (self.active_list, self.active_search)
+            else self.manage_search
         )
         self.main_tabs.setCurrentIndex(0)
         search.setFocus()
@@ -68,6 +68,7 @@ class StagingMixin:
         item = widget.currentItem()
         if item is not None and not item.isHidden():
             self._show_management_item(item, None)
+            self.detail_tabs.setCurrentIndex(1)
             self.details.setFocus()
 
     @staticmethod

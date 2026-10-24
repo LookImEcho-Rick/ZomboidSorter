@@ -14,15 +14,21 @@ class WorkshopCollectionLayoutMixin:
         layout.setSpacing(12)
 
         heading = QLabel("Import a Steam Workshop Collection")
-        heading.setObjectName("panelHeading")
+        heading.setObjectName("pageHeading")
         layout.addWidget(heading)
         instructions = QLabel(
-            "Enter a public Project Zomboid Workshop collection URL or ID to "
-            "review its items and save the installed mods as a Mod Pack. "
-            "Workshop subscriptions and downloads are still handled by Steam."
+            "Turn the mods you already have from a public collection into a reusable Mod Pack. "
+            "This reads collection details from Steam and never subscribes to or downloads items."
         )
         instructions.setWordWrap(True)
+        instructions.setObjectName("secondaryText")
         layout.addWidget(instructions)
+        steps = QLabel(
+            "1  Scan your installed mods     2  Review collection items     3  Save a Mod Pack"
+        )
+        steps.setObjectName("workflowHint")
+        steps.setWordWrap(True)
+        layout.addWidget(steps)
         self.import_workshop_collection_button = QPushButton("Import Collection…")
         self.import_workshop_collection_button.setToolTip(
             "Read a public collection and save its installed mods as a Mod Pack."

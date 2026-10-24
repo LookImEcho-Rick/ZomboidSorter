@@ -1,5 +1,12 @@
 # Progress
 
+## v0.2.0 UX and UI polish (2026-10-23)
+
+- Refined the existing dark olive workspace with clearer panel hierarchy, roomier controls, a visible Library & Diagnostics tab, and concise guidance for discovery, staging, settings, and Workshop browsing. On shorter windows, extra guidance collapses, action labels shorten, and the active controls use two rows so the mod lists retain space. The minimum window is 980×680.
+- Filtered list headings now show visible versus total mods; transfer and ordering controls reflect the current selection. A missing or changed global-list target shows a direct route to Paths & Settings. Library rows can be opened in Mod Workspace with **Inspect Selected** or a double-click.
+- Mod Packs now preview ordered Mod IDs, Workshop IDs, and maps before Apply. Workshop collection review clears stale results on a new fetch or failure, and its Create button requires a name. Save import, ordering rules, overlap results, and support-report dialogs use consistent headings and spacing. Paths & Settings scrolls at shorter heights, and selected-mod Description and Metadata use tabs so both remain readable.
+- Validation: all 148 tests passed with two environment-only symlink skips; Ruff check/format, compileall, and `git diff --check` passed. Native fixture captures were reviewed at 1440×850 and 980×680. These are fixture UI checks; no game configuration, save, installed mod, or installed app was changed.
+
 ## v0.1.8 release verification (2026-10-23)
 
 - Published [v0.1.8](https://github.com/LookImEcho-Rick/ZomboidSorter/releases/tag/v0.1.8) from commit `acafaf9e3e29e59bc445eb5360d18ad24a0bb455`. It includes the redacted support report, the UI layout split, larger-library coverage, and rolling-update recovery changes.

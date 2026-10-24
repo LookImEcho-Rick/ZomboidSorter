@@ -23,6 +23,7 @@ from zomboid_mod_manager.diagnostics.file_overlaps import (
     FileOverlapPathGroup,
     FileOverlapReport,
 )
+from zomboid_mod_manager.ui.theme import apply_theme
 
 _PAGE_SIZE = 250
 
@@ -36,9 +37,16 @@ class FileOverlapDialog(QDialog):
         self.setWindowTitle("Potential File Overlaps")
         self.resize(1050, 680)
         self.setMinimumSize(820, 520)
+        apply_theme(self)
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(10)
+        heading = QLabel("Potential File Overlaps")
+        heading.setObjectName("pageHeading")
+        layout.addWidget(heading)
         self.summary = QLabel(self._summary_text())
+        self.summary.setObjectName("secondaryText")
         self.summary.setWordWrap(True)
         layout.addWidget(self.summary)
 

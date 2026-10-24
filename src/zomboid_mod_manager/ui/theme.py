@@ -6,27 +6,40 @@ from PySide6.QtWidgets import QWidget
 
 STYLESHEET = """
 QMainWindow, QDialog, QWidget {
-    background: #111719; color: #e9ece7; font-family: "Segoe UI"; font-size: 10pt;
+    background: #111719; color: #e9ece7; font-family: "Segoe UI"; font-size: 10.5pt;
 }
+QLabel { background: transparent; }
 QWidget#imagePreviewOverlay { background: rgba(0, 0, 0, 200); }
-QWidget#detailsPane { background: #171f21; border: 1px solid #34403e; }
+QWidget#workspacePanel, QWidget#detailsPane {
+    background: #171f21; border: 1px solid #344641; border-radius: 6px;
+}
+QWidget#workspaceNotice {
+    background: #2b3026; border: 1px solid #8c9556; border-radius: 5px;
+}
 QLabel#appTitle { color: #f1ede0; font-size: 16pt; font-weight: 800; letter-spacing: 2px; }
+QLabel#pageHeading { color: #f1ede0; font-size: 17pt; font-weight: 700; }
 QLabel#sectionKicker, QLabel#panelHeading {
-    color: #d9e2d4; font-weight: 700; font-size: 10pt; padding: 2px 0;
+    color: #d9e2d4; font-weight: 700; font-size: 10.5pt; padding: 2px 0;
 }
 QLabel#sectionKicker { color: #b8c66d; letter-spacing: 1px; }
 QLabel#secondaryText { color: #a4b2ab; }
+QLabel#workflowHint { color: #b8c7b7; padding-left: 12px; }
 QLabel#issueSummary { color: #e5b66c; padding: 4px 2px; }
 QLabel#dirtyIndicator { color: #b8c7b7; padding: 4px; }
+QLabel#configStatus {
+    background: #1d2b27; color: #e2eadb; border: 1px solid #4b6654;
+    border-radius: 4px; padding: 10px;
+}
+QFrame#footerRule { background: #344641; max-height: 1px; border: 0; }
 QLabel#modPreview {
     background: #202b2c; color: #a4b2ab; border: 1px solid #42514d;
     font-size: 15px;
 }
 QLabel#workshopNote { background: #1b2627; border: 1px solid #3a4a46;
                      color: #a4b2ab; padding: 10px; }
-QTabWidget::pane { border: 1px solid #34403e; background: #161e20; }
+QTabWidget::pane { border: 1px solid #34403e; background: #161e20; border-radius: 4px; }
 QTabBar::tab {
-    background: #1a2426; color: #a4b2ab; padding: 9px 17px;
+    background: #1a2426; color: #b6c3bb; padding: 10px 18px;
     border-bottom: 2px solid transparent;
 }
 QTabBar::tab:hover { background: #273432; color: #f1f1e9; }
@@ -39,8 +52,8 @@ QTextBrowser, QComboBox {
     border-radius: 4px; selection-background-color: #4b654d;
     selection-color: #ffffff;
 }
-QLineEdit { padding: 6px 9px; }
-QComboBox { padding: 5px 8px; }
+QLineEdit { padding: 7px 10px; }
+QComboBox { padding: 6px 9px; }
 QPlainTextEdit, QTextBrowser { padding: 7px; }
 QLineEdit:focus, QPlainTextEdit:focus, QTextBrowser:focus, QListWidget:focus,
 QTableView:focus, QTableWidget:focus, QComboBox:focus, QPushButton:focus {
@@ -52,11 +65,13 @@ QListWidget::item:selected { background: #435f4b; color: #ffffff; }
 QListWidget::item:disabled { color: #dfac73; }
 QPushButton {
     background: #2c3b3b; color: #edf0e7; border: 1px solid #52615a;
-    border-radius: 4px; padding: 6px 10px; min-height: 20px;
+    border-radius: 4px; padding: 7px 11px; min-height: 22px;
     font-weight: 600;
 }
 QPushButton:hover { background: #42544c; border-color: #b8c66d; }
 QPushButton:pressed { background: #526b50; }
+QPushButton#subtleAction { background: #23312f; border-color: #3c5149; }
+QPushButton#subtleAction:hover { background: #364a40; border-color: #b8c66d; }
 QPushButton:disabled { background: #202a2b; color: #84928a;
                        border-color: #34413f; }
 QPushButton#primaryAction { background: #a6b85c; color: #111913;
@@ -71,9 +86,11 @@ QMenu::item:selected { background: #435f4b; }
 QCheckBox { spacing: 6px; padding: 4px 7px; }
 QCheckBox:focus { border: 2px solid #b8c66d; }
 QStatusBar { background: #182123; border-top: 1px solid #34403e; }
+QStatusBar QLabel { padding-left: 6px; }
 QProgressBar { background: #24302e; border: 1px solid #44524c; }
 QProgressBar::chunk { background: #a6b85c; }
 QSplitter::handle { background: #34433e; }
+QSplitter::handle:hover { background: #9eaf68; }
 QScrollBar:vertical { background: #1b2527; width: 10px; }
 QScrollBar::handle:vertical { background: #53685a; min-height: 28px;
                               border-radius: 4px; }

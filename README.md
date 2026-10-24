@@ -53,36 +53,36 @@ To compare the hash in PowerShell, run `Get-FileHash .\ZomboidSorter-windows-set
 ## First launch and basic use
 
 1. Install and launch Project Zomboid through Steam at least once. Open its Mods screen to let the game create the global list if `default.txt` is missing.
-2. In **Paths Settings**, confirm the detected local mods folder, Workshop folder, and global `Zomboid/mods/default.txt` path. Use **Refresh** to scan; the scan is read-only and can be cancelled while it runs.
-3. In **Mod Workspace**, select entries under **Discover** and enable them into **Active Order**. Drag or use the move buttons to stage an order. Warnings identify missing and duplicate IDs; an order suggestion is a proposal, not a guarantee of the game's runtime order.
+2. In **Paths & Settings**, confirm the detected local mods folder, Workshop folder, and global `Zomboid/mods/default.txt` path. Use **Refresh** to scan; the scan is read-only and can be cancelled while it runs.
+3. In **Mod Workspace**, select entries under **Discover** and enable them into **Active Order**. Drag or use the move buttons to stage an order. The list headings show visible results when you filter. The right pane has separate **Description** and **Metadata** tabs for the selected mod. Warnings identify missing and duplicate IDs; an order suggestion is a proposal, not a guarantee of the game's runtime order.
    Under **Target metadata**, choose **Use Installed** to detect the Build 41/42 family. When the current Steam manifest and `Zomboid/version.txt` provide a matching current exact version, the app fills it in; you can select the family or edit the version manually. The app selects the newest compatible version folder at or below that version; this chooses metadata for details, dependency checks, and order suggestions, but does not prove the mod's content is compatible.
-4. Use **Save as Pack…** to keep the staged Mod IDs and the loaded global map list in an app-owned Mod Pack. **Mod Packs…** can import, export, recover, and apply packs. Choose **From Save…** to preview a save's explicit Mod IDs and map IDs and copy both ordered lists into a new pack. Applying a map-aware pack asks before replacing the global map list and creates a backup. Older packs without a saved map list leave current maps unchanged.
+4. Use **Save as Pack…** to keep the staged Mod IDs and the loaded global map list in an app-owned Mod Pack. **Mod Packs…** previews each pack's ordered IDs and maps before you apply it, and can import, export, and recover packs. Choose **From Save…** to preview a save's explicit Mod IDs and map IDs and copy both ordered lists into a new pack. Applying a map-aware pack asks before replacing the global map list and creates a backup. Older packs without a saved map list leave current maps unchanged.
 5. Select **Apply To Project Zomboid…** to confirm a global-list write. **Apply & Launch…** applies staged changes first and asks Windows to hand the game link to Steam; successful handoff does not prove that the game started.
 6. Open **Apply Elsewhere…** to apply the staged Mod IDs to a chosen save or server configuration. Save apply preserves existing maps and creates an explicit list for saves that inherit the global list. Server apply updates only `Mods` and `WorkshopItems`; Workshop IDs are derived from uniquely matched scanned entries. Stop the game/server and close its settings editor before applying.
 
-The Steam collection importer reads public Workshop data and saves a pack; it does not subscribe, download, or update mods. For a selected missing or unavailable numeric collection item, **Open Selected Missing Item** opens its Steam Community page without subscribing. The optional file-overlap check uses the selected metadata target and staged active Mod IDs by default. Clear **Staged active mods only** to include every discovered mod, or select **All candidates** under Target metadata to inspect every metadata version. Its search covers every analyzed shared path; results load in pages. Overlaps and console-log checks report evidence, not confirmed in-game conflicts.
+The Steam collection importer reads public Workshop data and saves a pack; it does not subscribe, download, or update mods. For a selected missing or unavailable numeric collection item, **Open Selected Missing Item** opens its Steam Community page without subscribing. **Library & Diagnostics** is available directly from the main tabs; select a row and choose **Inspect Selected** to see its preview and metadata in Mod Workspace. The optional file-overlap check uses the selected metadata target and staged active Mod IDs by default. Clear **Staged active mods only** to include every discovered mod, or select **All candidates** under Target metadata to inspect every metadata version. Its search covers every analyzed shared path; results load in pages. Overlaps and console-log checks report evidence, not confirmed in-game conflicts.
 
 ## Screenshots
 
-These screenshots use test fixtures and temporary profile data. The warning rows and mod names are examples, not a real-game test.
+These v0.2.0 screenshots use test fixtures and a temporary example Mod Pack. The warning rows and mod names are examples, not a real-game test.
 
 ![Mod workspace with fixture entries](docs/screenshots/workspace-fixture.png)
 
-![Mod Pack manager with temporary empty data](docs/screenshots/mod-packs-fixture.png)
+![Mod Pack manager previewing a temporary example pack](docs/screenshots/mod-packs-fixture.png)
 
 ## Data, backups, and uninstall
 
 - Standard install Mod Packs: `%APPDATA%\ProjectZomboidModManager\profiles\`. Replaced packs have copies in `backups\`; deleted packs move to `deleted\` for recovery.
 - Standard install app settings, chosen paths, ordering rules, and window state: `HKEY_CURRENT_USER\Software\ZomboidSorter\ProjectZomboidModManager` via Qt settings.
 - Portable install settings and Mod Packs: the `data\` folder beside the application. Choose the installer's **Portable installation** type to enable this mode. Install it in a folder where you can write files; copy the whole folder to move the app and its data.
-- Game-list backups: alongside the selected global file as `Zomboid\mods\default.txt.bak-<timestamp>`. Use **Restore Backup…** in Paths Settings to review and restore one.
+- Game-list backups: alongside the selected global file as `Zomboid\mods\default.txt.bak-<timestamp>`. Use **Restore Backup…** in Paths & Settings to review and restore one.
 - Save-list and server settings backups: beside the selected `mods.txt` or `.ini` as `<filename>.bak-<timestamp>`. Restore one manually after reviewing it; the app's backup-restore dialog currently covers only the global list.
 
 The installer remembers the selected Standard or Portable mode on upgrades. Changing modes requires an interactive install and displays a warning: the existing settings and Mod Packs stay where they are, and the newly selected mode starts with a separate data location. Export/import Mod Packs to move them; settings are not migrated. Silent upgrades cannot change modes. The installer also lets you choose whether to create a Start menu shortcut or a desktop shortcut. Uninstall from **Windows Settings → Apps** or the Start menu shortcut. Uninstall leaves Mod Packs, settings, game-list backups, saves, and installed mods intact. Remove app-owned settings and packs manually only if you want to discard them.
 
 ## Troubleshooting
 
-- **No mods found:** check Paths Settings, the Steam library, and whether Workshop content is installed. A Workshop item can contain several Mod IDs.
+- **No mods found:** check Paths & Settings, the Steam library, and whether Workshop content is installed. A Workshop item can contain several Mod IDs.
 - **Cannot load or apply globally:** choose the global `Zomboid/mods/default.txt`. Unknown syntax, linked targets, and externally changed files are refused. Reload after another program edits it. Use **Apply Elsewhere…** for one save or server file; unsupported or changed targets are refused there too. Save lists can be imported read-only from **Mod Packs → From Save…**.
 - **Workshop page or description unavailable:** check Steam/network access. Local metadata remains usable.
 - **Launch did not start the game:** open it in Steam directly. The app can confirm only that Windows accepted the Steam link.

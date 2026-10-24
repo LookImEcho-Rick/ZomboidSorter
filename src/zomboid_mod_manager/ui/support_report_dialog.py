@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from zomboid_mod_manager.support_report import format_support_report
+from zomboid_mod_manager.ui.theme import apply_theme
 
 
 class SupportReportDialog(QDialog):
@@ -27,12 +28,19 @@ class SupportReportDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Support Report")
         self.resize(720, 620)
+        apply_theme(self)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(10)
+        heading = QLabel("Review Support Report")
+        heading.setObjectName("pageHeading")
+        layout.addWidget(heading)
         privacy_note = QLabel(
             "Review before saving. This report omits folder paths, mod names and IDs, "
             "Workshop IDs, logs, and file contents."
         )
         privacy_note.setWordWrap(True)
+        privacy_note.setObjectName("secondaryText")
         layout.addWidget(privacy_note)
 
         self.preview = QPlainTextEdit()

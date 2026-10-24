@@ -30,25 +30,40 @@ class SortRulesDialog(QDialog):
         self._rules = list(rules)
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(10)
+        heading = QLabel("Ordering Rules")
+        heading.setObjectName("pageHeading")
+        layout.addWidget(heading)
         explanation = QLabel(
-            "Rules are applied as explicit constraints during order suggestions. "
-            "A cycle stops the suggestion and leaves the current order unchanged."
+            "Add a rule when one Mod ID must load before another. Rules guide Suggest Order; "
+            "they do not change the game list until you apply it."
         )
         explanation.setWordWrap(True)
+        explanation.setObjectName("secondaryText")
         layout.addWidget(explanation)
         self.rule_list = QListWidget()
         self.rule_list.setAccessibleName("Ordering rules")
+        self.rule_list.itemSelectionChanged.connect(self._update_remove_enabled)
         layout.addWidget(self.rule_list, 1)
 
         fields = QHBoxLayout()
+        before_field = QVBoxLayout()
+        before_field.addWidget(QLabel("Load first"))
         self.before_id = QLineEdit()
         self.before_id.setPlaceholderText("Mod ID that loads first")
         self.before_id.setAccessibleName("Mod ID that loads first")
+        self.before_id.setClearButtonEnabled(True)
+        before_field.addWidget(self.before_id)
+        fields.addLayout(before_field, 1)
+        after_field = QVBoxLayout()
+        after_field.addWidget(QLabel("Load after"))
         self.after_id = QLineEdit()
         self.after_id.setPlaceholderText("Mod ID that loads after")
         self.after_id.setAccessibleName("Mod ID that loads after")
-        fields.addWidget(self.before_id)
-        fields.addWidget(self.after_id)
+        self.after_id.setClearButtonEnabled(True)
+        after_field.addWidget(self.after_id)
+        fields.addLayout(after_field, 1)
         self.add_button = QPushButton("Add Rule")
         self.add_button.clicked.connect(self._add_rule)
         fields.addWidget(self.add_button)
@@ -73,7 +88,10 @@ class SortRulesDialog(QDialog):
     def _refresh(self) -> None:
         self.rule_list.clear()
         self.rule_list.addItems([rule.label for rule in self._rules])
-        self.remove_button.setEnabled(bool(self._rules))
+        self._update_remove_enabled()
+
+    def _update_remove_enabled(self) -> None:
+        self.remove_button.setEnabled(self.rule_list.currentRow() >= 0)
 
     def _add_rule(self) -> None:
         rule = UserOrderRule(self.before_id.text(), self.after_id.text())

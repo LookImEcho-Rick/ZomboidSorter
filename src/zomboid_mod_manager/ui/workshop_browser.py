@@ -31,11 +31,11 @@ class WorkshopBrowserPanel(QWidget):
         self._browser_loaded = False
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(4)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(8)
 
         search_row = QHBoxLayout()
-        search_row.setSpacing(4)
+        search_row.setSpacing(8)
         self.workshop_back_button = QPushButton("Back")
         self.workshop_back_button.setEnabled(False)
         self.workshop_back_button.clicked.connect(
@@ -86,6 +86,12 @@ class WorkshopBrowserPanel(QWidget):
         self.open_workshop_external_button.clicked.connect(self.open_externally)
         search_row.addWidget(self.open_workshop_external_button)
         layout.addLayout(search_row)
+        browser_note = QLabel(
+            "Browse the Project Zomboid Workshop here. Refresh Mod Workspace after Steam installs or changes mods."
+        )
+        browser_note.setObjectName("secondaryText")
+        browser_note.setWordWrap(True)
+        layout.addWidget(browser_note)
 
         self.workshop_browser_container = QWidget(self)
         self.workshop_browser_layout = QVBoxLayout(self.workshop_browser_container)

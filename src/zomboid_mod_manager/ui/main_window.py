@@ -71,7 +71,7 @@ class MainWindow(
         super().__init__()
         self.setWindowTitle(f"ZomboidSorter v{__version__}")
         self.resize(1440, 850)
-        self.setMinimumSize(980, 620)
+        self.setMinimumSize(980, 680)
         portable_settings = portable_settings_path()
         if portable_settings is None:
             self._settings = QSettings("ZomboidSorter", "ProjectZomboidModManager")

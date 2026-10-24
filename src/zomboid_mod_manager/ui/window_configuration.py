@@ -96,6 +96,19 @@ class ActiveConfigurationMixin:
             if dirty or not same_target
             else "color: #a4b2ab;"
         )
+        if self._active_config is None:
+            self.workspace_notice_text.setText(
+                "The global mod list is not loaded. Choose a valid default.txt to enable applying and launching."
+            )
+            self.workspace_notice.show()
+        elif not same_target:
+            self.workspace_notice_text.setText(
+                "The selected path differs from the loaded global list. Load that file before applying changes."
+            )
+            self.workspace_notice.show()
+        else:
+            self.workspace_notice.hide()
+        self._update_compact_workspace()
 
     def _launch_block_message(self, same_target: bool) -> tuple[str, str] | None:
         snapshot = self._active_config

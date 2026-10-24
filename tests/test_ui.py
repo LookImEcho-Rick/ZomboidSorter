@@ -470,8 +470,14 @@ class MainWindowTests(unittest.TestCase):
         )
         self.assertIs(window.scan_button, window.workspace_scan_button)
         self.assertEqual(window.main_tabs.currentIndex(), 0)
+        self.assertTrue(window.main_tabs.isTabVisible(window.library_tab_index))
         self.assertEqual(window.active_list.count(), 2)
         self.assertEqual(window.available_list.count(), 5)
+        window.main_tabs.setCurrentWidget(window.library_page)
+        window.table.selectRow(0)
+        self.assertTrue(window.inspect_library_button.isEnabled())
+        window.inspect_library_button.click()
+        self.assertIs(window.main_tabs.currentWidget(), window.workspace_page)
         self.assertEqual(window.available_list.accessibleName(), "Inactive mods")
         self.assertEqual(window.active_search.accessibleName(), "Search active mods")
         self.assertEqual(
@@ -492,8 +498,29 @@ class MainWindowTests(unittest.TestCase):
         self.app.processEvents()
         self.assertEqual(window.available_list.visible_count, 0)
         self.assertIn("No mods match", window.available_list.empty_text)
+        self.assertIn("0 of 5", window.inactive_heading.text())
+        self.assertFalse(window.select_filtered_button.isEnabled())
+        self.assertFalse(window.activate_button.isEnabled())
         self._wait_for_background_workers(window)
         window.close()
+
+    def test_small_window_keeps_paths_and_primary_actions_readable(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            window, _ = self._make_launch_window(Path(temporary))
+            window.resize(980, 680)
+            window.show()
+            self._wait_for_background_workers(window)
+            self.app.processEvents()
+
+            self.assertEqual(window.launch_game_button.text(), "Launch Game")
+            self.assertEqual(window.apply_config_button.text(), "Apply Global List…")
+            self.assertEqual(window.detail_tabs.count(), 2)
+            self.assertFalse(window.workflow_hint.isVisible())
+
+            window.main_tabs.setCurrentWidget(window.setup_page)
+            self.app.processEvents()
+            self.assertGreaterEqual(window.game_path.height(), 25)
+            self.assertGreaterEqual(window.local_path.height(), 25)
 
     def test_mod_pack_save_captures_current_order(self) -> None:
         temporary = tempfile.TemporaryDirectory()
@@ -630,6 +657,8 @@ class MainWindowTests(unittest.TestCase):
             dialog.pack_list.setCurrentItem(item)
             self.assertTrue(dialog.load_apply_button.isEnabled())
             self.assertEqual(dialog.load_apply_button.text(), "Apply")
+            self.assertIn("1. ModAlpha", dialog.pack_preview.toPlainText())
+            self.assertIn("2. UninstalledMod", dialog.pack_preview.toPlainText())
             dialog.load_apply_button.click()
             return dialog.result()
 
@@ -1213,7 +1242,12 @@ class MainWindowTests(unittest.TestCase):
 
         preview = SupportReportDialog(report)
         self.addCleanup(preview.close)
-        self.assertIn("folder paths", preview.findChild(QLabel).text().casefold())
+        self.assertTrue(
+            any(
+                "folder paths" in label.text().casefold()
+                for label in preview.findChildren(QLabel)
+            )
+        )
         self.assertIn("schema_version", preview.preview.toPlainText())
 
     def test_support_report_dialog_saves_only_after_user_selects_a_file(self) -> None:

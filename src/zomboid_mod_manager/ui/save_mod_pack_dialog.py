@@ -53,22 +53,27 @@ class SaveModPackDialog(QDialog):
         self.selected_profile: ModProfile | None = None
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(9)
         heading = QLabel("Read a Save's Mod List")
-        heading.setObjectName("panelHeading")
+        heading.setObjectName("pageHeading")
         layout.addWidget(heading)
         instructions = QLabel(
-            "This reads only each save's mods.txt and copies its ordered Mod IDs "
+            "This reads each save's mods.txt and copies its ordered Mod IDs and maps "
             "into an app-owned Mod Pack. Save files are never changed. Applying "
             "the pack to the global list is a separate action."
         )
         instructions.setWordWrap(True)
+        instructions.setObjectName("secondaryText")
         layout.addWidget(instructions)
 
         root_row = QHBoxLayout()
+        root_row.addWidget(QLabel("Saves folder"))
         self.saves_root = QLineEdit(
             str(saves_root or Path.home() / "Zomboid" / "Saves")
         )
         self.saves_root.setAccessibleName("Project Zomboid Saves folder")
+        self.saves_root.setClearButtonEnabled(True)
         root_row.addWidget(self.saves_root, 1)
         browse_button = QPushButton("Browse…")
         browse_button.clicked.connect(self._browse_saves_root)
@@ -77,6 +82,9 @@ class SaveModPackDialog(QDialog):
         self.scan_button.clicked.connect(self._scan_saves)
         root_row.addWidget(self.scan_button)
         layout.addLayout(root_row)
+        saves_heading = QLabel("SAVES WITH THEIR OWN MOD LIST")
+        saves_heading.setObjectName("sectionKicker")
+        layout.addWidget(saves_heading)
 
         self.saves_list = QListWidget()
         self.saves_list.setAccessibleName("Saves with explicit mod lists")
@@ -89,6 +97,9 @@ class SaveModPackDialog(QDialog):
         self.discovery_status.setWordWrap(True)
         layout.addWidget(self.discovery_status)
 
+        preview_heading = QLabel("SELECTED SAVE")
+        preview_heading.setObjectName("sectionKicker")
+        layout.addWidget(preview_heading)
         self.details = QPlainTextEdit()
         self.details.setReadOnly(True)
         self.details.setAccessibleName("Selected save mod-list preview")

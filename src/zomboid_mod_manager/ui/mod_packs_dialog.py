@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QMenu,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QVBoxLayout,
 )
@@ -58,13 +59,15 @@ class ModPacksDialog(QDialog):
         self._scan_result = scan_result
         self.selected_pack: ModProfile | None = None
         self.setWindowTitle("Mod Packs")
-        self.resize(700, 500)
-        self.setMinimumSize(560, 400)
+        self.resize(780, 600)
+        self.setMinimumSize(620, 460)
         apply_theme(self)
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(10)
         heading = QLabel("Saved Mod Packs")
-        heading.setObjectName("panelHeading")
+        heading.setObjectName("pageHeading")
         layout.addWidget(heading)
         instructions = QLabel(
             "Select a pack, then choose Apply. This updates the global "
@@ -84,6 +87,12 @@ class ModPacksDialog(QDialog):
         self.details.setObjectName("secondaryText")
         self.details.setWordWrap(True)
         layout.addWidget(self.details)
+        self.pack_preview = QPlainTextEdit()
+        self.pack_preview.setReadOnly(True)
+        self.pack_preview.setAccessibleName("Selected Mod Pack ordered contents")
+        self.pack_preview.setPlaceholderText("Select a Mod Pack to preview its order.")
+        self.pack_preview.setMinimumHeight(100)
+        layout.addWidget(self.pack_preview, 2)
 
         self.status = QLabel()
         self.status.setObjectName("secondaryText")
@@ -99,7 +108,6 @@ class ModPacksDialog(QDialog):
         self.load_apply_button.clicked.connect(self._load_selected_pack)
         self.delete_button = QPushButton("Delete…")
         self.delete_button.clicked.connect(self._delete_selected_pack)
-        actions.addWidget(self.delete_button)
         self.import_button = QPushButton("Import…")
         self.import_button.clicked.connect(self._import_pack)
         actions.addWidget(self.import_button)
@@ -115,13 +123,16 @@ class ModPacksDialog(QDialog):
         self.more_button = QPushButton("Restore…")
         self.more_button.clicked.connect(self._show_restore_menu)
         actions.addWidget(self.more_button)
-        actions.addStretch(1)
+        actions.addWidget(self.delete_button)
+        layout.addLayout(actions)
+        commit_actions = QHBoxLayout()
+        commit_actions.addStretch(1)
         self.close_button = QPushButton("Close")
         self.close_button.clicked.connect(self.reject)
-        actions.addWidget(self.close_button)
+        commit_actions.addWidget(self.close_button)
         self.load_apply_button.setObjectName("primaryAction")
-        actions.addWidget(self.load_apply_button)
-        layout.addLayout(actions)
+        commit_actions.addWidget(self.load_apply_button)
+        layout.addLayout(commit_actions)
 
         self._refresh_packs()
 
@@ -152,11 +163,13 @@ class ModPacksDialog(QDialog):
                 else ""
             )
             self.details.setText(message)
+            self.pack_preview.clear()
             return
         try:
             profile = self._profile_store.load(name)
         except (OSError, ProfileError) as exc:
             self.details.setText(f"Could not read Mod Pack '{name}': {exc}")
+            self.pack_preview.clear()
             return
         self.details.setText(
             f"{len(profile.mod_ids)} Mod IDs in saved order · "
@@ -167,6 +180,23 @@ class ModPacksDialog(QDialog):
                 else "map list not saved (current maps stay unchanged)"
             )
         )
+        sections = [
+            "LOAD ORDER",
+            *(
+                f"{index}. {mod_id}"
+                for index, mod_id in enumerate(profile.mod_ids, start=1)
+            ),
+        ]
+        if not profile.mod_ids:
+            sections.append("No Mod IDs saved")
+        sections.extend(["", "WORKSHOP ITEMS", *(profile.workshop_ids or ("None",))])
+        sections.extend(["", "MAPS"])
+        sections.extend(
+            (profile.map_ids or ("None (saved empty list)",))
+            if profile.map_ids is not None
+            else ("Not saved; current maps will be preserved",)
+        )
+        self.pack_preview.setPlainText("\n".join(sections))
         self.load_apply_button.setEnabled(True)
 
     def _load_selected_pack(self) -> None:

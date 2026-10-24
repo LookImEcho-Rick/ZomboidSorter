@@ -23,6 +23,7 @@ Build 42 is the primary target; Build 41 root metadata remains supported. Metada
 | 16 — Save-list apply | Complete in code; fixture-validated | Apply staged Mod IDs to one selected immediate save after default-No confirmation. Existing maps are preserved; existing files are backed up, writes use concurrency checks and atomic replacement, and new explicit lists are created exclusively for saves inheriting global settings. Only temporary fixtures were written. |
 | 17 — Server settings apply | Complete in code; fixture-validated | Update only `Mods` and `WorkshopItems` in one selected `<Zomboid>/Server/<name>.ini`. Workshop IDs come from unique scanned entries; missing or duplicate Mod IDs block apply. Other lines, including `Map`, are preserved. Only temporary fixtures were written. |
 | 18 — Missing Workshop recovery | Complete in code; fixture-validated | Collection import offers a direct page link for selected missing or unavailable numeric IDs, while foreign Steam app rows are excluded. This opens the public page only; it does not subscribe or download. |
+| 19 — v0.2.0 usability polish | Complete in code; fixture-validated | Clearer workspace and settings hierarchy, contextual staging controls and counts, direct library inspection, scrollable settings, readable Description/Metadata tabs, responsive short-window actions, and previews before applying Mod Packs. Packaged and live-game validation remain separate. |
 
 ## Remaining release gates
 

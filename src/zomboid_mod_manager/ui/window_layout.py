@@ -15,10 +15,12 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QLineEdit,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSplitter,
     QTableView,
     QTabWidget,
@@ -50,7 +52,30 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         layout.setContentsMargins(12, 10, 12, 8)
         layout.setSpacing(8)
         self.setup_page = QWidget()
-        self.setup_layout = QVBoxLayout(self.setup_page)
+        setup_page_layout = QVBoxLayout(self.setup_page)
+        setup_page_layout.setContentsMargins(0, 0, 0, 0)
+        setup_scroll = QScrollArea()
+        setup_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        setup_scroll.setWidgetResizable(True)
+        setup_page_layout.addWidget(setup_scroll)
+        setup_content = QWidget()
+        setup_scroll.setWidget(setup_content)
+        self.setup_layout = QVBoxLayout(setup_content)
+        self.setup_layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
+        self.setup_layout.setContentsMargins(24, 20, 24, 20)
+        self.setup_layout.setSpacing(14)
+        setup_heading = QLabel("Paths & Settings")
+        setup_heading.setObjectName("pageHeading")
+        self.setup_layout.addWidget(setup_heading)
+        setup_intro = QLabel(
+            "Review the folders used for read-only scans. Changes to these paths take effect on the next refresh."
+        )
+        setup_intro.setObjectName("secondaryText")
+        setup_intro.setWordWrap(True)
+        self.setup_layout.addWidget(setup_intro)
+        scan_heading = QLabel("SCAN LOCATIONS")
+        scan_heading.setObjectName("sectionKicker")
+        self.setup_layout.addWidget(scan_heading)
 
         paths_form = QFormLayout()
         default_game_path = (
@@ -111,9 +136,28 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         self.search.setPlaceholderText(
             "Filter by name, Mod ID, Workshop ID, source, or path"
         )
+        self.search.setClearButtonEnabled(True)
         controls.addWidget(self.search, 1)
+        self.inspect_library_button = QPushButton("Inspect Selected")
+        self.inspect_library_button.setToolTip(
+            "Show the selected entry's preview and metadata in Mod Workspace."
+        )
+        self.inspect_library_button.setEnabled(False)
+        self.inspect_library_button.clicked.connect(self._open_library_entry)
+        controls.addWidget(self.inspect_library_button)
         library_page = QWidget()
         library_layout = QVBoxLayout(library_page)
+        library_layout.setContentsMargins(12, 12, 12, 10)
+        library_layout.setSpacing(10)
+        library_heading = QLabel("LIBRARY & DIAGNOSTICS")
+        library_heading.setObjectName("sectionKicker")
+        library_layout.addWidget(library_heading)
+        library_intro = QLabel(
+            "Inspect every discovered entry. File overlaps and console logs are analyzed only when you request them."
+        )
+        library_intro.setObjectName("secondaryText")
+        library_intro.setWordWrap(True)
+        library_layout.addWidget(library_intro)
         library_layout.addLayout(controls)
 
         self.table_model = QStandardItemModel(0, 7, self)
@@ -139,8 +183,14 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         self.table.setSortingEnabled(True)
         self.table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableView.SelectionMode.SingleSelection)
+        self.table.setAlternatingRowColors(True)
         self.table.selectionModel().currentRowChanged.connect(self._show_selected_entry)
+        self.table.doubleClicked.connect(self._open_library_entry)
+        self.table.verticalHeader().hide()
         self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.setColumnWidth(0, 190)
+        self.table.setColumnWidth(1, 160)
+        self.table.setColumnWidth(2, 120)
 
         details_page = QWidget()
         details_layout = QVBoxLayout(details_page)
@@ -223,9 +273,6 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         description_layout = QVBoxLayout(description_panel)
         description_layout.setContentsMargins(0, 0, 0, 0)
         description_layout.setSpacing(3)
-        self.description_heading = QLabel("Description")
-        self.description_heading.setObjectName("panelHeading")
-        description_layout.addWidget(self.description_heading)
         self.description_source = QLabel("Select a mod to view its description.")
         self.description_source.setObjectName("secondaryText")
         self.description_source.setWordWrap(True)
@@ -234,7 +281,7 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         self.description = QTextBrowser()
         self.description.setObjectName("modDescription")
         self.description.setAccessibleName("Selected mod description")
-        self.description.setMinimumHeight(75)
+        self.description.setMinimumHeight(0)
         self.description.setOpenLinks(False)
         self.description.setOpenExternalLinks(False)
         self.description.setHtml(
@@ -246,23 +293,16 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         metadata_layout = QVBoxLayout(metadata_panel)
         metadata_layout.setContentsMargins(0, 0, 0, 0)
         metadata_layout.setSpacing(3)
-        self.metadata_heading = QLabel("Metadata")
-        self.metadata_heading.setObjectName("panelHeading")
-        metadata_layout.addWidget(self.metadata_heading)
         self.details = QPlainTextEdit()
         self.details.setReadOnly(True)
         self.details.setAccessibleName("Selected mod details")
-        self.details.setMinimumHeight(75)
+        self.details.setMinimumHeight(0)
         metadata_layout.addWidget(self.details, 1)
-        self.detail_panels_splitter = QSplitter(Qt.Orientation.Vertical)
-        self.detail_panels_splitter.setChildrenCollapsible(False)
-        self.detail_panels_splitter.setHandleWidth(5)
-        self.detail_panels_splitter.addWidget(description_panel)
-        self.detail_panels_splitter.addWidget(metadata_panel)
-        self.detail_panels_splitter.setStretchFactor(0, 2)
-        self.detail_panels_splitter.setStretchFactor(1, 1)
-        self.detail_panels_splitter.setSizes([280, 190])
-        details_layout.addWidget(self.detail_panels_splitter, 1)
+        self.detail_tabs = QTabWidget()
+        self.detail_tabs.setDocumentMode(True)
+        self.detail_tabs.addTab(description_panel, "Description")
+        self.detail_tabs.addTab(metadata_panel, "Metadata")
+        details_layout.addWidget(self.detail_tabs, 1)
         details_actions = QHBoxLayout()
         self.open_folder_button = QPushButton("Open Folder")
         self.open_folder_button.setEnabled(False)
@@ -275,8 +315,17 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         details_layout.addLayout(details_actions)
         self.diagnostics = QPlainTextEdit()
         self.diagnostics.setReadOnly(True)
+        self.diagnostics.setPlaceholderText(
+            "Choose an analysis above to see evidence-based findings here."
+        )
         diagnostic_page = QWidget()
+        diagnostic_page.setObjectName("workspacePanel")
         diagnostic_layout = QVBoxLayout(diagnostic_page)
+        diagnostic_layout.setContentsMargins(12, 12, 12, 12)
+        diagnostic_layout.setSpacing(8)
+        diagnostics_heading = QLabel("ON-DEMAND CHECKS")
+        diagnostics_heading.setObjectName("panelHeading")
+        diagnostic_layout.addWidget(diagnostics_heading)
         diagnostic_actions = QHBoxLayout()
         self.file_overlap_button = QPushButton("Analyze File Overlaps…")
         self.file_overlap_button.clicked.connect(self._analyze_file_overlaps)
@@ -290,12 +339,12 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
             "Compare only Mod IDs in the staged active order. Clear this to include all discovered mods. "
             "The selected metadata target controls which candidates are analyzed."
         )
-        diagnostic_actions.addWidget(self.file_overlap_active_only)
         self.console_log_button = QPushButton("Analyze Console Log…")
         self.console_log_button.clicked.connect(self._analyze_console_log)
         diagnostic_actions.addWidget(self.console_log_button)
         diagnostic_actions.addStretch(1)
         diagnostic_layout.addLayout(diagnostic_actions)
+        diagnostic_layout.addWidget(self.file_overlap_active_only)
         diagnostic_layout.addWidget(self.diagnostics, 1)
         library_split = QSplitter(Qt.Orientation.Horizontal)
         library_split.addWidget(self.table)
@@ -320,25 +369,13 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         self.library_tab_index = self.main_tabs.addTab(
             self.library_page, "Library & Diagnostics"
         )
-        self.main_tabs.setTabVisible(self.library_tab_index, False)
-        self.advanced_preview_checkbox = QCheckBox("Advanced Preview")
-        self.advanced_preview_checkbox.setObjectName("advancedPreviewToggle")
-        self.advanced_preview_checkbox.setAccessibleName(
-            "Show Library and diagnostics tab"
-        )
-        self.advanced_preview_checkbox.setToolTip(
-            "Show the library table and optional file/log diagnostics."
-        )
-        self.advanced_preview_checkbox.toggled.connect(
-            self._set_advanced_preview_visible
-        )
         header = QHBoxLayout()
         identity = QVBoxLayout()
-        identity.setSpacing(0)
+        identity.setSpacing(2)
         title = QLabel(f"ZOMBOID  /  MOD CONTROL  ·  v{__version__}")
         title.setObjectName("appTitle")
         identity.addWidget(title)
-        subtitle = QLabel("Build your global load order, then apply it when ready")
+        subtitle = QLabel("Your mod library, load order, and game targets in one place")
         subtitle.setObjectName("secondaryText")
         identity.addWidget(subtitle)
         header.addLayout(identity, 1)
@@ -348,7 +385,6 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         )
         self.update_button.clicked.connect(self._check_for_updates)
         header.addWidget(self.update_button)
-        header.addWidget(self.advanced_preview_checkbox)
         layout.addLayout(header)
         help_menu = self.menuBar().addMenu("&Help")
         self.support_report_action = QAction("Save Support Report…", self)
@@ -375,14 +411,12 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         self.statusBar().addPermanentWidget(self.progress)
         self.progress.hide()
         self._apply_theme()
+        self._update_compact_workspace()
 
         if self._detected.diagnostics:
             self.diagnostics.setPlainText("\n".join(self._detected.diagnostics))
         self._load_active_configuration()
         self._start_scan()
-
-    def _set_advanced_preview_visible(self, visible: bool) -> None:
-        self.main_tabs.setTabVisible(self.library_tab_index, visible)
 
     def _on_main_tab_changed(self, index: int) -> None:
         page = self.main_tabs.widget(index)

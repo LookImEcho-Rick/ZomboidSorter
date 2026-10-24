@@ -8,6 +8,42 @@ from zomboid_mod_manager.ui.theme import apply_theme
 
 
 class WindowLifecycleMixin:
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._update_compact_workspace()
+
+    def _update_compact_workspace(self) -> None:
+        if not hasattr(self, "workflow_hint"):
+            return
+        roomy = self.height() >= 760
+        self.workflow_hint.setVisible(roomy)
+        self.available_intro.setVisible(roomy)
+        self.active_intro.setVisible(roomy)
+        if not hasattr(self, "apply_other_targets_button"):
+            return
+        compact = self.width() < 1160
+        self.revert_button.setText("Discard" if compact else "Discard Changes")
+        self.apply_config_button.setText(
+            "Apply Global List…" if compact else "Apply To Project Zomboid…"
+        )
+        self.apply_other_targets_button.setText(
+            "Other Targets…" if compact else "Apply Elsewhere…"
+        )
+        dirty = (
+            self._active_config is not None
+            and tuple(self._staged_mod_ids) != self._active_config.config.mods
+        )
+        self.launch_game_button.setText(
+            "Apply & Launch…"
+            if dirty
+            else "Launch Game"
+            if compact
+            else "Launch Project Zomboid"
+        )
+        self.dirty_indicator.setVisible(
+            not compact or self.dirty_indicator.text() != "No unapplied changes"
+        )
+
     def closeEvent(self, event) -> None:
         if self._persist_settings:
             self._settings.setValue("window/geometry", self.saveGeometry())
