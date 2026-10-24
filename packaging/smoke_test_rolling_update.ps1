@@ -88,10 +88,25 @@ function Get-ProcessWindows {
         [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
         [System.Windows.Automation.ControlType]::Window
     )
-    return [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
-        [System.Windows.Automation.TreeScope]::Descendants,
-        [System.Windows.Automation.AndCondition]::new($ProcessCondition, $WindowCondition)
-    )
+    try {
+        return [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
+            [System.Windows.Automation.TreeScope]::Descendants,
+            [System.Windows.Automation.AndCondition]::new($ProcessCondition, $WindowCondition)
+        )
+    } catch {
+        $ErrorNode = $_.Exception
+        while ($null -ne $ErrorNode) {
+            if ($ErrorNode -is [System.Windows.Automation.ElementNotAvailableException] -or
+                ($ErrorNode -is [System.Runtime.InteropServices.COMException] -and
+                    $ErrorNode.HResult -eq -2147418113)) {
+                # UI Automation can briefly fail while a window opens or closes.
+                # Treat this poll as empty and let callers retry until their deadlines.
+                return @()
+            }
+            $ErrorNode = $ErrorNode.InnerException
+        }
+        throw
+    }
 }
 
 function Find-WindowByName {
