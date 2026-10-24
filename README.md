@@ -49,7 +49,7 @@ These two panel captures are from the locally installed v0.2.2 app. Their layout
 4. In **Mod Workspace**, move mods from **Discover** to **Active Order** and arrange them. Select a mod to read its **Description** or **Metadata**. Nothing is written to the game while you stage changes.
 5. Save the order as a **Mod Pack** if you want to reuse it. When ready, use **Apply To Project Zomboid…** to update the global list, or **Apply & Launch…** to apply and then launch through Steam.
 
-**Use Installed** in the details pane selects the detected Build 41 or 42 metadata family. An exact Build 42 version can select an appropriate versioned `mod.info` candidate. This helps display metadata and suggest an order; it does not prove that a mod's content works in that game build.
+In the details pane, choose a Project Zomboid build to review its mod information, or select **Detect Build** to use the installed game build when it can be identified. An exact Build 42 version can select an appropriate versioned `mod.info` file. This helps display metadata and suggest an order; it does not prove that a mod's content works in that game build.
 
 ## Know what each action changes
 

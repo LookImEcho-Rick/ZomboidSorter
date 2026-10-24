@@ -26,6 +26,7 @@ from zomboid_mod_manager.discovery.game_build import (
 from zomboid_mod_manager.discovery.paths import detect_paths
 from zomboid_mod_manager.domain import DetectedPaths, ScanResult
 
+from .text import counted
 from .window_workers import (
     ScanWorker,
 )
@@ -376,6 +377,9 @@ class DiscoveryMixin:
                 "Scan cancelled · select Refresh to try again"
             )
             self.available_list.viewport().update()
+            self._set_library_table_empty_message(
+                "Scan cancelled. Select Refresh in Mod Workspace to try again."
+            )
         self.status.setText("Scan cancelled; previous results are unchanged.")
 
     def _show_scan_failure(self, message: str) -> None:
@@ -390,6 +394,9 @@ class DiscoveryMixin:
             self.available_list.empty_text = "Scan failed · check Paths & Settings"
             self.available_list.viewport().update()
             self.diagnostics.setPlainText(message)
+            self._set_library_table_empty_message(
+                "Scan failed. Check Paths & Settings, then refresh the library."
+            )
             return
         self.status.setText(f"{message} Previous scan results remain in use.")
         self._update_diagnostics()
@@ -505,8 +512,8 @@ class DiscoveryMixin:
             )
         }
         self.collection_import_status.setText(
-            f"Library ready: {len(result.workshop_items)} Workshop items and "
-            f"{len(result.entries)} mod entries."
+            f"Library ready: {counted(len(result.workshop_items), 'Workshop item')} and "
+            f"{counted(len(result.entries), 'mod entry', 'mod entries')}."
         )
         self._preview_generation += 1
         self._preview_cache.clear()
@@ -529,11 +536,15 @@ class DiscoveryMixin:
                 "Workshop" if entry.source == "workshop" else "Local",
                 entry.layout_summary,
                 str(len(entry.candidates)),
-                str(entry.entry_path),
+                entry.entry_path.name,
             )
             row = [QStandardItem(value) for value in values]
+            for item, value in zip(row, values, strict=True):
+                item.setToolTip(value)
+            row[6].setToolTip(str(entry.entry_path))
             row[0].setData(entry.key, Qt.ItemDataRole.UserRole)
             self.table_model.appendRow(row)
+        self._update_library_table_state()
 
         restored_table = self._restore_library_selection(show_hidden=False)
         if restored_table:
@@ -554,7 +565,7 @@ class DiscoveryMixin:
             "No active Build 42 metadata candidate was selected."
         )
         self._clear_preview(
-            "PROJECT ZOMBOID\nMOD DETAILS", "Select a mod to view its declared poster."
+            "PROJECT ZOMBOID\nMOD DETAILS", "Select a mod to preview its artwork."
         )
         removed_table_selection = (
             selected_table_key is not None and selected_table_key not in self._entries
@@ -588,9 +599,38 @@ class DiscoveryMixin:
             else ""
         )
         self.status.setText(
-            f"Read-only scan complete — {len(result.entries)} mod entries, "
-            f"{len(result.workshop_items)} Workshop items, "
-            f"{result.metadata_candidate_count} metadata files, "
-            f"{warning_count} warnings, {self._issue_error_count} errors."
+            f"Read-only scan complete — "
+            f"{counted(len(result.entries), 'mod entry', 'mod entries')}; "
+            f"{counted(len(result.workshop_items), 'Workshop item')}; "
+            f"{counted(result.metadata_candidate_count, 'metadata file')}; "
+            f"{counted(warning_count, 'warning')}; "
+            f"{counted(self._issue_error_count, 'error')}."
             f"{addition_summary}"
         )
+
+    def _set_library_table_empty_message(self, message: str) -> None:
+        self.library_table_empty.setText(message)
+        self.library_table_stack.setCurrentWidget(self.library_table_empty)
+
+    def _update_library_table_state(self, *_args) -> None:
+        if self._proxy.rowCount():
+            self.library_table_stack.setCurrentWidget(self.table)
+            return
+        if self._last_result is None:
+            if self._worker is not None and self._worker.isRunning():
+                message = "Scanning local and Workshop folders…"
+            else:
+                message = (
+                    "No scan results yet. Select Refresh in Mod Workspace to "
+                    "check the configured folders."
+                )
+        elif self._last_result.entries:
+            message = (
+                "No mods match this search. Clear the search or try another name or ID."
+            )
+        else:
+            message = (
+                "No mod entries were found in the selected folders. Check "
+                "Paths & Settings, then refresh the library."
+            )
+        self._set_library_table_empty_message(message)

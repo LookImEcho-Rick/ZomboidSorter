@@ -302,7 +302,7 @@ def _reference_status(
     for mod_id in parsed.identifiers:
         count = installed.get(mod_id, 0)
         if count == 0:
-            status = "not installed"
+            status = "not found in scanned folders"
         elif count > 1:
             status = "multiple installations"
         elif mod_id in active:

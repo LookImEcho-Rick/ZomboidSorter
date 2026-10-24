@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLayout,
     QLineEdit,
@@ -23,6 +24,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSplitter,
+    QStackedWidget,
     QTableView,
     QTabWidget,
     QTextBrowser,
@@ -222,9 +224,10 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         controls = QHBoxLayout()
         self.search = QLineEdit()
         self.search.setPlaceholderText(
-            "Filter by name, Mod ID, Workshop ID, source, or path"
+            "Search mod name, Mod ID, Workshop ID, source, or folder name"
         )
         self.search.setClearButtonEnabled(True)
+        self.search.setAccessibleName("Search discovered mods")
         controls.addWidget(self.search, 1)
         self.inspect_library_button = QPushButton("Inspect Selected")
         self.inspect_library_button.setToolTip(
@@ -256,9 +259,21 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
                 "Workshop ID",
                 "Source",
                 "Metadata",
-                "Candidates",
-                "Entry path",
+                "Files",
+                "Installed folder",
             ]
+        )
+        self.table_model.horizontalHeaderItem(2).setToolTip(
+            "Steam Workshop item ID. One Workshop item can contain several Mod IDs."
+        )
+        self.table_model.horizontalHeaderItem(4).setToolTip(
+            "The metadata layout used to describe this mod; it does not prove compatibility."
+        )
+        self.table_model.horizontalHeaderItem(5).setToolTip(
+            "Number of mod.info metadata files found for this installed mod entry."
+        )
+        self.table_model.horizontalHeaderItem(6).setToolTip(
+            "The folder containing this mod. The app reads these files but does not change them."
         )
         self._proxy = QSortFilterProxyModel(self)
         self._proxy.setSourceModel(self.table_model)
@@ -266,6 +281,7 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         self._proxy.setFilterKeyColumn(-1)
         self.search.textChanged.connect(self._proxy.setFilterFixedString)
         self.search.textChanged.connect(self._restore_library_selection)
+        self.search.textChanged.connect(self._update_library_table_state)
 
         self.table = QTableView()
         self.table.setModel(self._proxy)
@@ -273,13 +289,25 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         self.table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableView.SelectionMode.SingleSelection)
         self.table.setAlternatingRowColors(True)
+        self.table.setAccessibleName("Discovered mods and Workshop items")
         self.table.selectionModel().currentRowChanged.connect(self._show_selected_entry)
         self.table.doubleClicked.connect(self._open_library_entry)
         self.table.verticalHeader().hide()
+        self.table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Interactive
+        )
         self.table.horizontalHeader().setStretchLastSection(True)
-        self.table.setColumnWidth(0, 190)
-        self.table.setColumnWidth(1, 160)
-        self.table.setColumnWidth(2, 120)
+        for column, width in enumerate((135, 95, 105, 60, 110, 50)):
+            self.table.setColumnWidth(column, width)
+        self.library_table_empty = QLabel("Scanning local and Workshop folders…")
+        self.library_table_empty.setObjectName("secondaryText")
+        self.library_table_empty.setAccessibleName("Library results")
+        self.library_table_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.library_table_empty.setWordWrap(True)
+        self.library_table_stack = QStackedWidget()
+        self.library_table_stack.addWidget(self.table)
+        self.library_table_stack.addWidget(self.library_table_empty)
+        self.library_table_stack.setCurrentWidget(self.library_table_empty)
 
         details_page = QWidget()
         details_layout = QVBoxLayout(details_page)
@@ -294,11 +322,11 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         self.preview.setMaximumHeight(180)
         self.preview.clicked.connect(self._show_enlarged_preview)
         details_layout.addWidget(self.preview)
-        self.preview_caption = QLabel("Select a mod to view its declared poster.")
+        self.preview_caption = QLabel("Select a mod to preview its artwork.")
         self.preview_caption.setWordWrap(True)
         details_layout.addWidget(self.preview_caption)
         target_row = QHBoxLayout()
-        target_row.addWidget(QLabel("Target metadata:"))
+        target_row.addWidget(QLabel("Project Zomboid build:"))
         self.metadata_preview_target = QComboBox()
         self.metadata_preview_target.addItem("All candidates", "all")
         self.metadata_preview_target.addItem("Build 41", "41")
@@ -312,7 +340,9 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         )
         if saved_target_index >= 0:
             self.metadata_preview_target.setCurrentIndex(saved_target_index)
-        self.metadata_preview_target.setAccessibleName("Metadata target build")
+        self.metadata_preview_target.setAccessibleName(
+            "Project Zomboid build for mod details"
+        )
         self.metadata_preview_target.setToolTip(
             "Build 41 uses root metadata. Build 42 ignores root-level Build 41 mod files; "
             "those entries need common metadata or a compatible version folder. "
@@ -342,7 +372,7 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
             self.metadata_preview_target.currentData() == "42"
         )
         target_row.addWidget(self.metadata_build_version)
-        self.detect_build_button = QPushButton("Use Installed")
+        self.detect_build_button = QPushButton("Detect Build")
         self.detect_build_button.setAccessibleName(
             "Detect the installed Project Zomboid build"
         )
@@ -364,10 +394,11 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         description_layout = QVBoxLayout(description_panel)
         description_layout.setContentsMargins(0, 0, 0, 0)
         description_layout.setSpacing(3)
-        self.description_source = QLabel("Select a mod to view its description.")
+        self.description_source = QLabel()
         self.description_source.setObjectName("secondaryText")
         self.description_source.setWordWrap(True)
         self.description_source.setTextFormat(Qt.TextFormat.PlainText)
+        self.description_source.setAccessibleName("Description source")
         description_layout.addWidget(self.description_source)
         self.description = QTextBrowser()
         self.description.setObjectName("modDescription")
@@ -377,7 +408,8 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         self.description.setOpenExternalLinks(False)
         self.description.setHtml(
             '<p style="margin:4px 0; color:#9cadbd; font-style:italic;">'
-            "Select a mod to read its description.</p>"
+            "Select a mod in Discover or Active Order to read its description. "
+            "The Metadata tab shows its IDs and declared requirements.</p>"
         )
         description_layout.addWidget(self.description, 1)
         metadata_panel = QWidget()
@@ -438,7 +470,7 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         diagnostic_layout.addWidget(self.file_overlap_active_only)
         diagnostic_layout.addWidget(self.diagnostics, 1)
         library_split = QSplitter(Qt.Orientation.Horizontal)
-        library_split.addWidget(self.table)
+        library_split.addWidget(self.library_table_stack)
         library_split.addWidget(diagnostic_page)
         library_split.setStretchFactor(0, 3)
         library_split.setStretchFactor(1, 2)
@@ -455,10 +487,10 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         self.import_collection_page = self._build_import_collection_tab()
         self.main_tabs.addTab(self.import_collection_page, "Import Collection")
         self.setup_layout.addStretch(1)
-        self.main_tabs.addTab(self.setup_page, "Paths Settings")
+        self.main_tabs.addTab(self.setup_page, "Paths & Settings")
         self.library_page = library_page
         self.library_tab_index = self.main_tabs.addTab(
-            self.library_page, "Library Diagnostics"
+            self.library_page, "Library & Diagnostics"
         )
         header = QHBoxLayout()
         identity = QVBoxLayout()

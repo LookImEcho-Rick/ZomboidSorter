@@ -96,7 +96,7 @@ class DetailsMixin:
         self._selected_entry = None
         self._workshop_description_requested_id = None
         self._workshop_description_pending = None
-        self.description_source.setText("No unique installed mod")
+        self.description_source.setText("No matching mod entry")
         self.description_source.setToolTip("")
         self.description.setPlainText("No description is available for this Mod ID.")
         self._clear_preview(
@@ -109,21 +109,31 @@ class DetailsMixin:
 
     def _display_unresolved_mod_id(self, mod_id: str, *, duplicate: bool) -> None:
         self._clear_entry_details()
-        self.details.setPlainText(
-            f"Mod ID: {mod_id}\n"
-            + (
-                "Multiple installed entries use this ID."
-                if duplicate
-                else "This Mod ID is not installed."
+        if duplicate:
+            self.description_source.setText("Multiple entries found in the scan")
+            self.description.setPlainText(
+                "Several entries in the selected folders use this Mod ID. "
+                "Review Library Diagnostics to compare the copies before changing "
+                "the active order."
             )
-        )
+            status = "Multiple entries were found in the scanned folders."
+        else:
+            self.description_source.setText("Not found in the selected scan folders")
+            self.description.setPlainText(
+                "This Mod ID was not found in the local or Workshop folders selected "
+                "for scanning. Check Paths & Settings and refresh, or disable this "
+                "entry if you no longer want it in the global list."
+            )
+            status = "Not found in the scanned folders."
+        self.details.setPlainText(f"Mod ID: {mod_id}\n{status}")
 
     def _display_removed_mod_id(self, mod_id: str) -> None:
         self._last_management_mod_id = None
         self._clear_entry_details()
         self.details.setPlainText(
             f"Mod ID: {mod_id}\n"
-            "This mod is no longer in the scanned folders. Check Paths & Settings or refresh the library."
+            "This Mod ID is no longer found in the scanned folders. "
+            "Check Paths & Settings or refresh the library."
         )
 
     def _display_entry(self, entry: ModEntry) -> None:

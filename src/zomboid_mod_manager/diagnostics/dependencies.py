@@ -221,7 +221,7 @@ def analyze_dependencies(
                     findings.append(
                         DependencyFinding(
                             "missing-dependency",
-                            f"Requires '{required_id}', which is not installed.",
+                            f"Requires '{required_id}', which was not found in the scanned folders.",
                             mod_id,
                             location,
                         )

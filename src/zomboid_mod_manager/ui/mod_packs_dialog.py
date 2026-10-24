@@ -26,6 +26,7 @@ from zomboid_mod_manager.profiles import (
     parse_profile,
 )
 from zomboid_mod_manager.ui.change_preview import format_ordered_list_change
+from zomboid_mod_manager.ui.text import counted
 from zomboid_mod_manager.ui.theme import apply_theme
 
 
@@ -39,7 +40,7 @@ class PackListWidget(QListWidget):
         painter.drawText(
             self.viewport().rect().adjusted(20, 20, -20, -20),
             Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap,
-            "NO SAVED MOD PACKS\nSave a load order or import a pack or Workshop collection to get started.",
+            "NO SAVED MOD PACKS\nUse Save as Pack in the workspace, import a pack, or create one from a Workshop collection.",
         )
 
 
@@ -83,7 +84,7 @@ class ModPacksDialog(QDialog):
         self.pack_list.itemSelectionChanged.connect(self._update_selection)
         layout.addWidget(self.pack_list, 1)
 
-        self.details = QLabel("Select a saved Mod Pack to see its contents.")
+        self.details = QLabel("Select a Mod Pack to preview its order and changes.")
         self.details.setObjectName("secondaryText")
         self.details.setWordWrap(True)
         layout.addWidget(self.details)
@@ -92,7 +93,7 @@ class ModPacksDialog(QDialog):
         self.pack_preview.setAccessibleName(
             "Selected Mod Pack contents and global list changes"
         )
-        self.pack_preview.setPlaceholderText("Select a Mod Pack to preview its order.")
+        self.pack_preview.setPlaceholderText("Mod IDs and changes appear here.")
         self.pack_preview.setMinimumHeight(100)
         layout.addWidget(self.pack_preview, 2)
 
@@ -152,13 +153,15 @@ class ModPacksDialog(QDialog):
         self.delete_button.setEnabled(enabled)
         self.export_button.setEnabled(enabled)
         self.load_apply_button.setEnabled(False)
+        has_packs = self.pack_list.count() > 0
+        self.details.setVisible(has_packs)
+        self.pack_preview.setVisible(has_packs)
         if not name:
-            message = (
-                "Select a saved Mod Pack to inspect and apply it."
-                if self.pack_list.count()
+            self.details.setText(
+                "Select a Mod Pack to preview its order and changes."
+                if has_packs
                 else ""
             )
-            self.details.setText(message)
             self.pack_preview.clear()
             return
         try:
@@ -168,10 +171,10 @@ class ModPacksDialog(QDialog):
             self.pack_preview.clear()
             return
         self.details.setText(
-            f"{len(profile.mod_ids)} Mod IDs in saved order · "
-            f"{len(profile.workshop_ids)} Workshop items · "
+            f"{counted(len(profile.mod_ids), 'Mod ID')} in saved order · "
+            f"{counted(len(profile.workshop_ids), 'Workshop item')} · "
             + (
-                f"{len(profile.map_ids)} Map IDs in saved order"
+                f"{counted(len(profile.map_ids), 'Map ID')} in saved order"
                 if profile.map_ids is not None
                 else "map list not saved (current maps stay unchanged)"
             )

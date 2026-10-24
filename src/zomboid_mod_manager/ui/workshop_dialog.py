@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 
 from zomboid_mod_manager.domain import ScanResult
 from zomboid_mod_manager.profiles import ModProfile, ProfileError, validate_profile
+from zomboid_mod_manager.ui.text import counted
 from zomboid_mod_manager.ui.theme import apply_theme
 from zomboid_mod_manager.workshop import (
     WorkshopCollectionResult,
@@ -203,10 +204,16 @@ class WorkshopCollectionDialog(QDialog):
         missing = len(self._plan.missing_ids)
         ambiguous = len(self._plan.ambiguous_mod_ids)
         self.status.setText(
-            f"Collection {collection.collection_id}: {len(collection.items)} Project Zomboid items, "
-            f"{len(self._plan.installed_ids)} installed locally, {missing} missing/unavailable, "
-            f"{len(self._plan.mod_ids)} unique Mod IDs ready to stage."
-            + (f" {ambiguous} duplicate Mod IDs were excluded." if ambiguous else "")
+            f"Collection {collection.collection_id}: "
+            f"{counted(len(collection.items), 'Project Zomboid item')}; "
+            f"{counted(len(self._plan.installed_ids), 'Workshop item')} installed locally; "
+            f"{counted(missing, 'missing or unavailable item')}; "
+            f"{counted(len(self._plan.mod_ids), 'unique Mod ID')} ready to add."
+            + (
+                f" Excluded {counted(ambiguous, 'duplicate Mod ID')}."
+                if ambiguous
+                else ""
+            )
         )
 
     def _show_failure(self, message: str) -> None:

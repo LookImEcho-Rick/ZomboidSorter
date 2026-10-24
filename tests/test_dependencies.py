@@ -55,6 +55,7 @@ class DependencyTests(unittest.TestCase):
 
         self.assertEqual(finding.mod_id, "Consumer")
         self.assertNotIn("Candidate:", finding.message)
+        self.assertIn("not found in the scanned folders", finding.message)
         formatted = format_dependency_finding(finding)
         self.assertIn("Mod 'Consumer':", formatted)
         self.assertEqual(formatted.count(str(finding.candidate_path)), 1)

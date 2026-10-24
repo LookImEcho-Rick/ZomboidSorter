@@ -1,5 +1,16 @@
 # Progress
 
+## v0.2.5 release preparation (2026-10-24)
+
+- Prepared v0.2.5 with the current workspace usability changes: bounds startup geometry, a reachable Library Diagnostics review route, scan-evidence wording, clearer empty states and count summaries, and Library table and staging-action polish. No runtime dependency or global-list format changed.
+- Local validation before push: all 166 tests passed with one environment-only symlink skip; Ruff check/format, compileall, and `git diff --check` passed. Hosted Windows installer, upgrade, and rolling-update checks are pending.
+
+## Library table and staged action clarity (2026-10-24)
+
+- A live source run at 1440×900 showed the Library & Diagnostics table's installed-folder column clipped behind a horizontal scrollbar, while an empty search left a blank table with no recovery cue. The table now fits its main columns at normal width, shows the installed folder name with the full path on hover, and explains empty-library, no-match, scan-in-progress, cancellation, and scan-failure states.
+- The mod-detail build selector now names the Project Zomboid build directly and uses **Detect Build**. Discover's **Add** and Active Order's **Remove** actions explain that they stage list changes; Remove also confirms installed mod files stay in place. The Paths & Settings and Library & Diagnostics tab names now match their page headings.
+- A native source run was visually reviewed at 1440×900; the table displayed without a horizontal scrollbar and the folder name was readable. Regression tests cover the no-results guidance, full-path tooltip, normal-width table, small-window keyboard path, and existing staged-list behavior. Validation: full suite passed (166 tests, one environment-only symlink skip); Ruff check/format, compileall, and `git diff --check` passed. No game configuration, save, installed mod, Workshop subscription, or packaged binary was changed or tested.
+
 ## High-DPI startup window bounds (2026-10-24)
 
 - A live source run at Qt scale factor 2.0 on a 2560×1440 desktop opened mostly off-screen with fresh settings: only a 321-pixel-wide slice of the window was captured. `MainWindow` now fits its initial or restored rectangle to the selected screen's available geometry after restoring saved settings, while preserving the existing minimum when it fits.
@@ -446,3 +457,10 @@ Updated 2026-10-22 after the desktop UX refresh.
 - Workshop collection import now opens the selected missing/unavailable PZ item page directly. Foreign Steam app rows are disabled, and opening a page never subscribes or downloads.
 - Build 42.21 source inspection confirms its Mod Selector validator requires declared dependencies to appear before dependents. A new fixture checks that invariant. The isolated game runtime probe stopped during Lua initialization because the preserved backup could not load `media/lua/shared/a_requires.lua`; it never loaded the test mods. Runtime ordering remains unverified.
 - Validation: all 147 unit tests passed with two symlink-only skips; Ruff check, Ruff formatting check, `git diff --check`, and compileall passed. UI apply flows wrote only disposable save/server fixtures. No live save or server settings were modified. Release signing/package changes were outside this work.
+
+## Workspace evidence and empty-state clarity (2026-10-24)
+
+- A live v0.2.4 source window showed six active-order issues; the visible rows labeled IDs **Not installed**, even though the app can only establish that they were not found in its selected folders. The scan status also showed singular counts as “1 mod entries” and “1 metadata files.” The unselected Details pane repeated its instruction in the poster caption, source label, and description; the empty Mod Packs manager added selection prompts below an already-complete empty-state message.
+- Active-list, dependency, and metadata-reference messages now describe scan evidence rather than claiming global installation state. Missing entries explain that the selected local or Workshop folders can be checked and rescanned; duplicate active IDs point to Library Diagnostics. An empty scan points to Paths & Settings and Refresh. Details now gives one selection instruction, empty Mod Packs hides the redundant detail and preview areas, and a shared count formatter keeps scan, collection, and pack feedback grammatical.
+- No load-order format, apply/restore behavior, installed content, or game configuration changed. The offscreen fixture capture at 980×680 showed the panels and empty-pack dialog fitting; the offscreen Qt platform rendered text as missing glyphs, so it does not establish final typography. A native live screenshot of the baseline supplied the copy findings. No interactive follow-up was made after Computer Use detected concurrent user input.
+- Validation: the full suite passed (164 tests, one environment-only symlink skip); after the final duplicate-tooltip adjustment, six affected UI cases passed. Ruff check/format, compileall, and `git diff --check` passed. No real-game or packaged-binary checks were run for this copy/state-only iteration.

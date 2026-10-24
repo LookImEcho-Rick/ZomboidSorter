@@ -228,15 +228,17 @@ class WorkspaceLayoutMixin:
         # Transfer controls are added after both lists have been constructed.
         self.workspace_splitter.addWidget(available_panel)
 
-        self.activate_button = QPushButton("Enable →")
+        self.activate_button = QPushButton("Add →")
+        self.activate_button.setAccessibleName("Add mods to Active Order")
         self.activate_button.setToolTip(
-            "Enable selected mods. You can also drag them to Active."
+            "Add selected mods to Active Order. This stages the change; the game list stays the same until you apply."
         )
         self.activate_button.clicked.connect(self._stage_activate)
-        self.deactivate_button = QPushButton("← Disable")
+        self.deactivate_button = QPushButton("← Remove")
+        self.deactivate_button.setAccessibleName("Remove mods from Active Order")
         self.deactivate_button.setObjectName("subtleAction")
         self.deactivate_button.setToolTip(
-            "Disable selected mods. You can also drag them to Inactive."
+            "Remove selected mods from Active Order. This stages the change; installed mod files stay in place."
         )
         self.deactivate_button.clicked.connect(self._stage_deactivate)
         self.move_up_button = QPushButton("Move Up")

@@ -116,7 +116,7 @@ class ModDetailsTests(unittest.TestCase):
             self.assertEqual(choice.candidate.version_folder, "42.20")
             text = format_entry_details(entry, (entry,), ["Example"])
             self.assertIn("Author (first metadata candidate)", text)
-            self.assertIn("BaseLib — not installed", text)
+            self.assertIn("BaseLib — not found in scanned folders", text)
             self.assertIn("Declared game version minimum: 42.20", text)
             self.assertIn("Shared text", text)
             self.assertIn("Versioned text", text)

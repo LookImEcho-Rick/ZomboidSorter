@@ -27,6 +27,7 @@ from zomboid_mod_manager.profiles import (
 )
 from zomboid_mod_manager.ui.change_preview import format_ordered_list_change
 from zomboid_mod_manager.ui.mod_packs_dialog import ModPacksDialog
+from zomboid_mod_manager.ui.text import counted
 from zomboid_mod_manager.ui.workshop_dialog import WorkshopCollectionDialog
 
 
@@ -64,7 +65,8 @@ class ProfileActionsMixin:
             f"Saved Mod Pack '{profile.name}'. The game list was not changed."
         )
         self.status.setText(
-            f"Saved Mod Pack '{profile.name}' with {len(profile.mod_ids)} Mod IDs."
+            f"Saved Mod Pack '{profile.name}' with "
+            f"{counted(len(profile.mod_ids), 'Mod ID')}."
         )
 
     def _open_mod_packs(self) -> None:
@@ -202,7 +204,8 @@ class ProfileActionsMixin:
             self._staged_mod_ids = list(snapshot.config.mods)
             self._profile_workshop_ids = ()
             self.configuration_status.setText(
-                f"Loaded {len(snapshot.config.mods)} active mod IDs from the global default list. "
+                f"Loaded {counted(len(snapshot.config.mods), 'active Mod ID')} "
+                "from the global default list. "
                 "Map order is preserved. Changes are staged until Apply."
             )
         self._refresh_management_lists()
@@ -289,7 +292,8 @@ class ProfileActionsMixin:
             return
         self.configuration_status.setText(
             f"Saved Workshop collection as Mod Pack '{profile.name}' with "
-            f"{len(profile.mod_ids)} installed Mod IDs and "
-            f"{len(profile.workshop_ids)} Workshop items. Open Load Pack to apply it."
+            f"{counted(len(profile.mod_ids), 'installed Mod ID')} and "
+            f"{counted(len(profile.workshop_ids), 'Workshop item')}. "
+            "Open Mod Packs to apply it."
         )
         self.status.setText(f"Saved Workshop collection as Mod Pack '{profile.name}'.")

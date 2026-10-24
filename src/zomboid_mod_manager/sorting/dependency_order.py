@@ -116,7 +116,7 @@ def propose_dependency_order(
             if related_id not in active:
                 if related_id not in by_id:
                     unresolved.append(
-                        f"'{mod_id}' {reason} '{related_id}', which is not installed."
+                        f"'{mod_id}' {reason} '{related_id}', which was not found in the scanned folders."
                     )
                 elif len(by_id[related_id]) > 1:
                     unresolved.append(
@@ -136,7 +136,7 @@ def propose_dependency_order(
             if related_id not in active:
                 if related_id not in by_id:
                     unresolved.append(
-                        f"'{mod_id}' declares loadModBefore '{related_id}', which is not installed."
+                        f"'{mod_id}' declares loadModBefore '{related_id}', which was not found in the scanned folders."
                     )
                 elif len(by_id[related_id]) > 1:
                     unresolved.append(

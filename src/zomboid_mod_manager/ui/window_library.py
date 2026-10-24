@@ -73,7 +73,7 @@ class LibraryMixin:
             elif len(matches) > 1:
                 label = f"Duplicate installation  ·  {mod_id}"
             else:
-                label = f"Not installed  ·  {mod_id}"
+                label = f"Not found in scan  ·  {mod_id}"
             item = QListWidgetItem(label)
             item.setData(Qt.ItemDataRole.UserRole, mod_id)
             item.setToolTip(label)
@@ -82,9 +82,16 @@ class LibraryMixin:
             )
             if len(matches) != 1:
                 item.setText("⚠  " + label)
-                item.setToolTip(
-                    f"{label}\n\nThe configured Mod ID is missing or has multiple installed copies."
-                )
+                if matches:
+                    item.setToolTip(
+                        f"{label}\n\nMultiple entries with this Mod ID were found "
+                        "in the selected folders. Review Library Diagnostics to compare them."
+                    )
+                else:
+                    item.setToolTip(
+                        f"{label}\n\nThe configured Mod ID was not found in the selected local or Workshop folders. "
+                        "Check Paths & Settings and refresh the scan."
+                    )
             self._mark_recently_added_workshop_entry(item, matches)
             self.active_list.addItem(item)
 
@@ -328,11 +335,17 @@ class LibraryMixin:
         self.inactive_heading.setText(
             f"DISCOVER  ·  {count}{new_label}{diagnostics_label}"
         )
-        self.available_list.empty_text = (
-            "No mods match this search or filter"
-            if query or mode != "All sources" or build != "all"
-            else "No inactive mods found in the scanned folders"
-        )
+        if query or mode != "All sources" or build != "all":
+            self.available_list.empty_text = "No mods match this search or filter"
+        elif self._last_result is not None and not self._last_result.entries:
+            self.available_list.empty_text = (
+                "No mod entries were found in the selected local or Workshop folders. "
+                "Check Paths & Settings, then refresh."
+            )
+        else:
+            self.available_list.empty_text = (
+                "No inactive mods found in the scanned folders"
+            )
         self.available_list.viewport().update()
         self._update_workspace_actions()
 

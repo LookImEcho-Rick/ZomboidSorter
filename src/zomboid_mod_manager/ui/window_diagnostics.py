@@ -96,7 +96,7 @@ class DiagnosticsMixin:
             ]
             if missing_workshop_ids:
                 line = (
-                    "WARNING [missing-workshop-items]: Profile references Workshop items not installed locally: "
+                    "WARNING [missing-workshop-items]: Profile references Workshop items not found in the scanned Workshop folders: "
                     + ", ".join(missing_workshop_ids)
                 )
                 lines.append(line)

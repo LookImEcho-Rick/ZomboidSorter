@@ -43,6 +43,7 @@ from zomboid_mod_manager.sorting.user_rules import (
 from zomboid_mod_manager.ui.file_overlap_dialog import FileOverlapDialog
 from zomboid_mod_manager.ui.global_backup_dialog import GlobalBackupDialog
 from zomboid_mod_manager.ui.main_window import MainWindow
+from zomboid_mod_manager.ui.mod_packs_dialog import ModPacksDialog
 from zomboid_mod_manager.ui.support_report_dialog import SupportReportDialog
 from zomboid_mod_manager.ui.window_lifecycle import fit_window_geometry
 from zomboid_mod_manager.ui.window_widgets import ISSUE_ROLE, PreviewLabel
@@ -498,6 +499,12 @@ class MainWindowTests(unittest.TestCase):
             active_config_path=FIXTURES / "config" / "default.txt",
             profile_store=ProfileStore(Path(temporary.name) / "profiles"),
         )
+        self.assertEqual(window.activate_button.text(), "Add →")
+        self.assertIn("stages the change", window.activate_button.toolTip())
+        self.assertEqual(window.deactivate_button.text(), "← Remove")
+        self.assertIn(
+            "installed mod files stay in place", window.deactivate_button.toolTip()
+        )
         deadline = time.monotonic() + 5
         while (
             "scan complete" not in window.status.text().casefold()
@@ -625,6 +632,96 @@ class MainWindowTests(unittest.TestCase):
             )
             window.close()
 
+    def test_scan_summary_uses_singular_counts(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            window, _ = self._make_launch_window(Path(temporary))
+            self._wait_for_background_workers(window)
+            entry = window._last_result.entries[0]
+            metadata_count = len(entry.candidates)
+            window._show_result(ScanResult((entry,), (), ()))
+
+            summary = window.status.text()
+            self.assertIn("1 mod entry;", summary)
+            self.assertIn("0 Workshop items;", summary)
+            self.assertIn(f"{metadata_count} metadata file", summary)
+            self.assertNotIn("1 mod entries", summary)
+            window.close()
+
+    def test_empty_scan_points_to_paths_and_refresh(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            window, _ = self._make_launch_window(Path(temporary))
+            self._wait_for_background_workers(window)
+            window._last_result = ScanResult((), (), ())
+            window._filter_available_mods("")
+
+            self.assertIn("No mod entries were found", window.available_list.empty_text)
+            self.assertIn("Paths & Settings", window.available_list.empty_text)
+            self.assertIn("refresh", window.available_list.empty_text)
+            window.close()
+
+    def test_library_table_explains_empty_and_no_match_states(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            window, _ = self._make_launch_window(Path(temporary))
+            self._wait_for_background_workers(window)
+            entry = window._last_result.entries[0]
+            window._show_result(ScanResult((entry,), (), ()))
+            self.assertIs(window.library_table_stack.currentWidget(), window.table)
+            self.assertEqual(
+                window.table_model.item(0, 6).text(), entry.entry_path.name
+            )
+            self.assertEqual(
+                window.table_model.item(0, 6).toolTip(), str(entry.entry_path)
+            )
+
+            window.search.setText("no matching mod")
+            self.assertIs(
+                window.library_table_stack.currentWidget(),
+                window.library_table_empty,
+            )
+            self.assertIn(
+                "No mods match this search", window.library_table_empty.text()
+            )
+            self.assertIn("Clear the search", window.library_table_empty.text())
+
+            window.search.clear()
+            self.assertIs(window.library_table_stack.currentWidget(), window.table)
+            window._show_result(ScanResult((), (), ()))
+            self.assertIs(
+                window.library_table_stack.currentWidget(),
+                window.library_table_empty,
+            )
+            self.assertIn(
+                "No mod entries were found", window.library_table_empty.text()
+            )
+            self.assertIn("Paths & Settings", window.library_table_empty.text())
+            window.close()
+
+    def test_library_table_columns_fit_a_normal_window(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            window, _ = self._make_launch_window(Path(temporary))
+            window.resize(1440, 850)
+            window.show()
+            self._wait_for_background_workers(window)
+            window.main_tabs.setCurrentWidget(window.library_page)
+            self.app.processEvents()
+
+            self.assertLessEqual(window.table.horizontalScrollBar().maximum(), 1)
+            self.assertEqual(
+                window.table_model.horizontalHeaderItem(6).text(), "Installed folder"
+            )
+            window.close()
+
+    def test_empty_mod_pack_manager_shows_one_starting_point(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            dialog = ModPacksDialog(ProfileStore(Path(temporary) / "profiles"))
+
+            self.assertEqual(dialog.pack_list.count(), 0)
+            self.assertTrue(dialog.details.isHidden())
+            self.assertTrue(dialog.pack_preview.isHidden())
+            self.assertFalse(dialog.load_apply_button.isEnabled())
+            self.assertTrue(dialog.import_button.isEnabled())
+            dialog.close()
+
     def test_small_window_keeps_paths_and_primary_actions_readable(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             window, _ = self._make_launch_window(Path(temporary))
@@ -739,8 +836,8 @@ class MainWindowTests(unittest.TestCase):
                 window.main_tabs.tabText(index)
                 for index in range(window.main_tabs.count())
             ]
-            self.assertIn("Paths Settings", tab_labels)
-            self.assertIn("Library Diagnostics", tab_labels)
+            self.assertIn("Paths & Settings", tab_labels)
+            self.assertIn("Library & Diagnostics", tab_labels)
             self.assertTrue(all("_" not in label for label in tab_labels))
 
             previous_game_path = window.game_path.text()
@@ -1544,7 +1641,7 @@ class MainWindowTests(unittest.TestCase):
                 if "[missing-dependency]" in line and "MissingMod" in line
             )
             self.assertIn(
-                "Mod 'Consumer': Requires 'MissingMod', which is not installed.",
+                "Mod 'Consumer': Requires 'MissingMod', which was not found in the scanned folders.",
                 lines[missing_index],
             )
             self.assertEqual(
@@ -1775,8 +1872,10 @@ class MainWindowTests(unittest.TestCase):
             self.assertEqual(window.issue_summary.text(), "Active order: checking…")
             window._scan_cancelled()
             self.assertEqual(window.issue_summary.text(), "Active order: not checked")
+            self.assertIn("Scan cancelled", window.library_table_empty.text())
             window._show_scan_failure("The scan could not be completed.")
             self.assertEqual(window.issue_summary.text(), "Active order: not checked")
+            self.assertIn("Scan failed", window.library_table_empty.text())
             window.close()
 
     def test_cancel_scan_button_stops_scan_and_keeps_previous_results(self) -> None:
@@ -1993,6 +2092,18 @@ class MainWindowTests(unittest.TestCase):
             if window.available_list.item(i).text().startswith("Duplicate installation")
         )
         self.assertFalse(bool(ambiguous.flags() & Qt.ItemFlag.ItemIsEnabled))
+        ambiguous_id = ambiguous.data(Qt.ItemDataRole.UserRole)
+        window._staged_mod_ids.append(ambiguous_id)
+        window._refresh_management_lists()
+        active_ambiguous = next(
+            window.active_list.item(i)
+            for i in range(window.active_list.count())
+            if window.active_list.item(i).data(Qt.ItemDataRole.UserRole) == ambiguous_id
+        )
+        self.assertIn("Multiple entries", active_ambiguous.toolTip())
+        self.assertNotIn("not found in", active_ambiguous.toolTip())
+        window._staged_mod_ids.remove(ambiguous_id)
+        window._refresh_management_lists()
 
         window.search.setText("RepeatedDescription")
         self.app.processEvents()
@@ -2218,7 +2329,7 @@ class MainWindowTests(unittest.TestCase):
         window._save_imported_collection_profile(profile)
         self.assertEqual(profile_store.load("Imported Collection"), profile)
         self.assertEqual(tuple(window._staged_mod_ids), original_staged)
-        self.assertIn("Open Load Pack", window.configuration_status.text())
+        self.assertIn("Open Mod Packs", window.configuration_status.text())
         self.assertEqual(config_path.read_bytes(), original_config)
         window.close()
 
@@ -2457,6 +2568,9 @@ class MainWindowTests(unittest.TestCase):
             foreign_app_ids=("3333333333",),
         )
         dialog._show_collection(collection)
+        self.assertIn("1 Project Zomboid item;", dialog.status.text())
+        self.assertIn("2 missing or unavailable items;", dialog.status.text())
+        self.assertNotIn("1 Project Zomboid items", dialog.status.text())
 
         dialog.items.setCurrentCell(0, 0)
         self.assertTrue(dialog.open_missing_workshop_button.isEnabled())
@@ -2511,6 +2625,7 @@ class MainWindowTests(unittest.TestCase):
 
             window._use_detected_game_build()
 
+            self.assertEqual(window.detect_build_button.text(), "Detect Build")
             self.assertEqual(window.metadata_preview_target.currentData(), "41")
             self.assertEqual(window.metadata_build_version.text(), "")
             self.assertIn("legacy41", window.game_build_status.text())
@@ -2634,14 +2749,21 @@ class MainWindowTests(unittest.TestCase):
             window.active_list.setCurrentRow(0)
             self.assertIn("Mod ID: MissingMod", window.details.toPlainText())
             self.assertIsNone(window._selected_entry)
-            self.assertIn("No description", window.description.toPlainText())
+            self.assertIn(
+                "not found in the local or Workshop folders",
+                window.description.toPlainText(),
+            )
+            self.assertIn("Paths & Settings", window.description.toPlainText())
             self.assertFalse(window.open_folder_button.isEnabled())
             self.assertFalse(window.open_workshop_button.isEnabled())
             window.metadata_preview_target.setCurrentIndex(
                 window.metadata_preview_target.findData("41")
             )
             self.assertIsNone(window._selected_entry)
-            self.assertIn("No description", window.description.toPlainText())
+            self.assertIn(
+                "not found in the local or Workshop folders",
+                window.description.toPlainText(),
+            )
 
     def test_removed_discover_mod_clears_details_after_rescan(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
