@@ -23,6 +23,7 @@ on:
       - "packaging/THIRD_PARTY_NOTICES.md"
       - "pyproject.toml"
       - "src/**"
+      - "tests/**"
   workflow_dispatch:
 
 permissions:
