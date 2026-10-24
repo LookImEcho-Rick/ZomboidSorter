@@ -185,20 +185,34 @@ class MainWindowTests(unittest.TestCase):
                 return_value=None,
             ) as check_for_update,
             patch(
+                "zomboid_mod_manager.ui.window_workers.installed_build_id",
+                return_value="source",
+            ),
+            patch(
                 "zomboid_mod_manager.ui.window_updates.QMessageBox.information"
             ) as information,
+            patch(
+                "zomboid_mod_manager.ui.window_updates.QMessageBox.warning"
+            ) as warning,
         ):
             window.update_button.click()
             deadline = time.monotonic() + 5
             while not window.update_button.isEnabled() and time.monotonic() < deadline:
                 self.app.processEvents()
                 QTest.qWait(10)
+            worker = window._update_check_worker
+            if worker is not None:
+                self.assertTrue(
+                    worker.wait(5000), "Update check worker should finish promptly."
+                )
+            self.app.processEvents()
 
         self.assertTrue(window.update_button.isEnabled())
         self.assertEqual(window.update_button.text(), "Check for Updates")
         self.assertIn("up to date", window.status.text().casefold())
         check_for_update.assert_called_once_with(__version__, "source")
         information.assert_called_once()
+        warning.assert_not_called()
 
     def test_update_button_downloads_a_new_pushed_build_automatically(self) -> None:
         temporary = tempfile.TemporaryDirectory()
