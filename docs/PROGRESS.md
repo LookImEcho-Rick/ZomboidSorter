@@ -1,12 +1,20 @@
 # Progress
 
+## High-DPI startup window bounds (2026-10-24)
+
+- A live source run at Qt scale factor 2.0 on a 2560×1440 desktop opened mostly off-screen with fresh settings: only a 321-pixel-wide slice of the window was captured. `MainWindow` now fits its initial or restored rectangle to the selected screen's available geometry after restoring saved settings, while preserving the existing minimum when it fits.
+- Regression cases cover an oversized/off-screen initial rectangle, a partly off-screen restored rectangle, and an already-valid rectangle. The screen clamp is skipped when available geometry cannot accommodate the configured minimum, preserving the app's normal test and compact-mode sizing behavior.
+- Native desktop review confirmed the Discover **Review** keyboard path at standard scale and showed the corrected source workspace at Qt scale factors 1.5 and 2.0 with all three panels and the footer visible. The 200% capture was 2544×1420 and showed no clipping after the fix. This simulates Qt scaling in the process; Windows display scaling settings were not changed.
+- Validation: the full suite passed (160 tests, one existing symlink-only skip); Ruff check/format, compileall, and `git diff --check` passed. The source UI used temporary portable settings. Scanning was read-only; no global list, save, installed mod, or packaged binary was changed.
+- Next priority: use user feedback or another reproducible issue to select a bounded improvement; avoid adding features without demonstrated friction.
+
 ## Discover library findings review route (2026-10-24)
 
 - A live v0.2.4 workspace showed 26 library warnings in the Discover heading but no nearby action to inspect them. Discover now shows a keyboard-accessible **Review** button while library warnings or errors exist; it opens Library Diagnostics at the first finding. Clean scans hide the button. The active-order and library routes share the same cursor-navigation helper and diagnostics text view.
 - A follow-up state review found that a failed refresh after a successful scan replaced the diagnostics text while leaving the old finding counts visible. The app now keeps those previous findings available, appends the refresh failure and stale-result note, and keeps **Review** pointed at the displayed finding. A first-scan failure still shows the existing recovery message.
 - Regression coverage checks warning and error navigation (including a finding with a file path), hidden state after a clean scan, keyboard traversal and activation, and button bounds at 980×680. The existing small-window test also confirms the button stays inside its panel.
 - Validation: all 59 UI tests passed after the review action was added. After the scan-failure follow-up, the two affected UI tests passed; Ruff check/format and compileall passed against the final source, and `git diff --check` passed. The installed v0.2.4 window was visually inspected at 2560×1440 before the source change; changed-layout checks used offscreen Qt fixtures. No game configuration, save, installed mod, or packaged binary was changed or tested.
-- Next priority: use reproduced user friction to guide another functional change; otherwise review native Windows focus and scaled-window rendering when a new source build is available.
+- Native Windows focus and scaled-window rendering were checked in the follow-up above. Continue from user feedback or another reproduced issue.
 
 ## v0.2.4 hosted release verification (2026-10-24)
 

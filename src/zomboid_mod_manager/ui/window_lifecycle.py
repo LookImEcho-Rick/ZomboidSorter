@@ -2,12 +2,52 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QRect, QSize, Qt, QTimer
+from PySide6.QtWidgets import QApplication
 
 from zomboid_mod_manager.ui.theme import apply_theme
 
 
+def fit_window_geometry(
+    geometry: QRect, available_geometry: QRect, minimum_size: QSize
+) -> QRect:
+    """Keep a restored or initial window rectangle on the available screen."""
+    if available_geometry.isEmpty():
+        return QRect(geometry)
+
+    minimum_width = min(minimum_size.width(), available_geometry.width())
+    minimum_height = min(minimum_size.height(), available_geometry.height())
+    width = min(max(geometry.width(), minimum_width), available_geometry.width())
+    height = min(max(geometry.height(), minimum_height), available_geometry.height())
+    left = min(
+        max(geometry.left(), available_geometry.left()),
+        available_geometry.right() - width + 1,
+    )
+    top = min(
+        max(geometry.top(), available_geometry.top()),
+        available_geometry.bottom() - height + 1,
+    )
+    return QRect(left, top, width, height)
+
+
 class WindowLifecycleMixin:
+    def _fit_window_to_available_screen(self) -> None:
+        screen = self.screen() or QApplication.primaryScreen()
+        if screen is None:
+            return
+        available_geometry = screen.availableGeometry()
+        if available_geometry.isEmpty():
+            return
+        minimum_size = self.minimumSize()
+        if (
+            available_geometry.width() < minimum_size.width()
+            or available_geometry.height() < minimum_size.height()
+        ):
+            return
+        self.setGeometry(
+            fit_window_geometry(self.geometry(), available_geometry, minimum_size)
+        )
+
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._update_compact_workspace()

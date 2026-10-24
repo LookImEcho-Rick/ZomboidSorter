@@ -32,11 +32,12 @@ Build 42 is the primary target; Build 41 root metadata remains supported. The cu
 ## Current product assessment and next checks
 
 - **Implemented and verified:** read-only discovery, Build-aware metadata selection, staged Discover/Active Order editing, dependency proposals, Mod Packs, global-list preflight/apply/backup restore, and read-only diagnostics have fixture and UI coverage. v0.2.4's hosted installer, update, checksum, and provenance workflows passed.
-- **Implemented but incomplete:** Build 42 gameplay and full loader behavior remain unverified. Fixture results and metadata warnings cannot establish in-game compatibility. Another-PC behavior and native focus appearance at varied scaling remain unverified.
+- **Implemented but incomplete:** Build 42 gameplay and full loader behavior remain unverified. Fixture results and metadata warnings cannot establish in-game compatibility. The source UI passed native keyboard-focus review and Qt scale-factor rendering at 150% and 200%; Windows display scaling settings and another-PC behavior remain unverified.
 - **Awkward behavior found and fixed:** the live v0.2.4 workspace showed 26 library warnings in Discover without a nearby review action. Discover now exposes a keyboard-accessible **Review** button that opens the first warning or error in Library Diagnostics. Failed refreshes preserve old findings and explain that they remain in use. The clean state hides the action; fixtures cover warning, error, failure, keyboard, and 980×680 behavior. See `docs/PROGRESS.md`.
 - **Duplication/complexity:** the changed flow still has one diagnostics text view and one cursor-navigation helper; no duplicate parser, writer, worker, or widget was introduced. The existing active-order **Review** action uses the same navigation helper.
+- **Window bounds found and fixed:** a fresh source run at Qt scale factor 2.0 opened mostly off-screen. Startup now bounds initial/restored geometry to the selected screen when the screen can fit the app's minimum. A second live 200% run showed all three panels and the footer; the full fixture suite covers oversized, partially off-screen, and already-valid rectangles. See `docs/PROGRESS.md`.
 - **Missing core workflow:** no demonstrated core feature is currently queued. The app retains the global-only scope, existing Mod Packs, and safe apply/restore workflow.
-- **Next priority:** use user feedback and reproduced problems to choose another functional change. If none are reported, inspect native Windows focus and high-DPI rendering on a source build before making further visual changes.
+- **Next priority:** use user feedback or another reproduced issue to choose a bounded change. No core workflow gap is currently supported by evidence; keep build-specific gameplay behavior clearly labeled as unverified.
 
 ## Remaining release gates
 

@@ -90,6 +90,7 @@ class MainWindow(
         saved_geometry = self._settings.value("window/geometry")
         if saved_geometry is not None:
             self.restoreGeometry(saved_geometry)
+        self._fit_window_to_available_screen()
         use_saved_paths = detected is None
         self._persist_settings = use_saved_paths
         self._detected = detected or detect_paths()

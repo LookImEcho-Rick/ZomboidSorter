@@ -13,7 +13,7 @@ from unittest.mock import Mock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QModelIndex, QPoint, QSettings, Qt, QUrl
+from PySide6.QtCore import QModelIndex, QPoint, QRect, QSettings, QSize, Qt, QUrl
 from PySide6.QtGui import QColor, QImage, QMovie
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
@@ -44,6 +44,7 @@ from zomboid_mod_manager.ui.file_overlap_dialog import FileOverlapDialog
 from zomboid_mod_manager.ui.global_backup_dialog import GlobalBackupDialog
 from zomboid_mod_manager.ui.main_window import MainWindow
 from zomboid_mod_manager.ui.support_report_dialog import SupportReportDialog
+from zomboid_mod_manager.ui.window_lifecycle import fit_window_geometry
 from zomboid_mod_manager.ui.window_widgets import ISSUE_ROLE, PreviewLabel
 from zomboid_mod_manager.ui.workshop_browser import WorkshopBrowserPanel
 from zomboid_mod_manager.ui.workshop_dialog import WorkshopCollectionDialog
@@ -106,6 +107,31 @@ class MainWindowTests(unittest.TestCase):
 
         self.addCleanup(close_when_workers_finish)
         return window, config_path
+
+    def test_window_geometry_fits_available_screen_and_preserves_valid_bounds(
+        self,
+    ) -> None:
+        available = QRect(0, 0, 1280, 720)
+        minimum = QSize(980, 680)
+        cases = (
+            (
+                QRect(-2560, -200, 1440, 850),
+                QRect(0, 0, 1280, 720),
+            ),
+            (
+                QRect(-120, 50, 1100, 700),
+                QRect(0, 20, 1100, 700),
+            ),
+            (
+                QRect(100, 10, 1100, 700),
+                QRect(100, 10, 1100, 700),
+            ),
+        )
+        for geometry, expected in cases:
+            with self.subTest(geometry=geometry):
+                self.assertEqual(
+                    fit_window_geometry(geometry, available, minimum), expected
+                )
 
     def test_update_outcome_dialog_reports_verified_success_and_failure(self) -> None:
         window = QWidget()
