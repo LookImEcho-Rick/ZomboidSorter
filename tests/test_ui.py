@@ -2136,6 +2136,13 @@ class MainWindowTests(unittest.TestCase):
                     profile_store=ProfileStore(root / "profiles"),
                 )
 
+            def close_window_if_needed() -> None:
+                if window.isVisible():
+                    window._persist_settings = False
+                    window.close()
+
+            self.addCleanup(close_window_if_needed)
+
             saves_root = root / "Zomboid" / "Saves"
             save_directory = saves_root / "Sandbox" / "RememberSave"
             save_directory.mkdir(parents=True)
@@ -2153,8 +2160,14 @@ class MainWindowTests(unittest.TestCase):
                 ),
             ):
                 window._apply_staged_to_save()
-            self.assertEqual(settings.value("paths/saves_root"), str(saves_root))
-            self.assertEqual(settings.value("paths/save_target"), str(save_directory))
+            self.assertEqual(
+                Path(str(settings.value("paths/saves_root"))).resolve(),
+                saves_root.resolve(),
+            )
+            self.assertEqual(
+                Path(str(settings.value("paths/save_target"))).resolve(),
+                save_directory.resolve(),
+            )
 
             with (
                 patch(
@@ -2166,8 +2179,14 @@ class MainWindowTests(unittest.TestCase):
                 ),
             ):
                 window._restore_save_backup()
-            self.assertEqual(choose_save.call_args_list[0].args[2], str(saves_root))
-            self.assertEqual(choose_save.call_args_list[1].args[2], str(save_directory))
+            self.assertEqual(
+                Path(choose_save.call_args_list[0].args[2]).resolve(),
+                saves_root.resolve(),
+            )
+            self.assertEqual(
+                Path(choose_save.call_args_list[1].args[2]).resolve(),
+                save_directory.resolve(),
+            )
 
             server_path = root / "Zomboid" / "Server" / "remember.ini"
             server_path.parent.mkdir(parents=True)
@@ -2187,7 +2206,8 @@ class MainWindowTests(unittest.TestCase):
             ):
                 window._apply_staged_to_server()
             self.assertEqual(
-                settings.value("paths/server_settings"), str(server_path.parent)
+                Path(str(settings.value("paths/server_settings"))).resolve(),
+                server_path.parent.resolve(),
             )
 
             with (
@@ -2200,7 +2220,10 @@ class MainWindowTests(unittest.TestCase):
                 ),
             ):
                 window._restore_server_backup()
-            self.assertEqual(choose_server.call_args.args[2], str(server_path.parent))
+            self.assertEqual(
+                Path(choose_server.call_args.args[2]).resolve(),
+                server_path.parent.resolve(),
+            )
             self._wait_for_background_workers(window)
             window.close()
 
