@@ -101,7 +101,8 @@ Application license: GPL-3.0-or-later (root LICENSE)
 ## Version 0.2.0 release preparation (2026-10-23)
 
 - This release changes the PySide6 interface, documentation, fixture screenshots, and app version. It adds no runtime dependencies, Qt modules, bundled third-party assets, or license-delivery changes. The pinned PySide6 6.12.0, WebEngine/PDF 6.12.0.140, PyInstaller 6.22.3, corresponding source locations, notices, and written source offer reviewed above still apply.
-- Local validation passed all 148 tests with two environment-only symlink skips, Ruff check/format, compileall, and `git diff --check`. Native fixture captures were reviewed at 1440×850 and 980×680. No real game configuration, saves, or installed mods were changed. Hosted build, smoke, updater, and tagged-release results will be recorded after publication.
+- Local validation passed all 148 tests with two environment-only symlink skips, Ruff check/format, compileall, and `git diff --check`. Native fixture captures were reviewed at 1440×850 and 980×680. No real game configuration, saves, or installed mods were changed.
+- Final rolling workflow 40050307907 passed packaged install/launch and v0.1.9 in-app update checks; its manifest names commit `48285567e01dae3315cfc7ca54c414ce1804ea0b` and the versionless installer SHA-256 `e9ec67d31c6e41058c9af963d06d59ca491058b2bf253a0a2a5f27a38d751527`, matching the published sidecar. Tagged v0.2.0 workflow 40050954600 passed tests, lint, build, previous-stable upgrade smoke, standard/portable install smoke, and release publication. The stable versionless installer is 120,203,938 bytes with SHA-256 `d63ec5a19c8742976ef057c5e37155bb79386dbc178d78a7238fc18e5f420753`, matching its published sidecar and GitHub asset digest.
 
 ## Evidence shipped with the installer
 
