@@ -179,15 +179,23 @@ class MainWindowTests(unittest.TestCase):
             self.app.processEvents()
             QTest.qWait(10)
 
+        def complete_update_check() -> None:
+            worker = window._update_check_worker
+            if worker is None:
+                raise AssertionError("Update check worker was not created.")
+            worker.result_ready.emit(check_for_update(__version__, "source"))
+            worker.finished.emit()
+
         with (
             patch(
                 "zomboid_mod_manager.ui.window_workers.check_for_update",
                 return_value=None,
             ) as check_for_update,
             patch(
-                "zomboid_mod_manager.ui.window_workers.installed_build_id",
-                return_value="source",
-            ),
+                "zomboid_mod_manager.ui.window_workers.UpdateCheckWorker.start",
+                autospec=True,
+                side_effect=complete_update_check,
+            ) as start_update_check,
             patch(
                 "zomboid_mod_manager.ui.window_updates.QMessageBox.information"
             ) as information,
@@ -200,16 +208,11 @@ class MainWindowTests(unittest.TestCase):
             while not window.update_button.isEnabled() and time.monotonic() < deadline:
                 self.app.processEvents()
                 QTest.qWait(10)
-            worker = window._update_check_worker
-            if worker is not None:
-                self.assertTrue(
-                    worker.wait(5000), "Update check worker should finish promptly."
-                )
-            self.app.processEvents()
 
         self.assertTrue(window.update_button.isEnabled())
         self.assertEqual(window.update_button.text(), "Check for Updates")
         self.assertIn("up to date", window.status.text().casefold())
+        start_update_check.assert_called_once()
         check_for_update.assert_called_once_with(__version__, "source")
         information.assert_called_once()
         warning.assert_not_called()
