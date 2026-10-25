@@ -1,5 +1,12 @@
 # Progress
 
+## v0.3.0 hosted release verification (2026-10-25)
+
+- Pushed release commit `c75edc6cf2e066a04d5e378cbcbf5b9d2e8f1cfc` to `main`; annotated tag `v0.3.0` points to that commit. The [tagged Windows release workflow](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/40243082027) passed hosted tests/lint, app and installer builds, upgrade from v0.2.6, standard/portable install smoke, provenance attestation, and release publication.
+- The [v0.3.0 stable release](https://github.com/LookImEcho-Rick/ZomboidSorter/releases/tag/v0.3.0) contains `ZomboidSorter-windows-setup.exe` (121,127,331 bytes; SHA-256 `340815b0e8639857eb009c78405dd5b7ce1e925ba28a6af87047a1aee944ae7e`). Its downloaded checksum sidecar matches GitHub's installer asset digest.
+- The [rolling update workflow](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/40243074504) passed tests/lint, packaged install/launch smoke, installer checksum and manifest checks, provenance attestation, and the v0.2.6 app's in-app update through verified relaunch and data preservation. The rolling installer is 121,126,542 bytes with SHA-256 `18c92b415412ce26425d37ac9ac6208519ee9a8f57410a48b93ee16709cf5fd6`; the sidecar matches the manifest, which identifies version `0.3.0` and the release commit above. The `rolling` tag points to that commit.
+- Hosted installer build, install/upgrade, and update checks passed; feature-specific packaged collection deployment and local Workshop installation, Windows 10, manual second-PC behavior, and Build 42 gameplay remain unverified.
+
 ## Version 0.3.0 release preparation (2026-10-25)
 
 - Version 0.3.0 combines subscription-free Workshop collection browsing/import with shared exact-content storage and guarded load-time deployment, plus individual anonymous Workshop installs into the configured local-mod folder. Existing user and Steam mod folders are protected. SteamCMD is fetched from Valve and Authenticode-verified on first use; it is not bundled. No Python runtime dependency, Qt module, or installer notice inventory changed, so the existing redistribution review and source offer still apply.
