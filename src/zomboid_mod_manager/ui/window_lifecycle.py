@@ -31,6 +31,29 @@ def fit_window_geometry(
 
 
 class WindowLifecycleMixin:
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if getattr(self, "_workshop_preload_scheduled", False):
+            return
+        self._workshop_preload_scheduled = True
+        if QApplication.platformName().casefold() == "offscreen":
+            return
+        # Give the main window time to paint and let the library scan finish
+        # before starting Chromium's background process and Workshop request.
+        QTimer.singleShot(1200, self._preload_workshop_when_idle)
+
+    def _preload_workshop_when_idle(self) -> None:
+        if self._shutdown_requested or not self.isVisible() or self.isMinimized():
+            return
+        if self.main_tabs.currentWidget() is self.workshop_page:
+            self.workshop_page.open_home_if_needed()
+            return
+        worker = self._worker
+        if worker is not None and worker.isRunning():
+            QTimer.singleShot(1000, self._preload_workshop_when_idle)
+            return
+        self.workshop_page.preload_home()
+
     def _fit_window_to_available_screen(self) -> None:
         screen = self.screen() or QApplication.primaryScreen()
         if screen is None:
@@ -60,9 +83,12 @@ class WindowLifecycleMixin:
         self.available_intro.setVisible(roomy)
         self.active_intro.setVisible(roomy)
         compact = self.width() < 1160
+        self.metadata_build_label.setText(
+            "Build:" if compact else "Project Zomboid build:"
+        )
         self.revert_button.setText("Discard" if compact else "Discard Changes")
         self.apply_config_button.setText(
-            "Apply Global List…" if compact else "Apply To Project Zomboid…"
+            "Apply List…" if compact else "Apply To Project Zomboid…"
         )
         dirty = (
             self._active_config is not None

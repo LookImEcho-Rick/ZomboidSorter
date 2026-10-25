@@ -35,6 +35,7 @@ from zomboid_mod_manager.gameio.active_mods import (
 )
 from zomboid_mod_manager.ui.change_preview import format_ordered_list_change
 from zomboid_mod_manager.ui.global_backup_dialog import GlobalBackupDialog
+from zomboid_mod_manager.ui.preflight_dialog import PreflightReviewDialog
 
 
 class ActiveConfigurationMixin:
@@ -433,33 +434,8 @@ class ActiveConfigurationMixin:
         warnings = self._configuration_preflight_warnings()
         if not warnings:
             return True
-        shown = warnings[:40]
-        details = "\n".join(f"• {warning}" for warning in shown)
-        if len(warnings) > len(shown):
-            remaining = len(warnings) - len(shown)
-            issue_label = "issue" if remaining == 1 else "issues"
-            details += f"\n• …and {remaining} more {issue_label}"
-        action_title = "Apply" if action == "applying" else "Launch"
-        issue_label = "issue" if len(warnings) == 1 else "issues"
-        box = QMessageBox(
-            QMessageBox.Icon.Warning,
-            f"Review Before {action_title}",
-            f"We found {len(warnings)} possible {issue_label} in the active mod list.",
-            QMessageBox.StandardButton.NoButton,
-            self,
-        )
-        proceed = box.addButton(
-            f"Continue to {action_title}", QMessageBox.ButtonRole.AcceptRole
-        )
-        cancel = box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
-        box.setInformativeText(
-            "These checks compare your active list with installed mods and the requirements each mod lists. Review them before continuing."
-        )
-        box.setDetailedText(details)
-        box.setDefaultButton(cancel)
-        box.setEscapeButton(cancel)
-        box.exec()
-        return box.clickedButton() is proceed
+        dialog = PreflightReviewDialog(warnings, action, self)
+        return dialog.exec() == QDialog.DialogCode.Accepted
 
     def _launch_project_zomboid(self) -> None:
         snapshot = self._active_config

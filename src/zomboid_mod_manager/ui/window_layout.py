@@ -326,7 +326,8 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         self.preview_caption.setWordWrap(True)
         details_layout.addWidget(self.preview_caption)
         target_row = QHBoxLayout()
-        target_row.addWidget(QLabel("Project Zomboid build:"))
+        self.metadata_build_label = QLabel("Project Zomboid build:")
+        target_row.addWidget(self.metadata_build_label)
         self.metadata_preview_target = QComboBox()
         self.metadata_preview_target.addItem("All candidates", "all")
         self.metadata_preview_target.addItem("Build 41", "41")
@@ -543,6 +544,7 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
 
     def _on_main_tab_changed(self, index: int) -> None:
         page = self.main_tabs.widget(index)
+        self.workshop_page.set_tab_active(page is self.workshop_page)
         if page is self.workshop_page:
             self.workshop_page.open_home_if_needed()
             return

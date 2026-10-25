@@ -289,6 +289,7 @@ def resolve_collection_import(
     installed_ids: list[str] = []
     missing_ids = list(collection.unavailable_ids)
     mod_ids: list[str] = []
+    seen_mod_ids: set[str] = set()
     ambiguous: set[str] = set()
     for metadata in collection.items:
         item = installed_items.get(metadata.workshop_id)
@@ -302,7 +303,8 @@ def resolve_collection_import(
             if entries_by_id.get(entry.mod_id, 0) != 1:
                 ambiguous.add(entry.mod_id)
                 continue
-            if entry.mod_id not in mod_ids:
+            if entry.mod_id not in seen_mod_ids:
+                seen_mod_ids.add(entry.mod_id)
                 mod_ids.append(entry.mod_id)
 
     workshop_ids = tuple(

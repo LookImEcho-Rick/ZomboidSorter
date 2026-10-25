@@ -2,24 +2,47 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.parse import quote_plus
 
-from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QDesktopServices
-from PySide6.QtWebEngineWidgets import QWebEngineView
+from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtGui import QDesktopServices, QPalette
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QStackedLayout,
     QVBoxLayout,
     QWidget,
 )
 
+from zomboid_mod_manager.portable import app_data_directory
 from zomboid_mod_manager.workshop import parse_published_file_id
 
+if TYPE_CHECKING:
+    from PySide6.QtWebEngineCore import QWebEngineProfile
+    from PySide6.QtWebEngineWidgets import QWebEngineView
+
 _WORKSHOP_HOME = "https://steamcommunity.com/app/108600/workshop/"
+
+
+def _configure_persistent_profile(
+    profile: QWebEngineProfile, storage_root: Path
+) -> None:
+    from PySide6.QtWebEngineCore import QWebEngineProfile
+
+    storage_path = storage_root / "storage"
+    cache_path = storage_root / "cache"
+    storage_path.mkdir(parents=True, exist_ok=True)
+    cache_path.mkdir(parents=True, exist_ok=True)
+    profile.setPersistentStoragePath(str(storage_path))
+    profile.setCachePath(str(cache_path))
+    profile.setPersistentCookiesPolicy(
+        QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies
+    )
 
 
 class WorkshopBrowserPanel(QWidget):
@@ -28,7 +51,12 @@ class WorkshopBrowserPanel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.workshop_browser: QWebEngineView | None = None
+        self._browser_profile: QWebEngineProfile | None = None
         self._browser_loaded = False
+        self._browser_ready = False
+        self._tab_active = False
+        self._storage_error: str | None = None
+        self._storage_error_shown = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 10, 12, 10)
@@ -86,15 +114,17 @@ class WorkshopBrowserPanel(QWidget):
         self.open_workshop_external_button.clicked.connect(self.open_externally)
         search_row.addWidget(self.open_workshop_external_button)
         layout.addLayout(search_row)
-        browser_note = QLabel(
-            "Browse the Project Zomboid Workshop here. Refresh Mod Workspace after Steam installs or changes mods."
+        self.browser_note = QLabel(
+            "Steam's sign-in session is kept with ZomboidSorter's local app data "
+            "between launches. Use Steam's sign-out option to end the session. "
+            "Refresh Mod Workspace after Steam installs or changes mods."
         )
-        browser_note.setObjectName("secondaryText")
-        browser_note.setWordWrap(True)
-        layout.addWidget(browser_note)
+        self.browser_note.setObjectName("secondaryText")
+        self.browser_note.setWordWrap(True)
+        layout.addWidget(self.browser_note)
 
         self.workshop_browser_container = QWidget(self)
-        self.workshop_browser_layout = QVBoxLayout(self.workshop_browser_container)
+        self.workshop_browser_layout = QStackedLayout(self.workshop_browser_container)
         self.workshop_browser_layout.setContentsMargins(0, 0, 0, 0)
         self.workshop_browser_placeholder = QLabel(
             "Opening the Project Zomboid Steam Workshop…"
@@ -107,8 +137,54 @@ class WorkshopBrowserPanel(QWidget):
         if not self._browser_loaded:
             self.open_home()
 
+    def preload_home(self) -> None:
+        """Warm the first Workshop page while the user gets started elsewhere."""
+        if not self._browser_loaded:
+            self.open_home()
+
     def open_home(self) -> None:
         self._ensure_browser().setUrl(QUrl(_WORKSHOP_HOME))
+
+    def set_tab_active(self, active: bool) -> None:
+        self._tab_active = active
+        if active:
+            self._show_storage_warning()
+        self._sync_browser_lifecycle()
+        if not active:
+            # Let QTabWidget hide the view before asking Chromium to freeze it.
+            QTimer.singleShot(0, self._sync_browser_lifecycle)
+
+    def _show_storage_warning(self) -> None:
+        if self._storage_error is None or self._storage_error_shown:
+            return
+        self._storage_error_shown = True
+        QMessageBox.warning(
+            self,
+            "Steam session won't be remembered",
+            "ZomboidSorter could not prepare local Workshop browser storage. "
+            "Steam's sign-in may not carry over to the next launch.\n\n"
+            f"{self._storage_error}",
+        )
+
+    def _sync_browser_lifecycle(self, *_args) -> None:
+        browser = self.workshop_browser
+        if browser is None:
+            return
+        from PySide6.QtWebEngineCore import QWebEnginePage
+
+        page = browser.page()
+        if self._tab_active:
+            desired_state = QWebEnginePage.LifecycleState.Active
+        else:
+            if browser.isVisible():
+                return
+            # Keep the hidden page responsive to instant tab switches, but only
+            # freeze it when Chromium says it is safe to lower its CPU use.
+            if page.recommendedState() == QWebEnginePage.LifecycleState.Active:
+                return
+            desired_state = QWebEnginePage.LifecycleState.Frozen
+        if page.lifecycleState() != desired_state:
+            page.setLifecycleState(desired_state)
 
     def open_externally(self) -> None:
         url = self.workshop_browser.url() if self.workshop_browser else QUrl()
@@ -118,15 +194,68 @@ class WorkshopBrowserPanel(QWidget):
 
     def _ensure_browser(self) -> QWebEngineView:
         if self.workshop_browser is None:
-            self.workshop_browser_layout.removeWidget(self.workshop_browser_placeholder)
-            self.workshop_browser_placeholder.hide()
-            self.workshop_browser_placeholder.deleteLater()
+            from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
+            from PySide6.QtWebEngineWidgets import QWebEngineView
+
+            try:
+                self._browser_profile = QWebEngineProfile(
+                    "zomboid-sorter-workshop", self
+                )
+                _configure_persistent_profile(
+                    self._browser_profile,
+                    app_data_directory() / "workshop-browser",
+                )
+            except OSError as exc:
+                self._browser_profile = None
+                self.browser_note.setText(
+                    "Local browser storage could not be prepared, so Steam's sign-in "
+                    "may not carry over to the next launch."
+                )
+                self.browser_note.setToolTip(str(exc))
+                self._storage_error = str(exc)
             self.workshop_browser = QWebEngineView(self.workshop_browser_container)
             self.workshop_browser.setAccessibleName("Steam Project Zomboid Workshop")
+            if self._browser_profile is not None:
+                page = QWebEnginePage(self._browser_profile, self.workshop_browser)
+                self.workshop_browser.setPage(page)
+            page = self.workshop_browser.page()
+            page.setBackgroundColor(self.palette().color(QPalette.ColorRole.Window))
+            page.recommendedStateChanged.connect(self._sync_browser_lifecycle)
             self.workshop_browser.urlChanged.connect(self._sync_location)
+            self.workshop_browser.loadStarted.connect(self._browser_load_started)
+            self.workshop_browser.loadFinished.connect(self._browser_load_finished)
             self.workshop_browser_layout.addWidget(self.workshop_browser)
+            self.workshop_browser_layout.setCurrentWidget(
+                self.workshop_browser_placeholder
+            )
+            self._sync_browser_lifecycle()
         self._browser_loaded = True
         return self.workshop_browser
+
+    def _browser_load_started(self) -> None:
+        if self._browser_ready:
+            return
+        self.workshop_browser_placeholder.setText(
+            "Connecting to the Project Zomboid Steam Workshop…"
+        )
+        self.workshop_browser_layout.setCurrentWidget(self.workshop_browser_placeholder)
+
+    def _browser_load_finished(self, succeeded: bool) -> None:
+        browser = self.workshop_browser
+        if browser is None:
+            return
+        if succeeded:
+            self._browser_ready = True
+            self.workshop_browser_layout.setCurrentWidget(browser)
+        else:
+            self.workshop_browser_placeholder.setText(
+                "Steam Workshop couldn't be loaded. Check your connection, then "
+                "select Reload to try again."
+            )
+            self.workshop_browser_layout.setCurrentWidget(
+                self.workshop_browser_placeholder
+            )
+        self._sync_browser_lifecycle()
 
     def _sync_location(self, url: QUrl) -> None:
         self.workshop_search.setText(url.toString())

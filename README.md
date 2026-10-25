@@ -97,7 +97,7 @@ The attestation ties the exact installer to the repository workflow. It does not
 
 ## Your data and backups
 
-Standard installs keep Mod Packs under `%APPDATA%\ProjectZomboidModManager\profiles\` and settings in the current user's Qt registry key. Portable installs keep both in `data\` beside the app; choose **Portable installation** during setup and use a writable folder.
+Standard installs keep Mod Packs under `%APPDATA%\ProjectZomboidModManager\profiles\` and settings in the current user's Qt registry key. Portable installs keep both in `data\` beside the app; choose **Portable installation** during setup and use a writable folder. The embedded Workshop browser stores Steam's sign-in session and browser cache in `workshop-browser\` under that same app data root. Use Steam's sign-out option in the embedded browser to end the saved session; Steam may still ask you to sign in again when it expires.
 
 Global-list backups sit beside `default.txt` as `default.txt.bak-<timestamp>`. **Restore Backup…** in Paths & Settings lists them newest first and previews a selection before the restore confirmation. Before apply or launch, preflight checks the active list against the scanned library and its declared dependencies; findings are advisory and can be reviewed before continuing. Replaced or deleted Mod Packs have recoverable copies in the pack store.
 

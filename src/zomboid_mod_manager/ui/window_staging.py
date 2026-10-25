@@ -80,20 +80,11 @@ class StagingMixin:
 
     @staticmethod
     def _actionable_items(widget: QListWidget) -> list[QListWidgetItem]:
-        items = [
+        return [
             item
             for item in widget.selectedItems()
             if not item.isHidden() and item.flags() & Qt.ItemFlag.ItemIsEnabled
         ]
-        current = widget.currentItem()
-        if (
-            not items
-            and current is not None
-            and not current.isHidden()
-            and current.flags() & Qt.ItemFlag.ItemIsEnabled
-        ):
-            items = [current]
-        return items
 
     def _selected_active_rows(self) -> set[int]:
         return {
@@ -118,9 +109,11 @@ class StagingMixin:
         items = self._actionable_items(widget)
         if items:
             if widget is self.available_list:
-                menu.addAction("Enable selected", self._stage_activate)
+                menu.addAction("Add selected to Active Order", self._stage_activate)
             else:
-                menu.addAction("Disable selected", self._stage_deactivate)
+                menu.addAction(
+                    "Remove selected from Active Order", self._stage_deactivate
+                )
             if len(items) == 1:
                 mod_id = items[0].data(Qt.ItemDataRole.UserRole)
                 matches = [
@@ -175,6 +168,14 @@ class StagingMixin:
             for item in sorted(items, key=self.available_list.row)
             if item is not None
         ]
+        self._add_mod_ids(mod_ids)
+
+    def _stage_activate_item(self, item: QListWidgetItem) -> None:
+        if item.isHidden() or not item.flags() & Qt.ItemFlag.ItemIsEnabled:
+            return
+        self._add_mod_ids([item.data(Qt.ItemDataRole.UserRole)])
+
+    def _add_mod_ids(self, mod_ids: list[str]) -> None:
         additions = [
             mod_id
             for mod_id in mod_ids
@@ -184,17 +185,35 @@ class StagingMixin:
             self._staged_mod_ids.extend(additions)
             self._refresh_management_lists()
             self._update_apply_enabled()
+            count = len(additions)
+            self.configuration_status.setText(
+                f"Added {count} {'mod' if count == 1 else 'mods'} to Active Order. "
+                "Apply to save the change to Project Zomboid."
+            )
 
     def _stage_deactivate(self) -> None:
         items = self._actionable_items(self.active_list)
         removed = {
             item.data(Qt.ItemDataRole.UserRole) for item in items if item is not None
         }
+        self._remove_mod_ids(removed)
+
+    def _stage_deactivate_item(self, item: QListWidgetItem) -> None:
+        if item.isHidden() or not item.flags() & Qt.ItemFlag.ItemIsEnabled:
+            return
+        self._remove_mod_ids({item.data(Qt.ItemDataRole.UserRole)})
+
+    def _remove_mod_ids(self, removed: set[str]) -> None:
         remaining = [mod_id for mod_id in self._staged_mod_ids if mod_id not in removed]
         if remaining != self._staged_mod_ids:
+            count = len(self._staged_mod_ids) - len(remaining)
             self._staged_mod_ids = remaining
             self._refresh_management_lists()
             self._update_apply_enabled()
+            self.configuration_status.setText(
+                f"Removed {count} {'mod' if count == 1 else 'mods'} from Active Order. "
+                "Installed mod files are unchanged; apply to save the game list."
+            )
 
     def _handle_mod_list_drop(
         self,

@@ -370,7 +370,7 @@ class LibraryMixin:
         self.active_list.empty_text = (
             "No active mods match this search or filter"
             if query or mode != "All active"
-            else "No active Mod IDs in the global list"
+            else "Active Order is empty. Choose mods in Discover, then select Add."
         )
         self.active_list.viewport().update()
         unfiltered = not query.strip() and self.active_filter.currentIndex() == 0
@@ -382,13 +382,13 @@ class LibraryMixin:
         active = self._actionable_items(self.active_list)
         self.activate_button.setEnabled(bool(available))
         self.deactivate_button.setEnabled(bool(active))
-        self.select_filtered_button.setEnabled(
-            any(
-                not self.available_list.item(row).isHidden()
-                and self.available_list.item(row).flags() & Qt.ItemFlag.ItemIsEnabled
-                for row in range(self.available_list.count())
-            )
+        selectable_count = sum(
+            not self.available_list.item(row).isHidden()
+            and bool(self.available_list.item(row).flags() & Qt.ItemFlag.ItemIsEnabled)
+            for row in range(self.available_list.count())
         )
+        self.select_filtered_button.setEnabled(selectable_count > 0)
+        self.select_filtered_button.setText(f"Select {selectable_count}")
         selected_rows = self._selected_active_rows()
         unfiltered = (
             not self.active_search.text().strip()

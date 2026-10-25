@@ -16,6 +16,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QModelIndex, QPoint, QRect, QSettings, QSize, Qt, QUrl
 from PySide6.QtGui import QColor, QImage, QMovie
 from PySide6.QtTest import QTest
+from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -47,7 +48,10 @@ from zomboid_mod_manager.ui.mod_packs_dialog import ModPacksDialog
 from zomboid_mod_manager.ui.support_report_dialog import SupportReportDialog
 from zomboid_mod_manager.ui.window_lifecycle import fit_window_geometry
 from zomboid_mod_manager.ui.window_widgets import ISSUE_ROLE, PreviewLabel
-from zomboid_mod_manager.ui.workshop_browser import WorkshopBrowserPanel
+from zomboid_mod_manager.ui.workshop_browser import (
+    WorkshopBrowserPanel,
+    _configure_persistent_profile,
+)
 from zomboid_mod_manager.ui.workshop_dialog import WorkshopCollectionDialog
 from zomboid_mod_manager.updates import UpdateOutcome, UpdateRelease
 from zomboid_mod_manager.workshop import (
@@ -322,6 +326,101 @@ class MainWindowTests(unittest.TestCase):
             panel.workshop_search.placeholderText(),
             "Search Workshop, or enter a page URL / item ID",
         )
+        self.assertIs(
+            panel.workshop_browser_layout.currentWidget(),
+            panel.workshop_browser_placeholder,
+        )
+
+    def test_workshop_browser_preloads_home_once(self) -> None:
+        panel = WorkshopBrowserPanel()
+        self.addCleanup(panel.deleteLater)
+        browser = Mock()
+
+        def ensure_browser():
+            panel._browser_loaded = True
+            return browser
+
+        with patch.object(panel, "_ensure_browser", side_effect=ensure_browser):
+            panel.preload_home()
+            panel.preload_home()
+
+        browser.setUrl.assert_called_once_with(
+            QUrl("https://steamcommunity.com/app/108600/workshop/")
+        )
+
+    def test_workshop_browser_loading_surface_hides_white_renderer_until_ready(
+        self,
+    ) -> None:
+        panel = WorkshopBrowserPanel()
+        self.addCleanup(panel.deleteLater)
+        page = Mock()
+        page.recommendedState.return_value = QWebEnginePage.LifecycleState.Active
+
+        class FakeBrowser(QWidget):
+            def page(self):
+                return page
+
+        browser = FakeBrowser(panel.workshop_browser_container)
+        panel.workshop_browser = browser
+        panel.workshop_browser_layout.addWidget(browser)
+
+        panel._browser_load_started()
+        self.assertIs(
+            panel.workshop_browser_layout.currentWidget(),
+            panel.workshop_browser_placeholder,
+        )
+        self.assertIn("Connecting", panel.workshop_browser_placeholder.text())
+
+        panel._browser_load_finished(True)
+        self.assertIs(panel.workshop_browser_layout.currentWidget(), browser)
+
+    def test_hidden_workshop_browser_freezes_when_chromium_recommends_it(self) -> None:
+        panel = WorkshopBrowserPanel()
+        self.addCleanup(panel.deleteLater)
+        browser = Mock()
+        browser.isVisible.return_value = False
+        page = Mock()
+        page.lifecycleState.return_value = QWebEnginePage.LifecycleState.Active
+        page.recommendedState.return_value = QWebEnginePage.LifecycleState.Frozen
+        browser.page.return_value = page
+        panel.workshop_browser = browser
+
+        panel._sync_browser_lifecycle()
+
+        page.setLifecycleState.assert_called_once_with(
+            QWebEnginePage.LifecycleState.Frozen
+        )
+
+    def test_active_workshop_browser_resumes_after_hidden_tab(self) -> None:
+        panel = WorkshopBrowserPanel()
+        self.addCleanup(panel.deleteLater)
+        browser = Mock()
+        page = Mock()
+        page.lifecycleState.return_value = QWebEnginePage.LifecycleState.Frozen
+        browser.page.return_value = page
+        panel.workshop_browser = browser
+
+        panel.set_tab_active(True)
+
+        page.setLifecycleState.assert_called_once_with(
+            QWebEnginePage.LifecycleState.Active
+        )
+
+    def test_workshop_browser_profile_persists_session_cookies(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            storage_root = Path(temporary) / "workshop-browser"
+            profile = Mock()
+            _configure_persistent_profile(profile, storage_root)
+
+            self.assertTrue((storage_root / "storage").is_dir())
+            self.assertTrue((storage_root / "cache").is_dir())
+            profile.setPersistentStoragePath.assert_called_once_with(
+                str(storage_root / "storage")
+            )
+            profile.setCachePath.assert_called_once_with(str(storage_root / "cache"))
+            profile.setPersistentCookiesPolicy.assert_called_once_with(
+                QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies
+            )
 
     def test_workshop_browser_panel_routes_item_ids_and_searches(self) -> None:
         panel = WorkshopBrowserPanel()
@@ -554,12 +653,37 @@ class MainWindowTests(unittest.TestCase):
         window.available_list.setCurrentItem(item)
         self.assertIn(item.text(), item.toolTip())
         self.assertIn("Mod ID: RepeatedDescription", window.details.toPlainText())
+        staged_before_double_click = tuple(window._staged_mod_ids)
+        other_available = next(
+            window.available_list.item(i)
+            for i in range(window.available_list.count())
+            if window.available_list.item(i) is not item
+            and window.available_list.item(i).flags() & Qt.ItemFlag.ItemIsEnabled
+        )
+        other_available_id = other_available.data(Qt.ItemDataRole.UserRole)
+        other_available.setSelected(True)
+        item.setSelected(True)
+        window.available_list.itemDoubleClicked.emit(item)
+        self.assertEqual(
+            tuple(window._staged_mod_ids),
+            (*staged_before_double_click, "RepeatedDescription"),
+        )
+        self.assertNotIn(other_available_id, window._staged_mod_ids)
+        active_item = window.active_list.item(0)
+        active_mod_id = active_item.data(Qt.ItemDataRole.UserRole)
+        window.active_list.item(1).setSelected(True)
+        active_item.setSelected(True)
+        window.active_list.itemDoubleClicked.emit(active_item)
+        self.assertNotIn(active_mod_id, window._staged_mod_ids)
+        self.assertIn("RepeatedDescription", window._staged_mod_ids)
+        self.assertEqual(window.select_filtered_button.text(), "Select 3")
         self.assertTrue(window.open_workshop_button.isEnabled())
         window.manage_search.setText("not present in these fixtures")
         self.app.processEvents()
         self.assertEqual(window.available_list.visible_count, 0)
         self.assertIn("No mods match", window.available_list.empty_text)
-        self.assertIn("0 of 5", window.inactive_heading.text())
+        self.assertIn("0 of 4", window.inactive_heading.text())
+        self.assertEqual(window.select_filtered_button.text(), "Select 0")
         self.assertFalse(window.select_filtered_button.isEnabled())
         self.assertFalse(window.activate_button.isEnabled())
         self._wait_for_background_workers(window)
@@ -736,7 +860,14 @@ class MainWindowTests(unittest.TestCase):
             self.assertIs(QApplication.focusWidget(), window.review_active_order_button)
 
             self.assertEqual(window.launch_game_button.text(), "Launch Game")
-            self.assertEqual(window.apply_config_button.text(), "Apply Global List…")
+            self.assertEqual(window.apply_config_button.text(), "Apply List…")
+            self.assertGreaterEqual(
+                window.select_filtered_button.width(),
+                window.select_filtered_button.fontMetrics().horizontalAdvance(
+                    window.select_filtered_button.text()
+                )
+                + 12,
+            )
             self.assertEqual(window.detail_tabs.count(), 2)
             self.assertFalse(window.workflow_hint.isVisible())
             self.assertTrue(window.review_active_order_button.isVisible())
@@ -1072,6 +1203,133 @@ class MainWindowTests(unittest.TestCase):
         self.assertFalse(window.apply_config_button.isEnabled())
         window.close()
 
+    def test_mod_pack_keeps_previous_staging_when_replaced_or_cancelled(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        window, config_path = self._make_launch_window(
+            Path(temporary.name), mods=("Original",)
+        )
+        self._wait_for_background_workers(window)
+        window._staged_mod_ids = ["Unfinished"]
+        window._profile_workshop_ids = ("12345",)
+        window._update_apply_enabled()
+        profile = ModProfile("New Pack", ("PackMod",))
+
+        with patch(
+            "zomboid_mod_manager.ui.window_profiles.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.No,
+        ):
+            window._apply_mod_pack(profile)
+        self.assertEqual(window._staged_mod_ids, ["Unfinished"])
+        self.assertEqual(window._profile_workshop_ids, ("12345",))
+
+        with (
+            patch(
+                "zomboid_mod_manager.ui.window_profiles.QMessageBox.question",
+                return_value=QMessageBox.StandardButton.Yes,
+            ),
+            patch.object(
+                window, "_confirm_configuration_preflight", return_value=False
+            ),
+        ):
+            window._apply_mod_pack(profile)
+        self.assertEqual(window._staged_mod_ids, ["Unfinished"])
+        self.assertEqual(window._profile_workshop_ids, ("12345",))
+        self.assertTrue(window.apply_config_button.isEnabled())
+        self.assertEqual(read_active_mods(config_path).config.mods, ("Original",))
+
+    def test_mod_pack_does_not_claim_failed_verification_rolled_back_write(
+        self,
+    ) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        window, config_path = self._make_launch_window(
+            Path(temporary.name), mods=("Original",)
+        )
+        self._wait_for_background_workers(window)
+        window._staged_mod_ids = ["Unfinished"]
+        profile = ModProfile("New Pack", ("PackMod",))
+
+        def failed_reload(*, force: bool) -> None:
+            self.assertTrue(force)
+            window._active_config = None
+            window._staged_mod_ids = []
+
+        with (
+            patch(
+                "zomboid_mod_manager.ui.window_profiles.QMessageBox.question",
+                return_value=QMessageBox.StandardButton.Yes,
+            ),
+            patch.object(window, "_confirm_configuration_preflight", return_value=True),
+            patch.object(
+                window, "_load_active_configuration_impl", side_effect=failed_reload
+            ),
+            patch("zomboid_mod_manager.ui.window_configuration.QMessageBox.warning"),
+        ):
+            window._apply_mod_pack(profile)
+
+        self.assertEqual(read_active_mods(config_path).config.mods, ("PackMod",))
+        self.assertIsNone(window._active_config)
+        self.assertEqual(window._staged_mod_ids, [])
+        self.assertIn("Could not verify", window.configuration_status.text())
+        self.assertIn("Reload", window.configuration_status.text())
+        window.close()
+
+    def test_clearing_list_selection_disables_staging_actions(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        window, _config_path = self._make_launch_window(
+            Path(temporary.name), mods=("LegacyWorkshop",)
+        )
+        self._wait_for_background_workers(window)
+        window.active_list.setCurrentRow(0)
+        window.active_list.clearSelection()
+        self.assertFalse(window.deactivate_button.isEnabled())
+        before = list(window._staged_mod_ids)
+        window._stage_deactivate()
+        self.assertEqual(window._staged_mod_ids, before)
+
+        window.available_list.setCurrentRow(0)
+        window.available_list.clearSelection()
+        self.assertFalse(window.activate_button.isEnabled())
+        window._stage_activate()
+        self.assertEqual(window._staged_mod_ids, before)
+
+        window.active_list.setCurrentRow(0)
+        window.active_list.item(0).setSelected(True)
+        window._stage_deactivate()
+        self.assertEqual(window._staged_mod_ids, [])
+        self.assertIn("Removed 1 mod", window.configuration_status.text())
+        self.assertIn("Choose mods in Discover", window.active_list.empty_text)
+
+    def test_compact_workspace_keeps_build_and_apply_labels_readable(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        window, _config_path = self._make_launch_window(Path(temporary.name))
+        window.resize(980, 680)
+        window.show()
+        self.app.processEvents()
+        self.assertEqual(window.metadata_build_label.text(), "Build:")
+        self.assertEqual(window.apply_config_button.text(), "Apply List…")
+        self.assertIn(
+            "global list", window.apply_config_button.accessibleName().lower()
+        )
+        window.resize(1280, 760)
+        self.app.processEvents()
+        self.assertEqual(window.metadata_build_label.text(), "Project Zomboid build:")
+
+    def test_remove_feedback_counts_duplicate_active_rows(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        window, _config_path = self._make_launch_window(Path(temporary.name))
+        self._wait_for_background_workers(window)
+        window._staged_mod_ids = ["Repeated", "Repeated"]
+        window._refresh_management_lists()
+        window.active_list.item(0).setSelected(True)
+        window._stage_deactivate()
+        self.assertEqual(window._staged_mod_ids, [])
+        self.assertIn("Removed 2 mods", window.configuration_status.text())
+
     def test_map_aware_mod_pack_confirms_and_applies_global_map_list(self) -> None:
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -1165,6 +1423,7 @@ class MainWindowTests(unittest.TestCase):
         ]
         self.assertEqual(len(visible), 1)
         self.assertEqual(visible[0].data(Qt.ItemDataRole.UserRole), "LegacyWorkshop")
+        self.assertEqual(window.select_filtered_button.text(), "Select 1")
         window.available_list.setCurrentItem(visible[0])
         menu = window._build_list_context_menu(window.available_list)
         actions = {action.text(): action for action in menu.actions()}
@@ -1186,7 +1445,7 @@ class MainWindowTests(unittest.TestCase):
                 if entry.mod_id == "LegacyWorkshop"
             ),
         )
-        actions["Enable selected"].trigger()
+        actions["Add selected to Active Order"].trigger()
         self.assertIn("LegacyWorkshop", window._staged_mod_ids)
         self.assertEqual(window.active_list.count(), 3)
         window.active_search.setText("LegacyWorkshop")
@@ -1828,11 +2087,11 @@ class MainWindowTests(unittest.TestCase):
             window.diagnostics.textCursor().block().text(),
         )
 
-        dialogs: list[QMessageBox] = []
+        dialogs = []
 
-        def capture_dialog(dialog: QMessageBox) -> int:
+        def cancel_review(dialog) -> int:
             dialogs.append(dialog)
-            return 0
+            return QDialog.DialogCode.Rejected
 
         with (
             patch.object(
@@ -1841,13 +2100,15 @@ class MainWindowTests(unittest.TestCase):
                 return_value=("Missing mod",),
             ),
             patch(
-                "zomboid_mod_manager.ui.window_configuration.QMessageBox.exec",
-                capture_dialog,
+                "zomboid_mod_manager.ui.window_configuration.PreflightReviewDialog.exec",
+                cancel_review,
             ),
         ):
-            window._confirm_configuration_preflight("applying")
-        self.assertIn("1 possible issue", dialogs[-1].text())
-        self.assertIn("requirements each mod lists", dialogs[-1].informativeText())
+            self.assertFalse(window._confirm_configuration_preflight("applying"))
+        self.assertIn("1 possible issue", dialogs[-1].findChild(QLabel).text())
+        self.assertIn("Missing mod", dialogs[-1].findings.toPlainText())
+        self.assertTrue(dialogs[-1].cancel_button.isDefault())
+        self.assertEqual(dialogs[-1].continue_button.text(), "Review Changes…")
 
         warnings = tuple(f"Warning {number}" for number in range(41))
         with (
@@ -1855,13 +2116,26 @@ class MainWindowTests(unittest.TestCase):
                 window, "_configuration_preflight_warnings", return_value=warnings
             ),
             patch(
-                "zomboid_mod_manager.ui.window_configuration.QMessageBox.exec",
-                capture_dialog,
+                "zomboid_mod_manager.ui.window_configuration.PreflightReviewDialog.exec",
+                cancel_review,
             ),
         ):
-            window._confirm_configuration_preflight("applying")
-        self.assertIn("41 possible issues", dialogs[-1].text())
-        self.assertIn("…and 1 more issue", dialogs[-1].detailedText())
+            self.assertFalse(window._confirm_configuration_preflight("launching"))
+        self.assertIn("41 possible issues", dialogs[-1].findChild(QLabel).text())
+        self.assertIn("1. Warning 0", dialogs[-1].findings.toPlainText())
+        self.assertIn("41. Warning 40", dialogs[-1].findings.toPlainText())
+        self.assertEqual(dialogs[-1].continue_button.text(), "Continue to Launch")
+
+        with (
+            patch.object(
+                window, "_configuration_preflight_warnings", return_value=warnings
+            ),
+            patch(
+                "zomboid_mod_manager.ui.window_configuration.PreflightReviewDialog.exec",
+                return_value=QDialog.DialogCode.Accepted,
+            ),
+        ):
+            self.assertTrue(window._confirm_configuration_preflight("applying"))
         window.close()
 
     def test_active_order_does_not_look_clear_before_first_scan(self) -> None:

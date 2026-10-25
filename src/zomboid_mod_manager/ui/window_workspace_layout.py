@@ -187,7 +187,9 @@ class WorkspaceLayoutMixin:
         self.available_list = StagingModListWidget()
         self.available_list.empty_text = "Scanning installed mods…"
         self.available_list.setAccessibleName("Inactive mods")
-        self.available_list.setToolTip("Drag selected mods to Active to enable them.")
+        self.available_list.setToolTip(
+            "Select a mod to inspect it. Double-click or drag it to Active Order to add it."
+        )
         self.available_list.setTextElideMode(Qt.TextElideMode.ElideRight)
         self.available_list.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
@@ -195,9 +197,7 @@ class WorkspaceLayoutMixin:
         self.available_list.setSelectionMode(
             QListWidget.SelectionMode.ExtendedSelection
         )
-        self.available_list.itemDoubleClicked.connect(
-            lambda _item: self._stage_activate()
-        )
+        self.available_list.itemDoubleClicked.connect(self._stage_activate_item)
         self.available_list.items_dropped.connect(
             lambda source, mod_ids, row: self._handle_mod_list_drop(
                 source, self.available_list, mod_ids, row
@@ -210,8 +210,12 @@ class WorkspaceLayoutMixin:
             lambda point: self._show_list_context_menu(self.available_list, point)
         )
         available_column.addWidget(self.available_list, 1)
-        self.select_filtered_button = QPushButton("Select Filtered")
+        self.select_filtered_button = QPushButton("Select")
         self.select_filtered_button.setObjectName("subtleAction")
+        self.select_filtered_button.setAccessibleName("Select all shown Discover mods")
+        self.select_filtered_button.setToolTip(
+            "Select every mod currently shown in Discover. Use Add to stage them."
+        )
         self.select_filtered_button.clicked.connect(self._select_filtered_available)
         available_actions = QHBoxLayout()
         available_actions.addWidget(self.select_filtered_button)
@@ -280,10 +284,12 @@ class WorkspaceLayoutMixin:
         )
         active_column.addWidget(self.active_filter)
         self.active_list = OrderedModListWidget()
-        self.active_list.empty_text = "No active Mod IDs in the global list"
+        self.active_list.empty_text = (
+            "Active Order is empty. Choose mods in Discover, then select Add."
+        )
         self.active_list.setAccessibleName("Active mods in global default order")
         self.active_list.setToolTip(
-            "Drag selected mods to Inactive to disable them. Drag within this list to reorder."
+            "Select a mod to inspect it. Double-click or drag it to Discover to remove it; drag within this list to reorder."
         )
         self.active_list.setTextElideMode(Qt.TextElideMode.ElideRight)
         self.active_list.setHorizontalScrollBarPolicy(
@@ -297,9 +303,7 @@ class WorkspaceLayoutMixin:
             ),
             Qt.ConnectionType.QueuedConnection,
         )
-        self.active_list.itemDoubleClicked.connect(
-            lambda _item: self._stage_deactivate()
-        )
+        self.active_list.itemDoubleClicked.connect(self._stage_deactivate_item)
         self.active_list.currentItemChanged.connect(self._show_management_item)
         self.active_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.active_list.customContextMenuRequested.connect(
@@ -386,6 +390,9 @@ class WorkspaceLayoutMixin:
         self.dirty_indicator.setObjectName("dirtyIndicator")
         utility_row.addWidget(self.dirty_indicator)
         self.apply_config_button = QPushButton("Apply To Project Zomboid…")
+        self.apply_config_button.setAccessibleName(
+            "Apply staged global list to Project Zomboid"
+        )
         self.apply_config_button.setObjectName("primaryAction")
         self.apply_config_button.setIcon(
             self.style().standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton)

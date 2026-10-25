@@ -1,7 +1,8 @@
-"""Portable-mode paths for the standalone Windows distribution."""
+"""App-owned data paths for standard and portable distributions."""
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -27,3 +28,17 @@ def portable_settings_path() -> Path | None:
     if data_directory is None:
         return None
     return data_directory / "settings.ini"
+
+
+def app_data_directory() -> Path:
+    """Return the app-owned data root for portable or standard installs."""
+    portable_data = portable_data_directory()
+    if portable_data is not None:
+        return portable_data
+    if os.name == "nt":
+        base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
+    elif os.name == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+    return base / "ProjectZomboidModManager"

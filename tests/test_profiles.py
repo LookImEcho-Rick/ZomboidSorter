@@ -5,7 +5,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from zomboid_mod_manager.portable import portable_data_directory, portable_settings_path
+from zomboid_mod_manager.portable import (
+    app_data_directory,
+    portable_data_directory,
+    portable_settings_path,
+)
 from zomboid_mod_manager.profiles import (
     ModProfile,
     ProfileError,
@@ -25,6 +29,7 @@ class ProfileTests(unittest.TestCase):
                 return_value=app_directory,
             ):
                 self.assertEqual(portable_data_directory(), app_directory / "data")
+                self.assertEqual(app_data_directory(), app_directory / "data")
                 self.assertEqual(
                     portable_settings_path(), app_directory / "data" / "settings.ini"
                 )

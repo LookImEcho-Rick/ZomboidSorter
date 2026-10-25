@@ -118,6 +118,23 @@ class ProfileActionsMixin:
             QMessageBox.warning(self, "Could not read global Mod List", str(exc))
             return
 
+        previous_mod_ids = list(self._staged_mod_ids)
+        previous_workshop_ids = self._profile_workshop_ids
+        if tuple(previous_mod_ids) != latest.config.mods:
+            answer = QMessageBox.question(
+                self,
+                "Replace staged changes?",
+                f"You have unapplied changes in Active Order. Applying Mod Pack '{profile.name}' "
+                "will replace those staged changes. Continue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                self.configuration_status.setText(
+                    "Mod Pack not applied; your staged changes are still here."
+                )
+                return
+
         desired_maps = (
             latest.config.maps if profile.map_ids is None else profile.map_ids
         )
@@ -141,7 +158,7 @@ class ProfileActionsMixin:
             )
             if answer != QMessageBox.StandardButton.Yes:
                 self.configuration_status.setText(
-                    f"Applying Mod Pack '{profile.name}' was cancelled; the game list was not changed."
+                    f"Mod Pack '{profile.name}' was not applied; your staged list and game list are unchanged."
                 )
                 return
 
@@ -167,6 +184,20 @@ class ProfileActionsMixin:
             self.status.setText(
                 f"Loaded and applied Mod Pack '{profile.name}' to the global mod list."
             )
+        else:
+            if self._active_config is latest:
+                self._staged_mod_ids = previous_mod_ids
+                self._profile_workshop_ids = previous_workshop_ids
+                self._refresh_management_lists()
+                self._update_apply_enabled()
+                self.configuration_status.setText(
+                    f"Mod Pack '{profile.name}' was not applied; your previous staged list was restored."
+                )
+            else:
+                self.configuration_status.setText(
+                    f"Could not verify Mod Pack '{profile.name}' after writing. "
+                    "Reload the global mod list and inspect it before applying again."
+                )
 
     def _browse_active_config(self) -> None:
         selected, _ = QFileDialog.getOpenFileName(
