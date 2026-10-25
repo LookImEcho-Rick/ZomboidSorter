@@ -434,6 +434,42 @@ def _scan_local_root(
     return entries
 
 
+def scan_workshop_item(
+    item_path: Path,
+    workshop_id: str,
+    *,
+    cancelled: Callable[[], bool] | None = None,
+) -> WorkshopItem:
+    """Read one item, including an explicitly selected shared collection object."""
+    diagnostics: list[Diagnostic] = []
+    _check_cancelled(cancelled)
+    if _is_link(item_path):
+        _report_link(item_path, diagnostics)
+        return WorkshopItem(workshop_id, item_path, (), tuple(diagnostics))
+    roots = _workshop_entry_roots(item_path, diagnostics, cancelled=cancelled)
+    if not roots:
+        diagnostics.append(
+            Diagnostic(
+                "Workshop item has no recognized mod.info or mod entry folder.",
+                item_path,
+            )
+        )
+    entries: list[ModEntry] = []
+    for root in roots:
+        metadata = _candidate_paths(root, diagnostics, cancelled=cancelled)
+        if not metadata:
+            diagnostics.append(
+                Diagnostic("Workshop mod entry has no recognized mod.info.", root)
+            )
+            continue
+        entries.extend(
+            _build_entries(
+                root, item_path, "workshop", workshop_id, metadata, cancelled=cancelled
+            )
+        )
+    return WorkshopItem(workshop_id, item_path, tuple(entries), tuple(diagnostics))
+
+
 def _scan_workshop_root(
     root: Path,
     diagnostics: list[Diagnostic],
@@ -475,54 +511,14 @@ def _scan_workshop_root(
             _report_progress(
                 progress, f"Scanning Workshop items: {scanned_items} checked"
             )
-        item_diags: list[Diagnostic] = []
         if _is_link(item_path):
             _report_link(item_path, diagnostics)
             continue
         if not item_path.is_dir():
             continue
-        entry_roots = _workshop_entry_roots(item_path, item_diags, cancelled=cancelled)
-        if not entry_roots:
-            item_diags.append(
-                Diagnostic(
-                    "Workshop item has no recognized mod.info or mod entry folder.",
-                    item_path,
-                )
-            )
-
-        entries: list[ModEntry] = []
-        for entry_root in entry_roots:
-            _check_cancelled(cancelled)
-            metadata_paths = _candidate_paths(
-                entry_root, item_diags, cancelled=cancelled
-            )
-            if not metadata_paths:
-                item_diags.append(
-                    Diagnostic(
-                        "Workshop mod entry has no recognized mod.info.", entry_root
-                    )
-                )
-                continue
-            entries.extend(
-                _build_entries(
-                    entry_root,
-                    item_path,
-                    "workshop",
-                    item_path.name,
-                    metadata_paths,
-                    cancelled=cancelled,
-                )
-            )
-
-        items.append(
-            WorkshopItem(
-                workshop_id=item_path.name,
-                path=item_path,
-                entries=tuple(entries),
-                diagnostics=tuple(item_diags),
-            )
-        )
-        diagnostics.extend(item_diags)
+        item = scan_workshop_item(item_path, item_path.name, cancelled=cancelled)
+        items.append(item)
+        diagnostics.extend(item.diagnostics)
     _report_progress(progress, f"Scanned {scanned_items} Workshop item folders")
     return items
 

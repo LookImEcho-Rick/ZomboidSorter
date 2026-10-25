@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlencode, urlparse
@@ -113,11 +114,22 @@ def _numeric_response_id(value: object) -> str | None:
     return text if _NUMERIC_ID.fullmatch(text) else None
 
 
+def _consumer_app_id(item: dict) -> int | None:
+    # RemoteStorage uses consumer_app_id; Steam's newer browse data uses consumer_appid.
+    try:
+        return int(item.get("consumer_app_id", item.get("consumer_appid")))
+    except TypeError, ValueError:
+        return None
+
+
 def fetch_collection(
     collection: str,
     *,
     timeout: float = 10.0,
     max_items: int = _MAX_COLLECTION_ITEMS,
+    _ancestors: tuple[str, ...] = (),
+    _visited: set[str] | None = None,
+    cancelled: Callable[[], bool] | None = None,
 ) -> WorkshopCollectionResult:
     """Fetch public collection children and PZ item metadata without subscribing.
 
@@ -125,6 +137,14 @@ def fetch_collection(
     are read-only and contain no account credentials or subscription actions.
     """
     collection_id = parse_published_file_id(collection)
+    if cancelled is not None and cancelled():
+        raise WorkshopApiError("Collection request cancelled.")
+    visited = _visited if _visited is not None else set()
+    if collection_id in _ancestors or len(_ancestors) >= 8 or len(visited) >= 40:
+        raise WorkshopApiError(
+            "Collection nesting contains a cycle or exceeds the safe traversal limit."
+        )
+    visited.add(collection_id)
     collection_data = _post_json(
         "https://api.steampowered.com/ISteamRemoteStorage/GetCollectionDetails/v1/",
         {"collectioncount": "1", "publishedfileids[0]": collection_id},
@@ -153,19 +173,27 @@ def fetch_collection(
 
     ordered_ids: list[str] = []
     child_ids: list[tuple[int, str]] = []
+    child_types: dict[str, int] = {}
     for child in children:
         if not isinstance(child, dict):
             continue
         item_id = _numeric_response_id(child.get("publishedfileid"))
-        if item_id is None or item_id == collection_id:
+        if item_id is None:
             continue
+        if item_id == collection_id:
+            raise WorkshopApiError(
+                "Collection contains itself; no partial import was returned."
+            )
+        child_types.setdefault(item_id, child.get("filetype", 0))
         try:
             order = int(child.get("sortorder", len(child_ids)))
         except TypeError, ValueError:
             order = len(child_ids)
         child_ids.append((order, item_id))
+    seen_ids: set[str] = set()
     for _order, item_id in sorted(child_ids):
-        if item_id not in ordered_ids:
+        if item_id not in seen_ids:
+            seen_ids.add(item_id)
             ordered_ids.append(item_id)
     if len(ordered_ids) > max_items:
         raise WorkshopApiError(
@@ -174,6 +202,8 @@ def fetch_collection(
 
     metadata: dict[str, dict] = {}
     for offset in range(0, len(ordered_ids), 100):
+        if cancelled is not None and cancelled():
+            raise WorkshopApiError("Collection request cancelled.")
         batch = ordered_ids[offset : offset + 100]
         fields = {"itemcount": str(len(batch))}
         fields.update(
@@ -201,15 +231,33 @@ def fetch_collection(
     foreign: list[str] = []
     for item_id in ordered_ids:
         item = metadata.get(item_id)
-        if item is None or item.get("result") != 1:
+        if item is None or item.get("result") != 1 or item.get("banned"):
             unavailable.append(item_id)
             continue
-        try:
-            consumer_app_id = int(item.get("consumer_appid"))
-        except TypeError, ValueError:
-            consumer_app_id = None
+        consumer_app_id = _consumer_app_id(item)
         if consumer_app_id != PZ_APP_ID:
             foreign.append(item_id)
+            continue
+        file_type = child_types.get(item_id) or item.get("file_type", 0)
+        if file_type == 2:
+            nested = fetch_collection(
+                item_id,
+                timeout=timeout,
+                max_items=max_items,
+                _ancestors=(*_ancestors, collection_id),
+                _visited=visited,
+                cancelled=cancelled,
+            )
+            items.extend(nested.items)
+            unavailable.extend(nested.unavailable_ids)
+            foreign.extend(nested.foreign_app_ids)
+            if len(items) + len(unavailable) > max_items:
+                raise WorkshopApiError(
+                    f"Expanded collection exceeds {max_items} items."
+                )
+            continue
+        if file_type != 0:
+            unavailable.append(item_id)
             continue
         try:
             updated_at = int(item.get("time_updated"))
@@ -225,11 +273,13 @@ def fetch_collection(
             )
         )
 
+    if len(items) + len(unavailable) > max_items:
+        raise WorkshopApiError(f"Expanded collection exceeds {max_items} items.")
     return WorkshopCollectionResult(
         collection_id=collection_id,
-        items=tuple(items),
-        unavailable_ids=tuple(unavailable),
-        foreign_app_ids=tuple(foreign),
+        items=tuple({item.workshop_id: item for item in items}.values()),
+        unavailable_ids=tuple(dict.fromkeys(unavailable)),
+        foreign_app_ids=tuple(dict.fromkeys(foreign)),
     )
 
 
@@ -257,10 +307,7 @@ def fetch_item_metadata(
     )
     if item is None or item.get("result") != 1:
         raise WorkshopApiError("This Workshop item is unavailable or not public.")
-    try:
-        consumer_app_id = int(item.get("consumer_appid"))
-    except TypeError, ValueError:
-        consumer_app_id = None
+    consumer_app_id = _consumer_app_id(item)
     if consumer_app_id is not None and consumer_app_id != PZ_APP_ID:
         raise WorkshopApiError("This Workshop item is not for Project Zomboid.")
     try:

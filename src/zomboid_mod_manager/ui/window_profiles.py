@@ -11,12 +11,17 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 
+from zomboid_mod_manager.collection_deployment import (
+    load_collection,
+)
+from zomboid_mod_manager.collection_store import CollectionStore
 from zomboid_mod_manager.configuration import (
     is_global_default_mod_list,
     load_active_configuration,
     read_unchanged_active_configuration,
 )
-from zomboid_mod_manager.domain import ModEntry
+from zomboid_mod_manager.discovery.scanner import scan_mods
+from zomboid_mod_manager.domain import ModEntry, ScanResult
 from zomboid_mod_manager.gameio.active_mods import (
     ActiveModConfigError,
     ConcurrentConfigChangeError,
@@ -25,7 +30,10 @@ from zomboid_mod_manager.profiles import (
     ModProfile,
     ProfileError,
 )
+from zomboid_mod_manager.steamcmd import SteamCmdDownloader
 from zomboid_mod_manager.ui.change_preview import format_ordered_list_change
+from zomboid_mod_manager.ui.collection_browser_dialog import CollectionBrowserDialog
+from zomboid_mod_manager.ui.collection_load_dialog import CollectionLoadDialog
 from zomboid_mod_manager.ui.mod_packs_dialog import ModPacksDialog
 from zomboid_mod_manager.ui.text import counted
 from zomboid_mod_manager.ui.workshop_dialog import WorkshopCollectionDialog
@@ -43,6 +51,7 @@ class ProfileActionsMixin:
             self._active_config.config.maps
             if self._active_config is not None
             else None,
+            getattr(self, "_loaded_collection_content", ()),
         )
         overwrite = False
         if profile.name in self._profile_store.list_names():
@@ -90,6 +99,16 @@ class ProfileActionsMixin:
             self._apply_mod_pack(dialog.selected_pack)
 
     def _apply_mod_pack(self, profile: ModProfile) -> None:
+        if self._active_config is not None and is_global_default_mod_list(
+            self._active_config.path
+        ):
+            index = (
+                self._active_config.path.parent.parent
+                / ".zomboidsorter-collections/active.json"
+            )
+            if profile.collection_content or index.exists():
+                self._load_collection_mod_pack(profile)
+                return
         snapshot = self._active_config
         if snapshot is None or not self._active_config_matches_selected_path():
             QMessageBox.warning(
@@ -289,21 +308,111 @@ class ProfileActionsMixin:
             for workshop_id in self._profile_workshop_ids
             if workshop_id not in installed_workshop_ids
         ]
-        return tuple(dict.fromkeys(known + retained))
+        cached = [
+            item.workshop_id for item in getattr(self, "_loaded_collection_content", ())
+        ]
+        return tuple(dict.fromkeys(known + retained + cached))
 
-    def _import_workshop_collection(self) -> None:
-        if self._last_result is None:
+    def _browse_workshop_mods(self) -> None:
+        from zomboid_mod_manager.local_install import install_local_mod
+
+        if self._worker is not None and self._worker.isRunning():
             QMessageBox.information(
                 self,
-                "Scan required",
-                "Scan the mod library before importing a collection so installed items can be resolved.",
+                "Library scan running",
+                "Wait for the library scan to finish before installing mods.",
             )
             return
-        dialog = WorkshopCollectionDialog(self._last_result, self)
-        dialog.collection_imported.connect(self._save_imported_collection_profile)
+        local_text = self.local_path.text().strip()
+        if not local_text or not Path(local_text).expanduser().is_dir():
+            QMessageBox.warning(
+                self,
+                "Local mods folder needed",
+                "Choose an existing local mods folder in Paths & Settings first.",
+            )
+            return
+        local_root = Path(local_text).expanduser().absolute()
+        private_root = (self._profile_store.root.parent / "collections").resolve()
+        if local_root.resolve().is_relative_to(private_root):
+            QMessageBox.warning(
+                self,
+                "Choose a local mods folder",
+                "The private collections cache cannot be used as the local mods folder.",
+            )
+            return
+        browser = CollectionBrowserDialog(self, mods=True)
+        if (
+            browser.exec() != QDialog.DialogCode.Accepted
+            or not browser.selected_collection
+        ):
+            return
+        selected = browser.selected_collection
+        if (
+            QMessageBox.question(
+                self,
+                "Install local mod",
+                f"Install '{selected.title}' into:\n{local_root}\n\nAll Mod IDs included in this Workshop item will stay installed across pack changes. Steam subscriptions and the active list will not change. Dependencies are not downloaded automatically.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            != QMessageBox.StandardButton.Yes
+        ):
+            return
+        local_roots, workshop_roots = self._selected_roots()
+        operation = lambda cancelled, progress: install_local_mod(
+            selected.workshop_id,
+            local_root,
+            SteamCmdDownloader(self._profile_store.root.parent / "tools/steamcmd"),
+            local_roots=local_roots,
+            workshop_roots=workshop_roots,
+            cancelled=cancelled,
+            progress=progress,
+        )
+        dialog = CollectionLoadDialog(
+            operation,
+            self,
+            title="Install Local Mod",
+            initial="Downloading and preparing local mods…",
+            stopping="Stopping local installation and restoring prepared files…",
+        )
         dialog.exec()
+        if dialog.error:
+            QMessageBox.warning(self, "Local installation stopped", dialog.error)
+        if dialog.result_data is not None:
+            self.status.setText(
+                f"Installed '{selected.title}' locally. Refreshing Available Mods…"
+            )
+            self._refresh_scan()
 
-    def _save_imported_collection_profile(self, profile: ModProfile) -> None:
+    def _browse_workshop_collections(self) -> None:
+        browser = CollectionBrowserDialog(self)
+        if (
+            browser.exec() == QDialog.DialogCode.Accepted
+            and browser.selected_collection
+        ):
+            selected = browser.selected_collection
+            self._import_workshop_collection(selected.workshop_id, selected.title)
+
+    def _import_workshop_collection(
+        self, collection_id: str = "", title: str = ""
+    ) -> None:
+        dialog = WorkshopCollectionDialog(
+            self._last_result or ScanResult((), (), ()),
+            self,
+            collection_id=collection_id,
+            title=title,
+            collection_store=CollectionStore(
+                self._profile_store.root.parent / "collections"
+            ),
+            downloader=SteamCmdDownloader(
+                self._profile_store.root.parent / "tools/steamcmd"
+            ),
+            save_profile=self._save_imported_collection_profile,
+        )
+        dialog.exec()
+        # Imports remain private: do not add cache roots to library discovery.
+
+    def _save_imported_collection_profile(self, profile: ModProfile) -> bool:
         overwrite = False
         if profile.name in self._profile_store.list_names():
             answer = QMessageBox.question(
@@ -314,17 +423,126 @@ class ProfileActionsMixin:
                 QMessageBox.StandardButton.No,
             )
             if answer != QMessageBox.StandardButton.Yes:
-                return
+                return False
             overwrite = True
         try:
             self._profile_store.save(profile, overwrite=overwrite)
         except ProfileError as exc:
             QMessageBox.warning(self, "Could not save collection Mod Pack", str(exc))
-            return
+            return False
         self.configuration_status.setText(
             f"Saved Workshop collection as Mod Pack '{profile.name}' with "
             f"{counted(len(profile.mod_ids), 'installed Mod ID')} and "
             f"{counted(len(profile.workshop_ids), 'Workshop item')}. "
-            "Open Mod Packs to apply it."
+            "Open Mod Packs to load its files and apply the global list."
         )
         self.status.setText(f"Saved Workshop collection as Mod Pack '{profile.name}'.")
+        self.collection_import_status.setText(
+            f"Saved '{profile.name}' with {counted(len(profile.mod_ids), 'Mod ID')}. "
+            "Open Mod Packs in Mod Workspace to load and apply it."
+        )
+        return True
+
+    def _load_collection_mod_pack(self, profile: ModProfile) -> None:
+        snapshot = self._active_config
+        if (
+            snapshot is None
+            or not self._active_config_matches_selected_path()
+            or not is_global_default_mod_list(snapshot.path)
+        ):
+            QMessageBox.warning(
+                self,
+                "Global Mod List Unavailable",
+                "Load the supported global Zomboid/mods/default.txt before loading collection files.",
+            )
+            return
+        if self._worker is not None and self._worker.isRunning():
+            QMessageBox.information(
+                self,
+                "Scan in Progress",
+                "Wait for the current library scan to finish before loading a collection pack.",
+            )
+            return
+        if not self._confirm_staged_replacement("load this Mod Pack"):
+            return
+        answer = QMessageBox.question(
+            self,
+            "Load Collection Mod Pack",
+            f"Load '{profile.name}'? Its cached mod folders will be prepared in {snapshot.path.parent}. Previous app-owned copies are archived; your own mods are never replaced. Close Project Zomboid first. You will review the global-list changes before applying them.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        roots, workshop = self._selected_roots()
+        old_mods = list(self._staged_mod_ids)
+        old_workshop = self._profile_workshop_ids
+        old_content = getattr(self, "_loaded_collection_content", ())
+        old_scan = self._last_result
+        dialog = CollectionLoadDialog(
+            lambda cancelled, progress: load_collection(
+                CollectionStore(self._profile_store.root.parent / "collections"),
+                profile,
+                snapshot.path.parent,
+                roots,
+                workshop,
+                cancelled=cancelled,
+                progress=progress,
+            ),
+            self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            if dialog.error:
+                QMessageBox.warning(
+                    self, "Could Not Load Collection Pack", dialog.error
+                )
+            return
+        prepared, result = dialog.result_data
+        self._loaded_collection_content = profile.collection_content
+        self._show_result(result)
+        self._staged_mod_ids = list(profile.mod_ids)
+        self._profile_workshop_ids = profile.workshop_ids
+        self._refresh_management_lists()
+        self._update_apply_enabled()
+        before_write = self._active_config
+        if self._apply_staged_configuration(
+            require_confirmation=True, map_ids=profile.map_ids
+        ):
+            self.status.setText(
+                f"Loaded and applied '{profile.name}'. Disabled pack mods remain in Available Mods; other cached packs stay hidden."
+            )
+            return
+        if self._active_config is not before_write:
+            QMessageBox.warning(
+                self,
+                "Collection Apply Could Not Be Verified",
+                f"The game list may have changed. Loaded collection files were retained to match it. Reload the global list before continuing. Recovery files: {prepared.root}",
+            )
+            return
+
+        def restore(_cancelled, progress):
+            progress("Restoring previous collection folders…")
+            prepared.rollback()
+            return scan_mods(
+                local_roots=list(dict.fromkeys([snapshot.path.parent, *roots])),
+                workshop_roots=workshop,
+            )
+
+        recovery = CollectionLoadDialog(restore, self, recovery=True)
+        if recovery.exec() == QDialog.DialogCode.Accepted:
+            self._loaded_collection_content = old_content
+            self._show_result(recovery.result_data)
+            self._staged_mod_ids = old_mods
+            self._profile_workshop_ids = old_workshop
+            self._refresh_management_lists()
+            self._update_apply_enabled()
+            self.configuration_status.setText(
+                "Collection load cancelled or not applied; the previous pack and staged order were restored."
+            )
+        else:
+            self._last_result = old_scan
+            QMessageBox.warning(
+                self,
+                "Collection Recovery Needs Attention",
+                recovery.error + f"\nRecovery folders: {prepared.root}",
+            )

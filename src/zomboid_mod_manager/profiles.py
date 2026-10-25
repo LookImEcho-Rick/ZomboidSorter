@@ -20,11 +20,18 @@ class ProfileError(ValueError):
 
 
 @dataclass(frozen=True)
+class CollectionContent:
+    workshop_id: str
+    sha256: str
+
+
+@dataclass(frozen=True)
 class ModProfile:
     name: str
     mod_ids: tuple[str, ...]
     workshop_ids: tuple[str, ...] = ()
     map_ids: tuple[str, ...] | None = None
+    collection_content: tuple[CollectionContent, ...] = ()
 
 
 _INVALID_NAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
@@ -33,6 +40,16 @@ _RESERVED_NAME = re.compile(
 )
 _MAX_PROFILE_BYTES = 4 * 1024 * 1024
 _MAX_PROFILE_MODS = 100_000
+
+
+def suggest_profile_name(title: str, *, fallback: str) -> str:
+    """Turn a public collection title into an editable Windows-safe pack name."""
+    name = " ".join(_INVALID_NAME.sub(" ", title).split())[:80].rstrip(". ")
+    try:
+        validate_profile(ModProfile(name, ()))
+    except ProfileError:
+        return fallback
+    return name
 
 
 def validate_profile(profile: ModProfile) -> None:
@@ -79,6 +96,19 @@ def validate_profile(profile: ModProfile) -> None:
         raise ProfileError("The profile contains too many Workshop IDs.")
     if len(profile.workshop_ids) != len(set(profile.workshop_ids)):
         raise ProfileError("The profile contains duplicate Workshop IDs.")
+    content_ids = [item.workshop_id for item in profile.collection_content]
+    if (
+        len(content_ids) > 5000
+        or len(content_ids) != len(set(content_ids))
+        or any(
+            item.workshop_id not in profile.workshop_ids
+            or not re.fullmatch(r"[0-9a-f]{64}", item.sha256)
+            for item in profile.collection_content
+        )
+    ):
+        raise ProfileError(
+            "Collection content must reference unique Workshop IDs and exact SHA-256 content hashes."
+        )
 
 
 def parse_profile(data: bytes) -> ModProfile:
@@ -92,14 +122,16 @@ def parse_profile(data: bytes) -> ModProfile:
         raise ProfileError("The profile root must be a JSON object.")
     version = value.get("schemaVersion")
     expected_keys = {"schemaVersion", "name", "modIds"}
-    if version in (2, 3):
+    if version in (2, 3, 4):
         expected_keys.add("workshopIds")
-    if version == 3:
+    if version in (3, 4):
         expected_keys.add("mapIds")
+    if version == 4:
+        expected_keys.add("collectionContent")
     if (
         isinstance(version, bool)
         or not isinstance(version, int)
-        or version not in (1, 2, 3)
+        or version not in (1, 2, 3, 4)
     ):
         raise ProfileError(f"Unsupported profile schema version: {version!r}.")
     if set(value) != expected_keys:
@@ -121,11 +153,25 @@ def parse_profile(data: bytes) -> ModProfile:
         not isinstance(item, str) for item in workshop_ids
     ):
         raise ProfileError("workshopIds must be a list of text IDs.")
+    content = value.get("collectionContent", [])
+    if not isinstance(content, list) or any(
+        not isinstance(item, dict)
+        or set(item) != {"workshopId", "sha256"}
+        or not isinstance(item["workshopId"], str)
+        or not isinstance(item["sha256"], str)
+        for item in content
+    ):
+        raise ProfileError(
+            "collectionContent must contain Workshop IDs and SHA-256 hashes."
+        )
     profile = ModProfile(
         value["name"],
         tuple(value["modIds"]),
         tuple(workshop_ids),
         tuple(map_ids) if map_ids is not None else None,
+        tuple(
+            CollectionContent(item["workshopId"], item["sha256"]) for item in content
+        ),
     )
     validate_profile(profile)
     return profile
@@ -133,7 +179,9 @@ def parse_profile(data: bytes) -> ModProfile:
 
 def serialize_profile(profile: ModProfile) -> bytes:
     validate_profile(profile)
-    version = 3 if profile.map_ids is not None else 2
+    version = (
+        4 if profile.collection_content else 3 if profile.map_ids is not None else 2
+    )
     value = {
         "schemaVersion": version,
         "name": profile.name,
@@ -142,6 +190,12 @@ def serialize_profile(profile: ModProfile) -> bytes:
     }
     if profile.map_ids is not None:
         value["mapIds"] = list(profile.map_ids)
+    if profile.collection_content:
+        value["mapIds"] = list(profile.map_ids) if profile.map_ids is not None else None
+        value["collectionContent"] = [
+            {"workshopId": item.workshop_id, "sha256": item.sha256}
+            for item in profile.collection_content
+        ]
     return (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
 
 

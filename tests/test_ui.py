@@ -382,6 +382,7 @@ class MainWindowTests(unittest.TestCase):
         page = Mock()
         page.lifecycleState.return_value = QWebEnginePage.LifecycleState.Active
         page.recommendedState.return_value = QWebEnginePage.LifecycleState.Frozen
+        page.isLoading.return_value = False
         browser.page.return_value = page
         panel.workshop_browser = browser
 
@@ -389,6 +390,47 @@ class MainWindowTests(unittest.TestCase):
 
         page.setLifecycleState.assert_called_once_with(
             QWebEnginePage.LifecycleState.Frozen
+        )
+
+    def test_visited_hidden_workshop_page_releases_renderer_after_delay(self) -> None:
+        panel = WorkshopBrowserPanel()
+        self.addCleanup(panel.deleteLater)
+        panel._tab_ever_opened = True
+        browser = Mock()
+        browser.isVisible.return_value = False
+        page = Mock()
+        page.lifecycleState.return_value = QWebEnginePage.LifecycleState.Frozen
+        page.recommendedState.return_value = QWebEnginePage.LifecycleState.Discarded
+        browser.page.return_value = page
+        panel.workshop_browser = browser
+
+        panel._sync_browser_lifecycle()
+        self.assertTrue(panel._hidden_discard_timer.isActive())
+        panel._discard_hidden_browser()
+
+        page.setLifecycleState.assert_called_once_with(
+            QWebEnginePage.LifecycleState.Discarded
+        )
+
+    def test_busy_hidden_workshop_page_also_releases_renderer(self) -> None:
+        panel = WorkshopBrowserPanel()
+        self.addCleanup(panel.deleteLater)
+        panel._tab_ever_opened = True
+        browser = Mock()
+        browser.isVisible.return_value = False
+        page = Mock()
+        page.lifecycleState.return_value = QWebEnginePage.LifecycleState.Active
+        page.recommendedState.return_value = QWebEnginePage.LifecycleState.Active
+        browser.page.return_value = page
+        panel.workshop_browser = browser
+
+        panel._sync_browser_lifecycle()
+        self.assertTrue(panel._hidden_discard_timer.isActive())
+        page.setLifecycleState.assert_not_called()
+        panel._discard_hidden_browser()
+
+        page.setLifecycleState.assert_called_once_with(
+            QWebEnginePage.LifecycleState.Discarded
         )
 
     def test_active_workshop_browser_resumes_after_hidden_tab(self) -> None:
@@ -474,7 +516,7 @@ class MainWindowTests(unittest.TestCase):
         original_config = config_path.read_bytes()
         window._staged_mod_ids.append("ExampleMod")
         window._update_apply_enabled()
-        self.assertEqual(window.launch_game_button.text(), "Apply & Launch…")
+        self.assertEqual(window.launch_game_button.text(), "Apply && Launch…")
         with (
             patch.object(window, "_confirm_configuration_preflight", return_value=True),
             patch(
@@ -638,7 +680,7 @@ class MainWindowTests(unittest.TestCase):
         self.assertTrue(window.inspect_library_button.isEnabled())
         window.inspect_library_button.click()
         self.assertIs(window.main_tabs.currentWidget(), window.workspace_page)
-        self.assertEqual(window.available_list.accessibleName(), "Inactive mods")
+        self.assertEqual(window.available_list.accessibleName(), "Available mods")
         self.assertEqual(window.active_search.accessibleName(), "Search active mods")
         self.assertEqual(
             window.available_list.horizontalScrollBarPolicy(),
@@ -967,8 +1009,8 @@ class MainWindowTests(unittest.TestCase):
                 window.main_tabs.tabText(index)
                 for index in range(window.main_tabs.count())
             ]
-            self.assertIn("Paths & Settings", tab_labels)
-            self.assertIn("Library & Diagnostics", tab_labels)
+            self.assertIn("Paths && Settings", tab_labels)
+            self.assertIn("Library && Diagnostics", tab_labels)
             self.assertTrue(all("_" not in label for label in tab_labels))
 
             previous_game_path = window.game_path.text()
@@ -1300,7 +1342,7 @@ class MainWindowTests(unittest.TestCase):
         window._stage_deactivate()
         self.assertEqual(window._staged_mod_ids, [])
         self.assertIn("Removed 1 mod", window.configuration_status.text())
-        self.assertIn("Choose mods in Discover", window.active_list.empty_text)
+        self.assertIn("Choose mods in Available Mods", window.active_list.empty_text)
 
     def test_compact_workspace_keeps_build_and_apply_labels_readable(self) -> None:
         temporary = tempfile.TemporaryDirectory()

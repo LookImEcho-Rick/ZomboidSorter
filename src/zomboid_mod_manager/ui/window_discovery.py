@@ -19,12 +19,14 @@ from PySide6.QtWidgets import (
     QLineEdit,
 )
 
+from zomboid_mod_manager.collection_deployment import CollectionDeployment
 from zomboid_mod_manager.discovery.game_build import (
     detect_game_build,
     format_game_build_detection,
 )
 from zomboid_mod_manager.discovery.paths import detect_paths
 from zomboid_mod_manager.domain import DetectedPaths, ScanResult
+from zomboid_mod_manager.profiles import ProfileError
 
 from .text import counted
 from .window_workers import (
@@ -287,6 +289,17 @@ class DiscoveryMixin:
             for part in self.workshop_paths.text().split(";")
             if part.strip()
         ]
+        snapshot = self._active_config
+        if (
+            snapshot is not None
+            and snapshot.path.parent.name.lower() == "mods"
+            and snapshot.path.parent.parent.name.lower() == "zomboid"
+        ):
+            index = (
+                snapshot.path.parent.parent / ".zomboidsorter-collections/active.json"
+            )
+            if index.exists() and snapshot.path.parent not in local_roots:
+                local_roots.append(snapshot.path.parent)
         return local_roots, workshop_roots
 
     def _scan_key(
@@ -477,6 +490,22 @@ class DiscoveryMixin:
     def _show_result(self, result: ScanResult) -> None:
         if self._shutdown_requested:
             return
+        if (
+            self._active_config is not None
+            and self._active_config.path.parent.name.lower() == "mods"
+            and self._active_config.path.parent.parent.name.lower() == "zomboid"
+        ):
+            try:
+                loaded = CollectionDeployment(
+                    self._active_config.path.parent
+                ).loaded_profile()
+                self._loaded_collection_content = (
+                    loaded.collection_content if loaded else ()
+                )
+            except (OSError, ProfileError) as exc:
+                self.configuration_status.setText(
+                    f"Collection state needs attention: {exc}"
+                )
         if self._worker is not None and self._worker.isInterruptionRequested():
             self._scan_cancelled()
             return

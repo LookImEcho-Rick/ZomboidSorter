@@ -17,33 +17,37 @@ class WorkshopCollectionLayoutMixin:
         heading.setObjectName("pageHeading")
         layout.addWidget(heading)
         instructions = QLabel(
-            "Turn the mods you already have from a public collection into a reusable Mod Pack. "
-            "This reads collection details from Steam and never subscribes to or downloads items."
+            "Find a public collection, review its mods, and import it as a reusable Mod Pack. "
+            "Downloads use a shared private cache without changing your Steam subscriptions."
         )
         instructions.setWordWrap(True)
         instructions.setObjectName("secondaryText")
         layout.addWidget(instructions)
         steps = QLabel(
-            "1  Scan your installed mods     2  Review collection items     3  Save a Mod Pack"
+            "1  Find a collection     2  Download privately     3  Load your Mod Pack when ready"
         )
         steps.setObjectName("workflowHint")
         steps.setWordWrap(True)
         layout.addWidget(steps)
-        self.import_workshop_collection_button = QPushButton("Import Collection…")
+        self.import_workshop_collection_button = QPushButton("Browse Collections…")
+        self.import_workshop_collection_button.setObjectName("primaryAction")
         self.import_workshop_collection_button.setToolTip(
-            "Read a public collection and save its installed mods as a Mod Pack."
+            "Search, sort, and review public Workshop collections without browsing Steam pages."
         )
-        self.import_workshop_collection_button.setEnabled(False)
+        self.import_workshop_collection_button.setEnabled(True)
         self.import_workshop_collection_button.clicked.connect(
-            self._import_workshop_collection
+            self._browse_workshop_collections
         )
+        direct = QPushButton("Import Collection URL…")
+        direct.clicked.connect(lambda: self._import_workshop_collection())
         layout.addWidget(
             self.import_workshop_collection_button,
             0,
             Qt.AlignmentFlag.AlignLeft,
         )
+        layout.addWidget(direct, 0, Qt.AlignmentFlag.AlignLeft)
         self.collection_import_status = QLabel(
-            "Scan the library from Mod Workspace before importing a collection."
+            "Imported downloads stay hidden until you load the pack from Mod Packs."
         )
         self.collection_import_status.setWordWrap(True)
         self.collection_import_status.setObjectName("secondaryText")

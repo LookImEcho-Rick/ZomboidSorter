@@ -72,7 +72,7 @@ class ModPacksDialog(QDialog):
         heading.setObjectName("pageHeading")
         layout.addWidget(heading)
         instructions = QLabel(
-            "Select a pack, then choose Apply. This updates the global "
+            "Select a pack, then choose Apply. Collection packs first prepare their local mod files. This updates the global "
             "Zomboid/mods/default.txt file and creates a timestamped backup."
         )
         instructions.setWordWrap(True)
@@ -178,6 +178,9 @@ class ModPacksDialog(QDialog):
                 if profile.map_ids is not None
                 else "map list not saved (current maps stay unchanged)"
             )
+        )
+        self.load_apply_button.setText(
+            "Load && Apply…" if profile.collection_content else "Apply"
         )
         sections = [
             "LOAD ORDER",

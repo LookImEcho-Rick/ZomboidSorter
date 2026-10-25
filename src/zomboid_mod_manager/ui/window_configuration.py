@@ -63,7 +63,7 @@ class ActiveConfigurationMixin:
             )
         )
         self.launch_game_button.setText(
-            "Apply & Launch…" if dirty else "Launch Project Zomboid"
+            "Apply && Launch…" if dirty else "Launch Project Zomboid"
         )
         launch_block = self._launch_block_message(same_target)
         self.launch_game_button.setEnabled(launch_block is None)

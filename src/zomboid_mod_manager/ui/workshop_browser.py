@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from PySide6.QtWebEngineWidgets import QWebEngineView
 
 _WORKSHOP_HOME = "https://steamcommunity.com/app/108600/workshop/"
+_HIDDEN_DISCARD_DELAY_MS = 2_000
 
 
 def _configure_persistent_profile(
@@ -55,8 +56,13 @@ class WorkshopBrowserPanel(QWidget):
         self._browser_loaded = False
         self._browser_ready = False
         self._tab_active = False
+        self._tab_ever_opened = False
         self._storage_error: str | None = None
         self._storage_error_shown = False
+        self._hidden_discard_timer = QTimer(self)
+        self._hidden_discard_timer.setSingleShot(True)
+        self._hidden_discard_timer.setInterval(_HIDDEN_DISCARD_DELAY_MS)
+        self._hidden_discard_timer.timeout.connect(self._discard_hidden_browser)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 10, 12, 10)
@@ -116,7 +122,10 @@ class WorkshopBrowserPanel(QWidget):
         layout.addLayout(search_row)
         self.browser_note = QLabel(
             "Steam's sign-in session is kept with ZomboidSorter's local app data "
-            "between launches. Use Steam's sign-out option to end the session. "
+            "between launches. After you leave this tab, its page may reload "
+            "to free memory. Use Steam's sign-out option "
+            "to end the session. "
+            "Open In Browser uses your default browser. "
             "Refresh Mod Workspace after Steam installs or changes mods."
         )
         self.browser_note.setObjectName("secondaryText")
@@ -130,6 +139,7 @@ class WorkshopBrowserPanel(QWidget):
             "Opening the Project Zomboid Steam Workshop…"
         )
         self.workshop_browser_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.workshop_browser_placeholder.setWordWrap(True)
         self.workshop_browser_layout.addWidget(self.workshop_browser_placeholder)
         layout.addWidget(self.workshop_browser_container, 1)
 
@@ -148,6 +158,9 @@ class WorkshopBrowserPanel(QWidget):
     def set_tab_active(self, active: bool) -> None:
         self._tab_active = active
         if active:
+            self._tab_ever_opened = (
+                self._tab_ever_opened or self.workshop_browser is not None
+            )
             self._show_storage_warning()
         self._sync_browser_lifecycle()
         if not active:
@@ -174,17 +187,48 @@ class WorkshopBrowserPanel(QWidget):
 
         page = browser.page()
         if self._tab_active:
+            self._hidden_discard_timer.stop()
+            if page.lifecycleState() == QWebEnginePage.LifecycleState.Discarded:
+                self._browser_ready = False
+                self.workshop_browser_placeholder.setText(
+                    "Reopening the Project Zomboid Steam Workshop…"
+                )
+                self.workshop_browser_layout.setCurrentWidget(
+                    self.workshop_browser_placeholder
+                )
             desired_state = QWebEnginePage.LifecycleState.Active
         else:
             if browser.isVisible():
+                self._hidden_discard_timer.stop()
                 return
-            # Keep the hidden page responsive to instant tab switches, but only
-            # freeze it when Chromium says it is safe to lower its CPU use.
-            if page.recommendedState() == QWebEnginePage.LifecycleState.Active:
+            lifecycle_state = page.lifecycleState()
+            if lifecycle_state == QWebEnginePage.LifecycleState.Discarded:
+                self._hidden_discard_timer.stop()
+                return
+            if not self._tab_ever_opened and page.isLoading():
+                # Let the startup warm-up finish before freezing its hidden page.
+                self._hidden_discard_timer.stop()
+                return
+            if self._tab_ever_opened and not self._hidden_discard_timer.isActive():
+                # A busy Steam page may never recommend a lower-resource state.
+                # Once hidden, release it after a short grace period anyway.
+                self._hidden_discard_timer.start()
+            recommended_state = page.recommendedState()
+            if recommended_state == QWebEnginePage.LifecycleState.Active:
                 return
             desired_state = QWebEnginePage.LifecycleState.Frozen
         if page.lifecycleState() != desired_state:
             page.setLifecycleState(desired_state)
+
+    def _discard_hidden_browser(self) -> None:
+        browser = self.workshop_browser
+        if browser is None or self._tab_active or browser.isVisible():
+            return
+        page = browser.page()
+        from PySide6.QtWebEngineCore import QWebEnginePage
+
+        if page.lifecycleState() != QWebEnginePage.LifecycleState.Discarded:
+            page.setLifecycleState(QWebEnginePage.LifecycleState.Discarded)
 
     def open_externally(self) -> None:
         url = self.workshop_browser.url() if self.workshop_browser else QUrl()
@@ -215,6 +259,8 @@ class WorkshopBrowserPanel(QWidget):
                 self._storage_error = str(exc)
             self.workshop_browser = QWebEngineView(self.workshop_browser_container)
             self.workshop_browser.setAccessibleName("Steam Project Zomboid Workshop")
+            if self._tab_active:
+                self._tab_ever_opened = True
             if self._browser_profile is not None:
                 page = QWebEnginePage(self._browser_profile, self.workshop_browser)
                 self.workshop_browser.setPage(page)

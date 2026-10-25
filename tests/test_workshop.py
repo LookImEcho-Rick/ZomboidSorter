@@ -60,7 +60,7 @@ class WorkshopTests(unittest.TestCase):
                     {
                         "publishedfileid": "2000000001",
                         "result": 1,
-                        "consumer_appid": PZ_APP_ID,
+                        "consumer_app_id": PZ_APP_ID,
                         "title": "First mod",
                         "description": "one",
                         "time_updated": 10,

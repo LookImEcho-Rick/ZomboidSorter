@@ -38,8 +38,8 @@ class WindowLifecycleMixin:
         self._workshop_preload_scheduled = True
         if QApplication.platformName().casefold() == "offscreen":
             return
-        # Give the main window time to paint and let the library scan finish
-        # before starting Chromium's background process and Workshop request.
+        # Give the window time to paint and let its library scan finish before
+        # starting Chromium and loading the first Workshop page.
         QTimer.singleShot(1200, self._preload_workshop_when_idle)
 
     def _preload_workshop_when_idle(self) -> None:
@@ -95,7 +95,7 @@ class WindowLifecycleMixin:
             and tuple(self._staged_mod_ids) != self._active_config.config.mods
         )
         self.launch_game_button.setText(
-            "Apply & Launch…"
+            "Apply && Launch…"
             if dirty
             else "Launch Game"
             if compact

@@ -1,8 +1,10 @@
-"""Read-only Steam collection import dialog."""
+"""Native collection review and subscription-free shared-cache import."""
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QThread, QUrl, Signal
+from dataclasses import replace
+
+from PySide6.QtCore import QThread, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QDialog,
@@ -10,22 +12,32 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QProgressBar,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
 )
 
+from zomboid_mod_manager.collection_import import download_collection
+from zomboid_mod_manager.collection_store import CollectionStore
 from zomboid_mod_manager.domain import ScanResult
-from zomboid_mod_manager.profiles import ModProfile, ProfileError, validate_profile
-from zomboid_mod_manager.ui.text import counted
-from zomboid_mod_manager.ui.theme import apply_theme
+from zomboid_mod_manager.portable import app_data_directory
+from zomboid_mod_manager.profiles import (
+    ModProfile,
+    ProfileError,
+    suggest_profile_name,
+    validate_profile,
+)
+from zomboid_mod_manager.steamcmd import SteamCmdDownloader
 from zomboid_mod_manager.workshop import (
     WorkshopCollectionResult,
-    WorkshopImportPlan,
     fetch_collection,
     resolve_collection_import,
 )
+
+from .text import counted
+from .theme import apply_theme
 
 
 class CollectionWorker(QThread):
@@ -38,57 +50,105 @@ class CollectionWorker(QThread):
 
     def run(self) -> None:
         try:
-            self.result_ready.emit(
-                fetch_collection(self._collection_text, timeout=5.0, max_items=200)
+            result = fetch_collection(
+                self._collection_text,
+                timeout=5,
+                max_items=2000,
+                cancelled=self.isInterruptionRequested,
             )
-        except Exception as exc:  # noqa: BLE001 - Steam/JSON failures are rendered in the dialog.
+            if not self.isInterruptionRequested():
+                self.result_ready.emit(result)
+        except Exception as exc:  # noqa: BLE001 - Return API failures to the GUI.
+            self.failed.emit(str(exc))
+
+
+class CollectionDownloadWorker(QThread):
+    result_ready = Signal(object)
+    failed = Signal(str)
+    progress = Signal(str)
+
+    def __init__(self, collection, name, store, downloader) -> None:
+        super().__init__()
+        self._args = collection, name, store, downloader
+
+    def run(self) -> None:
+        try:
+            result = download_collection(
+                *self._args,
+                cancelled=self.isInterruptionRequested,
+                progress=self.progress.emit,
+            )
+            if not self.isInterruptionRequested():
+                self.result_ready.emit(result)
+        except Exception as exc:  # noqa: BLE001 - Return download failures to the GUI.
             self.failed.emit(str(exc))
 
 
 class WorkshopCollectionDialog(QDialog):
     collection_imported = Signal(object)
 
-    def __init__(self, scan_result: ScanResult, parent=None) -> None:
+    def __init__(
+        self,
+        scan_result: ScanResult,
+        parent=None,
+        *,
+        collection_id="",
+        title="",
+        collection_store=None,
+        downloader=None,
+        save_profile=None,
+    ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Import Steam Workshop collection")
-        self.resize(800, 540)
+        self.setWindowTitle("Import Steam Workshop Collection")
+        self.resize(960, 680)
+        self.setMinimumSize(740, 540)
         apply_theme(self)
         self._scan_result = scan_result
-        self._worker: CollectionWorker | None = None
-        self._collection: WorkshopCollectionResult | None = None
-        self._plan: WorkshopImportPlan | None = None
-
+        self._worker = None
+        self._collection = None
+        self._plan = None
+        self._store = collection_store or CollectionStore(
+            app_data_directory() / "collections"
+        )
+        self._downloader = downloader or SteamCmdDownloader(
+            app_data_directory() / "tools/steamcmd"
+        )
+        self._save_profile = save_profile
+        self._downloaded_profile = None
+        self._installing = False
+        self._closing = False
+        self._pending_result = QDialog.DialogCode.Rejected
+        self.downloads_checked = False
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 16, 18, 16)
-        layout.setSpacing(10)
-        heading = QLabel("Review a Workshop Collection")
+        heading = QLabel("Import a Collection as a Mod Pack")
         heading.setObjectName("pageHeading")
         layout.addWidget(heading)
-        explanation = QLabel(
-            "Enter a public collection URL or ID, review which items are installed, "
-            "then save the matching Mod IDs as a Mod Pack. Steam remains responsible for subscriptions and downloads."
+        note = QLabel(
+            "Downloads stay in a private shared collections folder without changing Steam subscriptions. Exact matching content is stored once. Load the saved pack to make its mods available to Zomboid and the workspace. Valve's signed SteamCMD downloader is prepared on first use."
         )
-        explanation.setWordWrap(True)
-        explanation.setObjectName("secondaryText")
-        layout.addWidget(explanation)
-        input_row = QHBoxLayout()
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        inputs = QHBoxLayout()
         self.collection_input = QLineEdit()
         self.collection_input.setPlaceholderText(
             "Paste a Steam collection URL or numeric ID"
         )
         self.collection_input.setAccessibleName("Steam collection URL or ID")
-        self.collection_input.setClearButtonEnabled(True)
-        input_row.addWidget(self.collection_input, 1)
+        inputs.addWidget(self.collection_input, 1)
         self.fetch_button = QPushButton("Fetch Collection")
         self.fetch_button.clicked.connect(self._fetch)
-        input_row.addWidget(self.fetch_button)
-        layout.addLayout(input_row)
-
-        self.status = QLabel("Ready. Collection contents are read-only.")
-        self.status.setObjectName("secondaryText")
+        inputs.addWidget(self.fetch_button)
+        layout.addLayout(inputs)
+        self.status = QLabel(
+            "Review the collection before downloading. Importing does not load or apply the pack."
+        )
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
-
+        self.download_progress = QProgressBar()
+        self.download_progress.setRange(0, 0)
+        self.download_progress.hide()
+        layout.addWidget(self.download_progress)
         self.items = QTableWidget(0, 4)
         self.items.setAccessibleName("Collection items and installation status")
         self.items.setHorizontalHeaderLabels(
@@ -103,60 +163,68 @@ class WorkshopCollectionDialog(QDialog):
         self.items.setColumnWidth(2, 90)
         self.items.currentCellChanged.connect(self._update_open_workshop_page_enabled)
         layout.addWidget(self.items, 1)
-
         item_actions = QHBoxLayout()
-        item_actions.addStretch(1)
+        item_actions.addStretch()
         self.open_missing_workshop_button = QPushButton("Open Selected Missing Item")
-        self.open_missing_workshop_button.setAccessibleName(
-            "Open the selected missing Workshop item page"
-        )
-        self.open_missing_workshop_button.setToolTip(
-            "Open the selected missing Project Zomboid item in Steam Community. This does not subscribe or download it."
-        )
         self.open_missing_workshop_button.setEnabled(False)
         self.open_missing_workshop_button.clicked.connect(
             self._open_selected_missing_workshop_item
         )
         item_actions.addWidget(self.open_missing_workshop_button)
         layout.addLayout(item_actions)
-
-        profile_row = QHBoxLayout()
-        profile_row.addWidget(QLabel("Save as Mod Pack"))
+        names = QHBoxLayout()
+        names.addWidget(QLabel("Mod Pack name"))
         self.profile_name = QLineEdit()
-        self.profile_name.setPlaceholderText("Mod Pack name")
-        self.profile_name.setAccessibleName("Mod Pack name")
         self.profile_name.setMaxLength(80)
+        self.profile_name.setAccessibleName("Mod Pack name")
         self.profile_name.textChanged.connect(self._update_create_enabled)
-        profile_row.addWidget(self.profile_name, 1)
-        self.import_button = QPushButton("Create Mod Pack")
-        self.import_button.setObjectName("primaryAction")
-        self.import_button.setEnabled(False)
+        names.addWidget(self.profile_name, 1)
+        layout.addLayout(names)
+        actions = QHBoxLayout()
+        self.import_button = QPushButton("Save Installed List Only…")
+        self.import_button.setToolTip(
+            "Save a list of currently installed Mod IDs without private downloads."
+        )
         self.import_button.clicked.connect(self._create_profile)
-        profile_row.addWidget(self.import_button)
-        layout.addLayout(profile_row)
-
+        actions.addWidget(self.import_button)
+        actions.addStretch()
         self.close_button = QPushButton("Close")
         self.close_button.clicked.connect(self.reject)
-        layout.addWidget(self.close_button, alignment=Qt.AlignmentFlag.AlignRight)
+        actions.addWidget(self.close_button)
+        self.install_button = QPushButton("Download && Import")
+        self.install_button.setAccessibleName(
+            "Download and import collection without subscriptions"
+        )
+        self.install_button.setObjectName("primaryAction")
+        self.install_button.clicked.connect(self._start_install)
+        actions.addWidget(self.install_button)
+        layout.addLayout(actions)
+        self._update_create_enabled()
+        if title:
+            self.profile_name.setText(
+                suggest_profile_name(
+                    title, fallback=f"Steam Collection {collection_id}"
+                )
+            )
+        if collection_id:
+            self.collection_input.setText(collection_id)
+            QTimer.singleShot(0, self._fetch)
 
     def _fetch(self) -> None:
-        if self._worker is not None and self._worker.isRunning():
+        if self._worker is not None:
             return
         value = self.collection_input.text().strip()
         if not value:
-            self.status.setText("Enter a Steam collection URL or numeric ID.")
+            self.status.setText("Enter a Steam collection URL or ID.")
             return
-        self.fetch_button.setEnabled(False)
-        self.import_button.setEnabled(False)
-        self._collection = None
-        self._plan = None
+        self._collection = self._plan = self._downloaded_profile = None
         self.items.setRowCount(0)
-        self.open_missing_workshop_button.setEnabled(False)
-        self.status.setText("Fetching collection details from Steam…")
+        self.status.setText("Reading collection details from Steam…")
         self._worker = CollectionWorker(value)
         self._worker.result_ready.connect(self._show_collection)
         self._worker.failed.connect(self._show_failure)
-        self._worker.finished.connect(lambda: self.fetch_button.setEnabled(True))
+        self._worker.finished.connect(self._finished)
+        self._set_busy(True)
         self._worker.start()
 
     def _show_collection(self, collection: WorkshopCollectionResult) -> None:
@@ -216,19 +284,22 @@ class WorkshopCollectionDialog(QDialog):
             )
         )
 
-    def _show_failure(self, message: str) -> None:
-        self._collection = None
-        self._plan = None
-        self.import_button.setEnabled(False)
-        self.open_missing_workshop_button.setEnabled(False)
-        self.items.setRowCount(0)
-        self.status.setText(f"Could not read this collection: {message}")
+    def _show_failure(self, message) -> None:
+        if not self._closing:
+            self.status.setText(f"Collection import could not finish: {message}")
 
     def _update_create_enabled(self) -> None:
-        self.import_button.setEnabled(
-            self._plan is not None
-            and bool(self._plan.workshop_ids)
+        ready = (
+            self._worker is None
+            and self._plan is not None
             and bool(self.profile_name.text().strip())
+        )
+        self.import_button.setEnabled(ready and bool(self._plan.workshop_ids))
+        self.install_button.setEnabled(ready and bool(self._collection.items))
+        self.install_button.setText(
+            "Retry Save"
+            if self._downloaded_profile is not None
+            else "Download && Import"
         )
 
     def _selected_missing_workshop_id(self) -> str | None:
@@ -264,26 +335,119 @@ class WorkshopCollectionDialog(QDialog):
             )
         )
 
-    def _create_profile(self) -> None:
-        if self._collection is None or self._plan is None:
+    def _set_busy(self, busy) -> None:
+        for widget in (self.fetch_button, self.collection_input, self.profile_name):
+            widget.setEnabled(not busy)
+        self.download_progress.setVisible(busy)
+        self.close_button.setText("Stop Import" if self._installing else "Close")
+        self._update_create_enabled()
+
+    def _start_install(self) -> None:
+        if self._worker is not None or self._collection is None:
             return
-        profile = ModProfile(
-            self.profile_name.text().strip(),
-            self._plan.mod_ids,
-            self._plan.workshop_ids,
+        if self._downloaded_profile is not None:
+            self._save(
+                replace(self._downloaded_profile, name=self.profile_name.text().strip())
+            )
+            return
+        if self._collection.unavailable_ids:
+            self.status.setText(
+                "This collection has unavailable items. A complete private pack cannot be created. Retry reading the collection, or explicitly save an installed-only list."
+            )
+            return
+        try:
+            validate_profile(ModProfile(self.profile_name.text().strip(), ()))
+        except ProfileError as exc:
+            self.status.setText(str(exc))
+            return
+        self._installing = True
+        self.status.setText(
+            "Preparing private collection downloads. Steam subscriptions stay unchanged…"
         )
+        self._worker = CollectionDownloadWorker(
+            self._collection,
+            self.profile_name.text().strip(),
+            self._store,
+            self._downloader,
+        )
+        self._worker.result_ready.connect(self._download_ready)
+        self._worker.failed.connect(self._show_failure)
+        self._worker.progress.connect(self.status.setText)
+        self._worker.finished.connect(self._finished)
+        self._set_busy(True)
+        self._worker.start()
+
+    def _download_ready(self, profile) -> None:
+        if self._closing:
+            return
+        self._downloaded_profile = profile
+        self._save(profile)
+
+    def _save(self, profile) -> None:
         try:
             validate_profile(profile)
         except ProfileError as exc:
-            QMessageBox.warning(self, "Invalid Mod Pack name", str(exc))
+            self.status.setText(str(exc))
+            return
+        if self._save_profile is not None and not self._save_profile(profile):
+            self.status.setText(
+                "The pack was not saved. Private downloads are retained. Change its name or use Retry Save."
+            )
             return
         self.collection_imported.emit(profile)
         self.accept()
 
-    def closeEvent(self, event) -> None:
-        if self._worker is not None and self._worker.isRunning():
-            self.status.setText(
-                "Waiting for the current Steam request to finish before closing…"
+    def _create_profile(self) -> None:
+        if self._plan is None:
+            return
+        if (
+            self._plan.missing_ids
+            and QMessageBox.question(
+                self,
+                "Save an incomplete installed list?",
+                "Missing items have no Mod IDs in this list. No private download will be made. Save this partial list?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
             )
-            self._worker.wait()
-        event.accept()
+            != QMessageBox.StandardButton.Yes
+        ):
+            return
+        self._save(
+            ModProfile(
+                self.profile_name.text().strip(),
+                self._plan.mod_ids,
+                self._plan.workshop_ids,
+            )
+        )
+
+    def _finished(self) -> None:
+        worker, self._worker = self._worker, None
+        worker.deleteLater()
+        self._installing = False
+        if self._closing:
+            self.done(self._pending_result)
+        else:
+            self._set_busy(False)
+
+    def done(self, result) -> None:
+        if (
+            not self._closing
+            and self._installing
+            and result != QDialog.DialogCode.Accepted
+            and QMessageBox.question(
+                self,
+                "Stop collection import?",
+                "Stop downloading? Completed shared content and partial SteamCMD downloads are retained for retry. No subscriptions were changed.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            != QMessageBox.StandardButton.Yes
+        ):
+            return
+        self._closing = True
+        self._pending_result = result
+        if self._worker is not None:
+            self._worker.requestInterruption()
+            self.status.setText("Stopping after the current download or request…")
+            return
+        super().done(result)

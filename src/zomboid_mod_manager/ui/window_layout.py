@@ -289,7 +289,7 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         self.table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableView.SelectionMode.SingleSelection)
         self.table.setAlternatingRowColors(True)
-        self.table.setAccessibleName("Discovered mods and Workshop items")
+        self.table.setAccessibleName("Available Modsed mods and Workshop items")
         self.table.selectionModel().currentRowChanged.connect(self._show_selected_entry)
         self.table.doubleClicked.connect(self._open_library_entry)
         self.table.verticalHeader().hide()
@@ -409,7 +409,7 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         self.description.setOpenExternalLinks(False)
         self.description.setHtml(
             '<p style="margin:4px 0; color:#9cadbd; font-style:italic;">'
-            "Select a mod in Discover or Active Order to read its description. "
+            "Select a mod in Available Mods or Active Order to read its description. "
             "The Metadata tab shows its IDs and declared requirements.</p>"
         )
         description_layout.addWidget(self.description, 1)
@@ -488,10 +488,10 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         self.import_collection_page = self._build_import_collection_tab()
         self.main_tabs.addTab(self.import_collection_page, "Import Collection")
         self.setup_layout.addStretch(1)
-        self.main_tabs.addTab(self.setup_page, "Paths & Settings")
+        self.main_tabs.addTab(self.setup_page, "Paths && Settings")
         self.library_page = library_page
         self.library_tab_index = self.main_tabs.addTab(
-            self.library_page, "Library & Diagnostics"
+            self.library_page, "Library && Diagnostics"
         )
         header = QHBoxLayout()
         identity = QVBoxLayout()
@@ -546,7 +546,8 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
         page = self.main_tabs.widget(index)
         self.workshop_page.set_tab_active(page is self.workshop_page)
         if page is self.workshop_page:
-            self.workshop_page.open_home_if_needed()
+            # Let Qt show the tab while ensuring the browser exists when needed.
+            QTimer.singleShot(0, self._open_workshop_tab_if_selected)
             return
         if page is not self.workspace_page:
             return
@@ -556,3 +557,7 @@ class WindowLayoutMixin(WorkspaceLayoutMixin, WorkshopCollectionLayoutMixin):
             self._scan_again_after_current = scan_key != self._active_scan_key
             return
         self._start_scan()
+
+    def _open_workshop_tab_if_selected(self) -> None:
+        if self.main_tabs.currentWidget() is self.workshop_page:
+            self.workshop_page.open_home_if_needed()

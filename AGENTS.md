@@ -6,7 +6,9 @@ Continuously improve ZomboidSorter as a dedicated, Windows-first Project Zomboid
 
 The product manages the user's **global** mod setup: discover local and Workshop content, distinguish Workshop item IDs from individual Mod IDs and installed directories, inspect Build 41/42 metadata, stage and explain order changes, diagnose issues, manage existing app-owned Mod Packs, inspect/import Workshop collections, and safely apply or restore the global list.
 
-Do not add per-save or server management, save editing, multiplayer synchronization, multi-game support, a virtual filesystem, mod-authoring tools, automatic Workshop subscription/download/deletion, cloud accounts, or speculative plugin frameworks. Existing Mod Packs are reusable global loadouts, not save profiles. A feature must solve a demonstrated Project Zomboid player problem.
+Do not add per-save or server management, save editing, multiplayer synchronization, multi-game support, a virtual filesystem, mod-authoring tools, Workshop deletion, cloud accounts, or speculative plugin frameworks. Existing Mod Packs are reusable global loadouts, not save profiles. A feature must solve a demonstrated Project Zomboid player problem.
+
+Collection imports use an isolated Valve-signed SteamCMD downloader with anonymous login; do not change Steam subscriptions. The user approved this dependency and isolated testing. Store exact content once in the shared collections cache and keep per-pack SHA-256 references. Only the loaded pack's copies may be prepared under the verified global Zomboid/mods directory; preserve ownership records, reject links and copy conflicts, archive replaced app-owned copies, and roll back cancelled applies. Never overwrite user/Steam-installed mod files or export account credentials.
 
 ## Start and resume work
 
@@ -19,13 +21,13 @@ Do not add per-save or server management, save editing, multiplayer synchronizat
 
 - Keep domain logic independent of widgets; isolate game I/O; keep discovery read-only; separate parsing from presentation; keep sorting deterministic; run slow work off the UI thread; and make persistence explicit.
 - The verified write target is `Zomboid/mods/default.txt`. Stage changes, preview them, confirm consequential writes, validate the exact target, reject unsafe links, detect concurrent edits, preserve backups, write atomically where supported, verify persisted contents, and retain rollback paths.
-- Never modify saves, server settings, or installed mod contents. Never delete user data or installed mods without explicit authorization.
+- Never modify saves, server settings, or user/Steam-installed mod contents. Collection activation may prepare and archive only explicitly recorded app-owned copies. Never delete user data or installed mods without explicit authorization.
 - Before any new configuration-writing behavior, verify the exact Build 42 target and format, use disposable fixtures, back up existing data, and validate the output.
 - Do not assume another game's metadata, dependency, conflict, or sorting semantics apply to Project Zomboid. Do not claim a fixture or mock establishes real gameplay compatibility.
 
 ## UX and diagnostics
 
-- Preserve the Discover / Active Order model. Make finding, inspecting, enabling/disabling, reordering, understanding problems, reviewing/applying changes, and launching the game easy to discover.
+- Preserve the Available Mods / Active Order model. Available Mods includes user-installed mods and disabled mods from the loaded pack, never unloaded cached collections. Make finding, inspecting, enabling/disabling, reordering, understanding problems, reviewing/applying changes, and launching the game easy to discover.
 - Prefer plain action-oriented language. Keep technical identifiers and advanced detail available when useful, but do not require novices to understand dependency graphs, metadata candidates, or filesystem internals.
 - Preserve search, selection, scroll position, and staged state across equivalent refreshes. Distinguish “not checked,” “checking,” and verified-clean states. Keep loading, empty, failure, success, focus, selected, and disabled states clear and accessible.
 - Diagnostics should say what was found, why it may matter, what evidence supports it, what the user can do, and whether the app can safely help. Identify relevant mods and sources; label file overlaps as potential unless runtime behavior is proven. Avoid noisy warnings and color-only status cues.

@@ -333,7 +333,7 @@ class LibraryMixin:
                 error_word = "error" if library_error_count == 1 else "errors"
                 diagnostics_label += f"  ·  {library_error_count} {error_word}"
         self.inactive_heading.setText(
-            f"DISCOVER  ·  {count}{new_label}{diagnostics_label}"
+            f"AVAILABLE MODS  ·  {count}{new_label}{diagnostics_label}"
         )
         if query or mode != "All sources" or build != "all":
             self.available_list.empty_text = "No mods match this search or filter"
@@ -370,7 +370,7 @@ class LibraryMixin:
         self.active_list.empty_text = (
             "No active mods match this search or filter"
             if query or mode != "All active"
-            else "Active Order is empty. Choose mods in Discover, then select Add."
+            else "Active Order is empty. Choose mods in Available Mods, then select Add."
         )
         self.active_list.viewport().update()
         unfiltered = not query.strip() and self.active_filter.currentIndex() == 0

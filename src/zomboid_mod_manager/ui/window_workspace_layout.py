@@ -110,7 +110,7 @@ class WorkspaceLayoutMixin:
         self.workspace_notice_text = QLabel()
         self.workspace_notice_text.setWordWrap(True)
         notice_row.addWidget(self.workspace_notice_text, 1)
-        open_settings = QPushButton("Open Paths & Settings")
+        open_settings = QPushButton("Open Paths && Settings")
         open_settings.clicked.connect(
             lambda: self.main_tabs.setCurrentWidget(self.setup_page)
         )
@@ -129,9 +129,16 @@ class WorkspaceLayoutMixin:
         available_column = QVBoxLayout(available_panel)
         available_column.setContentsMargins(12, 12, 12, 12)
         available_column.setSpacing(7)
-        self.inactive_heading = QLabel("DISCOVER  ·  0")
+        self.inactive_heading = QLabel("AVAILABLE MODS  ·  0")
         self.inactive_heading.setObjectName("panelHeading")
+        self.inactive_heading.setWordWrap(True)
         available_column.addWidget(self.inactive_heading)
+        self.browse_mods_button = QPushButton("Browse Mods…")
+        self.browse_mods_button.setToolTip(
+            "Search Workshop mods and install them into your local-mod folder without subscribing."
+        )
+        self.browse_mods_button.clicked.connect(self._browse_workshop_mods)
+        available_column.addWidget(self.browse_mods_button)
         self.available_intro = QLabel("Installed mods you can add to the load order")
         self.available_intro.setObjectName("secondaryText")
         self.available_intro.setWordWrap(True)
@@ -152,7 +159,7 @@ class WorkspaceLayoutMixin:
         self.manage_search = QLineEdit()
         self.manage_search.setPlaceholderText("Search installed mods or IDs")
         self.manage_search.setClearButtonEnabled(True)
-        self.manage_search.setAccessibleName("Search inactive mods")
+        self.manage_search.setAccessibleName("Search available mods")
         self.manage_search.setToolTip("Search mod names, Mod IDs, and Workshop IDs.")
         self.manage_search.textChanged.connect(self._filter_available_mods)
         available_column.addWidget(self.manage_search)
@@ -176,9 +183,9 @@ class WorkspaceLayoutMixin:
         self.inactive_build_filter.addItem("Show all", "all")
         self.inactive_build_filter.addItem("Build 41", "41")
         self.inactive_build_filter.addItem("Build 42", "42")
-        self.inactive_build_filter.setAccessibleName("Discover game build filter")
+        self.inactive_build_filter.setAccessibleName("Available Mods game build filter")
         self.inactive_build_filter.setToolTip(
-            "Filter which metadata layouts appear in Discover. Compatibility warnings follow Target metadata, not this list filter."
+            "Filter which metadata layouts appear in Available Mods. Compatibility warnings follow Target metadata, not this list filter."
         )
         self.inactive_build_filter.currentIndexChanged.connect(
             lambda _index: self._refresh_management_lists()
@@ -186,7 +193,7 @@ class WorkspaceLayoutMixin:
         available_column.addWidget(self.inactive_build_filter)
         self.available_list = StagingModListWidget()
         self.available_list.empty_text = "Scanning installed mods…"
-        self.available_list.setAccessibleName("Inactive mods")
+        self.available_list.setAccessibleName("Available mods")
         self.available_list.setToolTip(
             "Select a mod to inspect it. Double-click or drag it to Active Order to add it."
         )
@@ -212,9 +219,11 @@ class WorkspaceLayoutMixin:
         available_column.addWidget(self.available_list, 1)
         self.select_filtered_button = QPushButton("Select")
         self.select_filtered_button.setObjectName("subtleAction")
-        self.select_filtered_button.setAccessibleName("Select all shown Discover mods")
+        self.select_filtered_button.setAccessibleName(
+            "Select all shown Available Mods mods"
+        )
         self.select_filtered_button.setToolTip(
-            "Select every mod currently shown in Discover. Use Add to stage them."
+            "Select every mod currently shown in Available Mods. Use Add to stage them."
         )
         self.select_filtered_button.clicked.connect(self._select_filtered_available)
         available_actions = QHBoxLayout()
@@ -285,11 +294,11 @@ class WorkspaceLayoutMixin:
         active_column.addWidget(self.active_filter)
         self.active_list = OrderedModListWidget()
         self.active_list.empty_text = (
-            "Active Order is empty. Choose mods in Discover, then select Add."
+            "Active Order is empty. Choose mods in Available Mods, then select Add."
         )
         self.active_list.setAccessibleName("Active mods in global default order")
         self.active_list.setToolTip(
-            "Select a mod to inspect it. Double-click or drag it to Discover to remove it; drag within this list to reorder."
+            "Select a mod to inspect it. Double-click or drag it to Available Mods to remove it; drag within this list to reorder."
         )
         self.active_list.setTextElideMode(Qt.TextElideMode.ElideRight)
         self.active_list.setHorizontalScrollBarPolicy(
@@ -315,7 +324,7 @@ class WorkspaceLayoutMixin:
         self.issue_summary.setAccessibleName("Active-order issues")
         self.issue_summary.setToolTip(
             "Counts mods in the active list that are missing or appear more than once, plus requirement issues. "
-            "Library warnings and errors are shown in Discover. "
+            "Library warnings and errors are shown in Available Mods. "
             "Optional file and log checks are shown in Library & diagnostics."
         )
         active_issue_row = QHBoxLayout()

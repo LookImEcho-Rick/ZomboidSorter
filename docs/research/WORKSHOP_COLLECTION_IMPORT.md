@@ -1,0 +1,35 @@
+# Native Workshop collection import (2026-10-25)
+
+## Current shared-cache design (supersedes the original subscription flow)
+
+The user explicitly requested anonymous downloads, one global shared collections folder, exact-content reuse, and visibility only after a pack is loaded. They approved SteamCMD and isolated testing. The native browser remains; the subscription adapter and its tests were replaced with private download/deployment coverage.
+
+- The official [SteamCMD bootstrap](https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip) was downloaded into an isolated temporary directory. Windows Authenticode verified Valve's bootstrap (`O=Valve`) and its updated executable (`O=Valve Corp.`). The adapter requires a valid signature from either exact publisher name and isolates updater child processes in a Windows job for cancellation.
+- `+login anonymous +workshop_download_item 108600 2169435993 validate +quit` successfully downloaded a 31,729-byte public item without changing subscriptions. The adapter repeated this and verified Steam's receipt. Importing it twice produced one shared content object. SteamCMD's bootstrap returned exit code 1 despite successful child download, so success requires the exact item-success marker plus an installation receipt, not exit code alone. Restrictions are reported; no authentication or access bypass is attempted. [Valve issue documenting Workshop command behavior](https://github.com/ValveSoftware/steam-for-linux/issues/12339).
+- Shared objects hash all relative paths, types, and file bytes. Packs use schema-v4 exact references; mismatching versions are separate. Only app-owned deployed copies enter `Zomboid/mods` on load. Original content is not altered; prior copies are archived outside the scanned mod root. User/Steam copy conflicts are rejected unless the complete mod-entry content is identical.
+- The game's documented local `Zomboid/mods/<entry>/` layout is used, retaining root/common/versioned metadata. No custom mount path, virtual filesystem, save path, or Steam launch preference is changed. Fixture scans verify metadata discovery, not gameplay compatibility. [The Indie Stone's Build 42 layout explanation](https://projectzomboid.com/blog/news/2024/08/tidy-up-time/).
+- The normal workspace is now **Available Mods / Active Order**. Cached unloaded collections never enter discovery; a loaded pack's disabled mods remain available to re-add. Literal ampersands in Qt tabs/buttons are escaped to prevent accidental shortcut underlines.
+
+The sections below document the earlier implementation and source investigation; subscription behavior there is historical.
+
+
+The user explicitly expanded the previous read-only scope to discover collections inside ZomboidSorter, add subscriptions, let Steam download them, and save Mod Packs. Normal use needs no Workshop page browsing. Sign-in remains a user action on Steam's login page.
+
+## Sources inspected
+
+- [Steam public PZ collection catalog](https://steamcommunity.com/workshop/browse/?appid=108600&section=collections&browsesort=trend): the current HTML has a `valve-ssr-data` script. `renderContext.queryData` contains the `workshop_browse` query scoped to app `108600` and section `collections`. Results carry `file_type=2`, title, creator, summary, child count, favorites, updated timestamp, and tags. Creator names come from `PlayerLinkDetails` queries.
+- [Current Steam browse UI source asset](https://cdn.fastly.steamstatic.com/steamcommunity/public/ssr/D_C_OT9u.js): collection sorts include `trend`, `toprated`, and `mostrecent`. `lastupdated` also returned collection results in the live read-only probe. The old `totaluniquefavorites` sort returned no results and was excluded.
+- [Steam RemoteStorage API](https://partner.steamgames.com/doc/webapi/ISteamRemoteStorage): live published-file replies use `consumer_app_id`, not the old importer's expected `consumer_appid`. Child collection types are in `children[].filetype`; the observed published-file detail reply omits file type. Support both app-ID spellings and expand nested collections using child types with cycle/depth/item/request limits.
+- [Steam subscription UI source](https://community.fastly.steamstatic.com/public/javascript/sharedfiles_functions_logged_in.js): `SubscribeCollectionItem` posts `id`, `appid`, `include_dependencies=false`, and in-page `g_sessionID` to `https://steamcommunity.com/sharedfiles/subscribe`, accepting `success=1`. Subscription replacement is deliberately excluded. The independent adapter uses only add-only requests and exposes status, never credentials, to Python. No upstream code/assets were copied or bundled.
+- [Steamworks SubscribeItem](https://partner.steamgames.com/doc/api/isteamugc#SubscribeItem): subscriptions download/install as soon as possible. A web success response does not prove download completion. The native SDK is not bundled or initialized as Project Zomboid.
+- The local Steam-owned `appworkshop_108600.acf` was inspected read-only. `WorkshopItemsInstalled` records per-item `manifest` and `timeupdated`. Readiness requires a nonzero installed manifest, matching detail manifest when present, a timestamp at least as current as fetched metadata, and an installed directory. The existing read-only scanner separately establishes Mod IDs. No manifest or mod contents are written by the app.
+
+## Validation and limits
+
+- Live catalog checks returned 30 results for each supported sort with `vanilla` search and Build 42 filtering. A 235-item public collection resolved to 235 PZ items, no unavailable items, and no foreign items after the app-ID correction.
+- Network-free Qt renderer tests execute the actual subscription script with synthetic success, rejection, and logged-out responses. Fixtures cover parsing, nesting, stale receipts, partial results, cancellation, safe names, and failed persistence.
+- No account subscription, Steam download, login, installed-content mutation, game write, gameplay, or packaged build was exercised. A website format change may require an adapter update; direct URL import remains. Creator tags and collection order do not prove compatibility. Bundled alternative Mod IDs require review before applying a pack.
+
+## Individual mod catalog and installation (2026-10-25)
+
+A read-only live inspection of [Steam's PZ item catalog](https://steamcommunity.com/workshop/browse/?appid=108600&section=readytouseitems&browsesort=trend) found the same `valve-ssr-data` browse query, with section `readytouseitems`, `file_type=0`, and numeric `subscriptions` (current count), `favorited`, and timestamps. Author names still come from `PlayerLinkDetails`. The public URL with section `items` redirects internally to `readytouseitems`; the adapter uses the explicit latter section. All four existing sorts returned 30 results with a `vanilla` search and Build 42 tag, each supplying subscriber counts. This website format remains an unstable interface and fails visibly if it changes. Local installation reuses the already verified anonymous downloader and mod-entry layout; fixture tests do not establish game loading or dependency compatibility.
