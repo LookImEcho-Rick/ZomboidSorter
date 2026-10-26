@@ -5,7 +5,7 @@
 - Removed the Project Zomboid build selector, exact-version field, **Detect Build** button, and detected-build evidence line from the visible Details pane. This was redundant detail-pane UI; the separate Available Mods build filter remains.
 - Kept the current metadata-target state and detection behavior for metadata display, diagnostics, ordering, and existing saved settings. No game files or staged mod lists are changed by this UI cleanup.
 - Updated the README, architecture notes, and build-detection roadmap entry to reflect the simplified Details pane.
-- Validation: local review and `git diff --check` passed. The first rolling CI run caught a keyboard-path assertion that still expected the removed selector; the assertion now reflects that the selector is no longer keyboard-accessible. The corrected CI run is pending. No rendered-UI inspection was run.
+- Validation: local review and `git diff --check` passed. The first rolling CI run caught a keyboard-path assertion that still expected the removed selector; follow-up commit `6d079f07e2d2147a51d61d30a9b9abde3cacbb76` updated the assertion. The [rolling workflow](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/40306560606) passed all 253 tests, Ruff check/format, compileall, installer build, packaged install/launch smoke, checksum and provenance verification, and in-app update smoke from the previous stable app. The `rolling` tag and manifest build ID point to that commit. The v0.3.4 rolling installer is 121,644,251 bytes with SHA-256 `c08e35ab78b11b0c8403c3550aa043c747cdcbbbdcce1e76874464d50d0eb233`, matching the published sidecar and GitHub asset digest. No rendered-UI inspection was run.
 
 ## Full-project UX review: filtering and save grouping (2026-10-26)
 
