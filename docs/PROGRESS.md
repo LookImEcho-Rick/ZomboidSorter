@@ -5,7 +5,7 @@
 - Removed the Project Zomboid build selector, exact-version field, **Detect Build** button, and detected-build evidence line from the visible Details pane. This was redundant detail-pane UI; the separate Available Mods build filter remains.
 - Kept the current metadata-target state and detection behavior for metadata display, diagnostics, ordering, and existing saved settings. No game files or staged mod lists are changed by this UI cleanup.
 - Updated the README, architecture notes, and build-detection roadmap entry to reflect the simplified Details pane.
-- Validation: reviewed the edited source and documentation diff. No tests or rendered-UI inspection were run for this request.
+- Validation: local review and `git diff --check` passed. The first rolling CI run caught a keyboard-path assertion that still expected the removed selector; the assertion now reflects that the selector is no longer keyboard-accessible. The corrected CI run is pending. No rendered-UI inspection was run.
 
 ## Full-project UX review: filtering and save grouping (2026-10-26)
 

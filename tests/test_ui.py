@@ -1030,7 +1030,7 @@ class MainWindowTests(unittest.TestCase):
             self.assertIn(window.select_filtered_button, focus_path)
             self.assertIn(window.activate_button, focus_path)
             self.assertIn(window.active_search, focus_path)
-            self.assertIn(window.metadata_preview_target, focus_path)
+            self.assertNotIn(window.metadata_preview_target, focus_path)
             self.assertLess(
                 focus_path.index(window.select_filtered_button),
                 focus_path.index(window.activate_button),
