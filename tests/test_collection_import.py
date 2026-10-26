@@ -15,10 +15,13 @@ from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 from zomboid_mod_manager.collection_store import CollectionStore
 from zomboid_mod_manager.discovery.scanner import scan_mods
 from zomboid_mod_manager.profiles import (
+    CollectionContent,
     ModProfile,
+    ProfileStore,
     suggest_profile_name,
     validate_profile,
 )
+from zomboid_mod_manager.steamcmd import SteamCmdDownloader
 from zomboid_mod_manager.ui.collection_browser_dialog import CollectionBrowserDialog
 from zomboid_mod_manager.ui.workshop_dialog import WorkshopCollectionDialog
 from zomboid_mod_manager.workshop import (
@@ -227,7 +230,7 @@ class CollectionUiTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
 
-    def dialog(self, save=None):
+    def dialog(self, save=None, profile_store=None):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         scan = scan_mods(local_roots=[], workshop_roots=[FIXTURES / "workshop"])
@@ -235,6 +238,7 @@ class CollectionUiTests(unittest.TestCase):
             scan,
             collection_store=CollectionStore(Path(temp.name) / "collections"),
             downloader=Mock(),
+            profile_store=profile_store,
             save_profile=save,
         )
         dialog._show_collection(
@@ -283,6 +287,43 @@ class CollectionUiTests(unittest.TestCase):
         save.assert_called_once_with(profile)
         self.assertEqual(dialog.result(), QDialog.DialogCode.Accepted)
         self.assertFalse(dialog.downloads_checked)
+
+    def test_revisited_collection_shows_the_named_saved_pack_and_its_mods(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            profiles = ProfileStore(Path(tmp) / "profiles")
+            profiles.save(
+                ModProfile(
+                    "My Collection Name",
+                    ("Legacy",),
+                    ("111111111",),
+                    None,
+                    (CollectionContent("111111111", "0" * 64),),
+                )
+            )
+            dialog, _ = self.dialog(profile_store=profiles)
+            self.assertEqual(dialog.profile_name.text(), "My Collection Name")
+            self.assertEqual(
+                dialog.items.item(0, 3).text(), "Saved · My Collection Name"
+            )
+            self.assertEqual(dialog.install_button.text(), "Update Saved Pack")
+
+    def test_revisited_collection_marks_verified_unreferenced_downloads(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "tools/steamcmd"
+            workshop = root / "steamapps/workshop/content/108600"
+            (workshop / "111111111").mkdir(parents=True)
+            manifest = workshop.parent.parent / "appworkshop_108600.acf"
+            manifest.write_text(
+                '"AppWorkshop" { "WorkshopItemsInstalled" { '
+                '"111111111" { "manifest" "100" "timeupdated" "1" } '
+                '} "WorkshopItemDetails" { "111111111" { "manifest" "100" } } }',
+                encoding="utf-8",
+            )
+            dialog, _ = self.dialog()
+            dialog._downloader = SteamCmdDownloader(root)
+            dialog._show_collection(dialog._collection)
+            self.assertEqual(dialog.items.item(0, 3).text(), "Downloaded")
+            self.assertIn("already downloaded privately", dialog.status.text())
 
     def test_failed_download_does_not_save_partial_pack(self):
         save = Mock()

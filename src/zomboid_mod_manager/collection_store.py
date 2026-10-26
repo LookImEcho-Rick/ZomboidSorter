@@ -77,8 +77,18 @@ def tree_digest(root: Path, *, cancelled: Callable[[], bool] | None = None) -> s
     return digest.hexdigest()
 
 
-def copy_verified_tree(source: Path, destination: Path, *, cancelled=None) -> str:
-    expected = tree_digest(source, cancelled=cancelled)
+def copy_verified_tree(
+    source: Path,
+    destination: Path,
+    *,
+    cancelled=None,
+    expected_digest: str | None = None,
+) -> str:
+    expected = (
+        expected_digest
+        if expected_digest is not None
+        else tree_digest(source, cancelled=cancelled)
+    )
     require_plain_path(destination)
     if destination.exists():
         raise CollectionStoreError("Refusing to overwrite an existing mod folder.")
@@ -131,7 +141,15 @@ class CollectionStore:
             return reference
         staging = self.root / "incomplete" / uuid.uuid4().hex
         staging.parent.mkdir(parents=True, exist_ok=True)
-        if copy_verified_tree(source, staging, cancelled=cancelled) != expected:
+        if (
+            copy_verified_tree(
+                source,
+                staging,
+                cancelled=cancelled,
+                expected_digest=expected,
+            )
+            != expected
+        ):
             raise CollectionStoreError("Downloaded content changed during import.")
         check_cancelled(cancelled)
         try:

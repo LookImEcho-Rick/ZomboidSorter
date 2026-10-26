@@ -187,6 +187,34 @@ class CollectionContentTests(unittest.TestCase):
         self.assertEqual(len(list(self.store.content_root.iterdir())), 2)
         self.assertEqual(list(self.local.iterdir()), [])
 
+    def test_batch_import_saves_all_items_as_one_user_named_pack(self):
+        first = make_item(self.root / "download-first", "FirstMod")
+        second = make_item(self.root / "download-second", "SecondMod")
+        items = (
+            WorkshopItemMetadata("111", "First", "", 108600, None),
+            WorkshopItemMetadata("222", "Second", "", 108600, None),
+        )
+
+        class BatchDownloader:
+            def download_many(self, requested, *, on_downloaded, **_kwargs):
+                for item in requested:
+                    source = first if item.workshop_id == "111" else second
+                    on_downloaded(item, source)
+
+        profile = download_collection(
+            WorkshopCollectionResult("99", items),
+            "My Renamed Collection",
+            self.store,
+            BatchDownloader(),
+        )
+        self.assertEqual(profile.name, "My Renamed Collection")
+        self.assertEqual(profile.mod_ids, ("FirstMod", "SecondMod"))
+        self.assertEqual(profile.workshop_ids, ("111", "222"))
+        self.assertEqual(
+            tuple(item.workshop_id for item in profile.collection_content),
+            ("111", "222"),
+        )
+
     def test_unavailable_items_do_not_start_download_or_save_partial_pack(self):
         downloader = Mock()
         with self.assertRaises(CollectionStoreError):
@@ -233,6 +261,72 @@ class CollectionContentTests(unittest.TestCase):
             self.assertRaises(CollectionStoreError),
         ):
             downloader._download(tool / "steamcmd.exe", item)
+
+    def test_batch_download_uses_one_anonymous_process_and_verifies_each_item(self):
+        tool = self.root / "tool"
+        tool.mkdir()
+        downloader = SteamCmdDownloader(tool)
+        items = (
+            WorkshopItemMetadata("123", "First", "", 108600, None),
+            WorkshopItemMetadata("456", "Second", "", 108600, None),
+        )
+        process = Mock()
+        process.poll.return_value = 0
+        calls = []
+
+        def start(args, **kwargs):
+            calls.append(args)
+            kwargs["stdout"].write(
+                b'Success. Downloaded item 123 to "first"\n'
+                b'Success. Downloaded item 456 to "second"'
+            )
+            kwargs["stdout"].flush()
+            return process
+
+        downloaded = []
+        with (
+            patch("zomboid_mod_manager.steamcmd.subprocess.Popen", side_effect=start),
+            patch("zomboid_mod_manager.steamcmd._ProcessJob"),
+            patch(
+                "zomboid_mod_manager.steamcmd.installed_collection_ids",
+                return_value={"123", "456"},
+            ),
+        ):
+            downloader._download_batch(
+                tool / "steamcmd.exe",
+                items,
+                on_downloaded=lambda item, path: downloaded.append(
+                    (item.workshop_id, path.name)
+                ),
+            )
+
+        self.assertEqual(len(calls), 1)
+        self.assertIn("anonymous", calls[0])
+        self.assertEqual(calls[0].count("+workshop_download_item"), 2)
+        self.assertEqual(downloaded, [("123", "123"), ("456", "456")])
+
+    def test_batch_download_reuses_current_receipts_without_starting_steamcmd(self):
+        downloader = SteamCmdDownloader(self.root / "tool")
+        items = (
+            WorkshopItemMetadata("123", "First", "", 108600, None),
+            WorkshopItemMetadata("456", "Second", "", 108600, None),
+        )
+        downloaded = []
+        with (
+            patch(
+                "zomboid_mod_manager.steamcmd.installed_collection_ids",
+                return_value={"123", "456"},
+            ),
+            patch.object(downloader, "ensure_tool") as ensure_tool,
+        ):
+            downloader.download_many(
+                items,
+                on_downloaded=lambda item, path: downloaded.append(
+                    (item.workshop_id, path.name)
+                ),
+            )
+        ensure_tool.assert_not_called()
+        self.assertEqual(downloaded, [("123", "123"), ("456", "456")])
 
 
 class CollectionWorkspaceTests(unittest.TestCase):

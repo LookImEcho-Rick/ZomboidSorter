@@ -14,6 +14,11 @@ Application license: GPL-3.0-or-later (root LICENSE)
 - CPython and Inno Setup versions are recorded per build in the installed `licenses/BUILD_COMPONENTS.txt`.
 - Qt libraries are dynamically loaded from the install directory; compatible library replacement is not blocked.
 
+## Version 0.3.1 release review (2026-10-25)
+
+- This release batches isolated anonymous SteamCMD item downloads, reuses receipt-verified downloads from interrupted imports, preserves verified partial results in the shared cache, and makes collection-to-Mod-Pack status and saved naming clearer. No runtime dependencies, Qt modules, bundled assets, or license-delivery changes were made. The reviewed bundle inventory, notices, source locations, and written source offer above still apply.
+- Hosted tagged and rolling workflows build the versionless Windows installer and verify release/update behavior from the pushed source.
+
 ## Previously reviewed local installer (technical review, 2026-10-22)
 
 - Installer: `ZomboidSorter-0.1.0-windows-setup.exe`

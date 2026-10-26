@@ -21,21 +21,47 @@ def download_collection(
         raise CollectionStoreError(
             "A complete collection cannot be imported while items are unavailable."
         )
-    content = []
+    content_by_id = {}
     total = len(collection.items)
-    for index, item in enumerate(collection.items, 1):
+
+    def cache_item(item, source) -> None:
         check_cancelled(cancelled)
-        if progress:
-            progress(f"Item {index}/{total}: {item.title}")
-        source = downloader.download(item, cancelled=cancelled, progress=progress)
-        content.append(store.intern(source, item.workshop_id, cancelled=cancelled))
+        content_by_id[item.workshop_id] = store.intern(
+            source, item.workshop_id, cancelled=cancelled
+        )
         if progress:
             progress(
-                f"Cached {index}/{total} items; matching content is shared across packs."
+                f"Cached {len(content_by_id)}/{total} items; matching content is shared across packs."
             )
-    references = tuple(content)
+
+    # The production downloader batches items into fewer SteamCMD sessions. Keep
+    # the one-item protocol for simple injected downloaders and existing callers.
+    if callable(getattr(type(downloader), "download_many", None)):
+        downloader.download_many(
+            collection.items,
+            cancelled=cancelled,
+            progress=progress,
+            on_downloaded=cache_item,
+        )
+    else:
+        for index, item in enumerate(collection.items, 1):
+            check_cancelled(cancelled)
+            if progress:
+                progress(f"Downloading item {index}/{total}: {item.title}")
+            cache_item(
+                item,
+                downloader.download(item, cancelled=cancelled, progress=progress),
+            )
+
+    if len(content_by_id) != total:
+        raise CollectionStoreError(
+            "SteamCMD did not finish every collection item. Completed cached content was preserved; retry the import."
+        )
+    references = tuple(content_by_id[item.workshop_id] for item in collection.items)
     workshop_ids = tuple(item.workshop_id for item in collection.items)
     draft = ModProfile(name, (), workshop_ids, None, references)
+    if progress:
+        progress("Checking downloaded Mod IDs and preparing the saved Mod Pack…")
     scan = store.scan(draft, cancelled=cancelled)
     plan = resolve_collection_import(collection, scan)
     if plan.missing_ids or plan.ambiguous_mod_ids or not plan.mod_ids:

@@ -401,6 +401,7 @@ class ProfileActionsMixin:
             self,
             collection_id=collection_id,
             title=title,
+            profile_store=self._profile_store,
             collection_store=CollectionStore(
                 self._profile_store.root.parent / "collections"
             ),
@@ -413,21 +414,21 @@ class ProfileActionsMixin:
         # Imports remain private: do not add cache roots to library discovery.
 
     def _save_imported_collection_profile(self, profile: ModProfile) -> bool:
-        overwrite = False
-        if profile.name in self._profile_store.list_names():
-            answer = QMessageBox.question(
-                self,
-                "Replace Mod Pack",
-                f"Replace '{profile.name}'? Its current version will be backed up.",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if answer != QMessageBox.StandardButton.Yes:
-                return False
-            overwrite = True
         try:
+            overwrite = False
+            if profile.name in self._profile_store.list_names():
+                answer = QMessageBox.question(
+                    self,
+                    "Replace Mod Pack",
+                    f"Replace '{profile.name}'? Its current version will be backed up.",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if answer != QMessageBox.StandardButton.Yes:
+                    return False
+                overwrite = True
             self._profile_store.save(profile, overwrite=overwrite)
-        except ProfileError as exc:
+        except (OSError, ProfileError) as exc:
             QMessageBox.warning(self, "Could not save collection Mod Pack", str(exc))
             return False
         self.configuration_status.setText(
@@ -439,7 +440,7 @@ class ProfileActionsMixin:
         self.status.setText(f"Saved Workshop collection as Mod Pack '{profile.name}'.")
         self.collection_import_status.setText(
             f"Saved '{profile.name}' with {counted(len(profile.mod_ids), 'Mod ID')}. "
-            "Open Mod Packs in Mod Workspace to load and apply it."
+            "It now appears in Mod Packs. Open Mod Packs in Mod Workspace to load and apply it."
         )
         return True
 
