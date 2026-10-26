@@ -18,7 +18,8 @@ Application license: GPL-3.0-or-later (root LICENSE)
 
 - This release adds an empty, overwriteable Default Mod Pack and app-owned save-to-pack groupings. The Default pack is not applied at startup; save folders and their `mods.txt` files remain unchanged.
 - The feature adds no runtime dependencies, Qt modules, bundled assets, or license-delivery changes. The reviewed bundle inventory, notices, source locations, and written source offer remain applicable.
-- Local validation passed all 250 tests with one environment-only skip, Ruff check/format, compileall, and `git diff --check`. Hosted tagged/rolling workflows will verify Windows packaging, update/install smoke, checksums, and provenance for this version.
+- Local validation passed all 250 tests with one environment-only skip, Ruff check/format, compileall, and `git diff --check`. The [tagged Windows workflow](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/40290020178) passed on attempt 2 after a transient failure in an existing worker-close timing assertion; the retry passed tests/lint, installer build, v0.3.2 upgrade, standard/portable install smoke, provenance, and publication. Its 121,630,831-byte installer has SHA-256 `862b0fd50257950d5a914004aedaa7d3be5d2de55c206dd61bfd7fe2c718bf43`, matching the published checksum sidecar.
+- The [rolling Windows workflow](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/40290020388) passed quality checks, packaged install/launch smoke, checksum/provenance validation, and the previous stable app's update through verified relaunch. Its 121,626,487-byte installer has SHA-256 `7dc12401333bba8b775bff88a6e48e42246a199a9d9780b22c1a931de518db91`; the update manifest reports version 0.3.3 and the release commit, and the checksum sidecar and GitHub asset digest agree. Packaged save-grouping and real-game behavior remain unverified.
 
 ## Version 0.3.2 release review (2026-10-26)
 

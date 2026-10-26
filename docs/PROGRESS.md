@@ -1,5 +1,12 @@
 # Progress
 
+## v0.3.3 hosted release verification (2026-10-26)
+
+- Release commit `f22eed6768980dbdeb4fbb72de8bf0808218896b` is on `main`; annotated tag [`v0.3.3`](https://github.com/LookImEcho-Rick/ZomboidSorter/releases/tag/v0.3.3) points to it. The release adds the empty, overwriteable Default Mod Pack and app-owned pack-to-save grouping; it adds no runtime dependencies or bundled components.
+- The [tagged Windows workflow](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/40290020178) passed on attempt 2: tests/lint, installer build, upgrade from v0.3.2, standard/portable install smoke, provenance attestation, and publication. Its first attempt hit the existing `test_close_does_not_block_while_scan_worker_finishes` timing assertion; the retry passed all 250 tests with one environment-only skip. The stable versionless installer is 121,630,831 bytes with SHA-256 `862b0fd50257950d5a914004aedaa7d3be5d2de55c206dd61bfd7fe2c718bf43`; the published checksum sidecar matches.
+- The [rolling Windows workflow](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/40290020388) passed quality checks, installer build, packaged install/launch smoke, checksum and provenance checks, and the previous stable app's update through verified relaunch. The rolling installer is 121,626,487 bytes with SHA-256 `7dc12401333bba8b775bff88a6e48e42246a199a9d9780b22c1a931de518db91`. Its manifest identifies version 0.3.3 and release commit `f22eed6768980dbdeb4fbb72de8bf0808218896b`; the manifest, sidecar, and GitHub asset digest agree, and the `rolling` tag moved after the update smoke passed.
+- Packaged feature-specific save grouping and live Project Zomboid behavior remain unverified; no live save was modified.
+
 ## Pack-specific save browser (2026-10-26)
 
 - Added a **Saves…** button for the Mod Pack explicitly loaded in the current app session. The dialog lists existing immediate `Saves/<mode>/<save>` folders and lets users group or remove them from that pack; each save can belong to only one pack. These links live in app-owned `save-assignments.json`, not in game files.
