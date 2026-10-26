@@ -54,6 +54,7 @@ class SavePickerDialog(QDialog):
         layout.addWidget(instruction)
         self.search = QLineEdit()
         self.search.setPlaceholderText("Filter saves…")
+        self.search.setClearButtonEnabled(True)
         self.search.setAccessibleName("Filter existing saves")
         self.search.textChanged.connect(self._filter_items)
         layout.addWidget(self.search)
@@ -79,11 +80,12 @@ class SavePickerDialog(QDialog):
         layout.addLayout(buttons)
 
         self._pack_name = pack_name
+        self._load_error: str | None = None
         for save in saves:
             try:
                 owner = assignments.assigned_pack(save.key)
             except SavePackError as exc:
-                self.status.setText(str(exc))
+                self._load_error = str(exc)
                 break
             if owner and owner.casefold() == pack_name.casefold():
                 continue
@@ -110,16 +112,29 @@ class SavePickerDialog(QDialog):
         self._update_actions()
 
     def _update_actions(self) -> None:
+        if self._load_error is not None:
+            self.add_button.setEnabled(False)
+            self.search.setEnabled(False)
+            self.saves_list.setEnabled(False)
+            self.status.setText(self._load_error)
+            return
         item = self.saves_list.currentItem()
         selected_visible = item is not None and not item.isHidden()
         self.add_button.setEnabled(selected_visible)
         if self.saves_list.count() == 0:
             self.status.setText("No other saves are available to add.")
-        elif not any(
+            return
+        visible_count = sum(
             not self.saves_list.item(index).isHidden()
             for index in range(self.saves_list.count())
-        ):
-            self.status.setText("No saves match this filter.")
+        )
+        if visible_count == 0:
+            self.status.setText(
+                "No saves match this filter. Clear the search to see all saves."
+            )
+        else:
+            noun = "save" if visible_count == 1 else "saves"
+            self.status.setText(f"{visible_count} {noun} available to add.")
 
 
 class SavePacksDialog(QDialog):
@@ -189,6 +204,8 @@ class SavePacksDialog(QDialog):
             self._all_by_key: dict[str, GameSave] = {}
             self.status.setText(str(exc))
             self.add_button.setEnabled(False)
+            self.remove_button.setEnabled(False)
+            self.saves_list.setEnabled(False)
         else:
             self._refresh()
 
@@ -215,9 +232,9 @@ class SavePacksDialog(QDialog):
         if not selected_key and self.saves_list.count():
             self.saves_list.setCurrentRow(0)
         if self.saves_list.count():
-            self.status.setText(
-                f"{self.saves_list.count()} save(s) grouped under '{self._pack_name}'."
-            )
+            count = self.saves_list.count()
+            noun = "save" if count == 1 else "saves"
+            self.status.setText(f"{count} {noun} grouped under '{self._pack_name}'.")
         elif self._saves:
             self.status.setText(
                 "No saves are grouped under this pack yet. Choose Add Existing Save to start."
@@ -280,3 +297,10 @@ class SavePacksDialog(QDialog):
 
     def _update_actions(self) -> None:
         self.remove_button.setEnabled(self.saves_list.currentItem() is not None)
+        can_add = any(save.key not in self._assigned_keys for save in self._saves)
+        self.add_button.setEnabled(can_add)
+        self.add_button.setToolTip(
+            "Choose an existing save to group under this pack."
+            if can_add
+            else "No other discovered saves are available to group under this pack."
+        )

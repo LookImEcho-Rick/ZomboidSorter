@@ -1,5 +1,23 @@
 # Progress
 
+## Mod details build controls removed (2026-10-26)
+
+- Removed the Project Zomboid build selector, exact-version field, **Detect Build** button, and detected-build evidence line from the visible Details pane. This was redundant detail-pane UI; the separate Available Mods build filter remains.
+- Kept the current metadata-target state and detection behavior for metadata display, diagnostics, ordering, and existing saved settings. No game files or staged mod lists are changed by this UI cleanup.
+- Updated the README, architecture notes, and build-detection roadmap entry to reflect the simplified Details pane.
+- Validation: reviewed the edited source and documentation diff. No tests or rendered-UI inspection were run for this request.
+
+## Full-project UX review: filtering and save grouping (2026-10-26)
+
+- Reviewed the current v0.3.4 source and release history, the five main tabs, Mod Pack and save dialogs, collection import/load, diagnostics, global apply/restore, launch, worker boundaries, and earlier UX research. The checkout was clean before this iteration. Acceptance criteria: filters expose their purpose to assistive technology, empty results explain how to recover, the save picker updates its status when a filter is cleared, and an unreadable grouping index cannot leave an actionable partial picker.
+- **High — Add Existing Save, unreadable groupings:** `SavePickerDialog` caught an index-read error while building rows, then `_update_actions()` replaced the error with a count or empty-state message. If some rows had been added, the picker could still present them. It now preserves the error and disables search, list, and Add. This affects app-owned grouping only; save contents are never edited by this action.
+- **Medium — Add Existing Save, filter recovery:** after a zero-result search, the “No saves match” message remained when matches returned. The picker now shows a current visible count and gives clear-search guidance for zero results. The search has a clear button.
+- **Medium — Mod Workspace, filter clarity:** source, sort, and active-issue selectors had no accessible names; a zero-result list only said nothing matched. The controls now name their scope, sorting explains that it leaves Active Order unchanged, and both lists give specific reset steps. No staged order or game-list behavior changed.
+- **Low — Library & Diagnostics:** its table accessible name contained a typo (“Available Modsed”). It now describes the discovered mods and Workshop items shown there.
+- **Cohesion follow-up — pack save grouping:** the parent save browser enabled Add when every discovered save already belonged to the pack, opening an empty picker. It also left Remove enabled after a grouping-index read error, even though the list was unusable. Add now reflects whether another discovered save can be grouped; read failures disable both actions and the list. The grouped-save count uses normal singular/plural wording. Tests cover the transitions between grouped and ungrouped states and a damaged app-owned index.
+- A read-only native inspection of the installed v0.3.4 app showed the wide Mod Workspace and Mod Packs chooser fitting without visible clipping. The chooser starts with no pack selected and requires a deliberate selection before Load & Apply; this matches its existing safety flow. The installed binary predates these source edits, so it does not verify their appearance. The user switched foreground apps during inspection; no game-facing action was taken.
+- Validation: the 83-test UI suite and full 253-test suite passed (one environment-only skip). Ruff check and format, compileall, and `git diff --check` passed. A 560×480 offscreen Qt capture of the save picker used three disposable save records, including a long name. The expected count and disabled Add state appeared, but the offscreen renderer showed missing glyphs, so it cannot establish Windows typography or clipping. A native picker and high-DPI pass remain useful before the next release. No real save, mod folder, or game configuration was touched.
+
 ## v0.3.4 hosted release verification (2026-10-26)
 
 - Release commit `0fee8243655fff3a5e60bf1213b203b81df954f2` is on `main`; annotated tag [`v0.3.4`](https://github.com/LookImEcho-Rick/ZomboidSorter/releases/tag/v0.3.4) points to it. This release improves Mod Pack selection, collection loading, and the final global-list confirmation without adding dependencies or bundled components.

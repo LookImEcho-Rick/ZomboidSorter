@@ -37,7 +37,7 @@ from zomboid_mod_manager.discovery.scanner import ScanCancelled
 from zomboid_mod_manager.domain import DetectedPaths, Diagnostic, ScanResult
 from zomboid_mod_manager.gameio.active_mods import read_active_mods
 from zomboid_mod_manager.profiles import CollectionContent, ModProfile, ProfileStore
-from zomboid_mod_manager.save_packs import SaveAssignmentStore, save_key
+from zomboid_mod_manager.save_packs import GameSave, SaveAssignmentStore, save_key
 from zomboid_mod_manager.sorting.user_rules import (
     UserOrderRule,
     parse_user_order_rules,
@@ -46,7 +46,7 @@ from zomboid_mod_manager.ui.file_overlap_dialog import FileOverlapDialog
 from zomboid_mod_manager.ui.global_backup_dialog import GlobalBackupDialog
 from zomboid_mod_manager.ui.main_window import MainWindow
 from zomboid_mod_manager.ui.mod_packs_dialog import ModPacksDialog
-from zomboid_mod_manager.ui.save_packs_dialog import SavePacksDialog
+from zomboid_mod_manager.ui.save_packs_dialog import SavePacksDialog, SavePickerDialog
 from zomboid_mod_manager.ui.support_report_dialog import SupportReportDialog
 from zomboid_mod_manager.ui.window_lifecycle import fit_window_geometry
 from zomboid_mod_manager.ui.window_widgets import ISSUE_ROLE, PreviewLabel
@@ -1274,9 +1274,12 @@ class MainWindowTests(unittest.TestCase):
         self.addCleanup(dialog.close)
         self.assertEqual(dialog.saves_list.count(), 1)
         self.assertEqual(dialog.saves_list.item(0).text(), "Rosewood · Sandbox")
+        self.assertEqual(dialog.status.text(), "1 save grouped under 'Weekend Pack'.")
+        self.assertFalse(dialog.add_button.isEnabled())
 
         dialog._remove_selected()
         self.assertIsNone(assignments.assigned_pack(key))
+        self.assertTrue(dialog.add_button.isEnabled())
         self.assertTrue(save_dir.is_dir())
         self.assertEqual(
             mods_file.read_text(encoding="utf-8"),
@@ -1297,10 +1300,55 @@ class MainWindowTests(unittest.TestCase):
             dialog._add_save()
 
         self.assertEqual(assignments.assigned_pack(key), "Weekend Pack")
+        self.assertFalse(dialog.add_button.isEnabled())
         self.assertEqual(
             mods_file.read_text(encoding="utf-8"),
             "game save data stays unchanged\n",
         )
+
+    def test_save_picker_filter_status_recovers_and_unreadable_groupings_block_add(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            saves = (
+                GameSave(
+                    save_key("Sandbox", "Rosewood"),
+                    "Rosewood",
+                    "Sandbox",
+                    root / "Rosewood",
+                ),
+                GameSave(
+                    save_key("Sandbox", "Muldraugh"),
+                    "Muldraugh",
+                    "Sandbox",
+                    root / "Muldraugh",
+                ),
+            )
+            assignments = SaveAssignmentStore(root)
+            dialog = SavePickerDialog(saves, assignments, "Weekend Pack")
+            self.addCleanup(dialog.close)
+            self.assertEqual(dialog.status.text(), "2 saves available to add.")
+            dialog.search.setText("nowhere")
+            self.assertIn("No saves match", dialog.status.text())
+            self.assertFalse(dialog.add_button.isEnabled())
+            dialog.search.clear()
+            self.assertEqual(dialog.status.text(), "2 saves available to add.")
+
+            assignments.path.write_text("not json", encoding="utf-8")
+            blocked = SavePickerDialog(saves, assignments, "Weekend Pack")
+            self.addCleanup(blocked.close)
+            self.assertIn("not valid UTF-8 JSON", blocked.status.text())
+            self.assertFalse(blocked.add_button.isEnabled())
+            self.assertFalse(blocked.saves_list.isEnabled())
+
+            pack_dialog = SavePacksDialog(
+                ProfileStore(root / "profiles"), "Weekend Pack", root / "Saves"
+            )
+            self.addCleanup(pack_dialog.close)
+            self.assertIn("not valid UTF-8 JSON", pack_dialog.status.text())
+            self.assertFalse(pack_dialog.add_button.isEnabled())
+            self.assertFalse(pack_dialog.remove_button.isEnabled())
 
     def test_saves_button_is_enabled_for_the_currently_loaded_pack(self) -> None:
         temporary = tempfile.TemporaryDirectory()
@@ -1661,6 +1709,9 @@ class MainWindowTests(unittest.TestCase):
             QTest.qWait(10)
 
         window.inactive_sort.setCurrentIndex(1)
+        self.assertEqual(window.inactive_sort.accessibleName(), "Sort Available Mods")
+        self.assertIn("Available Mods", window.inactive_filter.accessibleName())
+        self.assertIn("Active Order", window.active_filter.accessibleName())
         names = [
             window.available_list.item(i).text()
             for i in range(window.available_list.count())

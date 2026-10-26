@@ -336,7 +336,10 @@ class LibraryMixin:
             f"AVAILABLE MODS  ·  {count}{new_label}{diagnostics_label}"
         )
         if query or mode != "All sources" or build != "all":
-            self.available_list.empty_text = "No mods match this search or filter"
+            self.available_list.empty_text = (
+                "No mods match. Clear the search, choose All sources, "
+                "or choose Show all for builds."
+            )
         elif self._last_result is not None and not self._last_result.entries:
             self.available_list.empty_text = (
                 "No mod entries were found in the selected local or Workshop folders. "
@@ -368,7 +371,7 @@ class LibraryMixin:
         new_label = f"  ·  {new_count} new" if new_count else ""
         self.active_heading.setText(f"ACTIVE ORDER  ·  {count}{new_label}")
         self.active_list.empty_text = (
-            "No active mods match this search or filter"
+            "No active mods match. Clear the search or choose All active."
             if query or mode != "All active"
             else "Active Order is empty. Choose mods in Available Mods, then select Add."
         )

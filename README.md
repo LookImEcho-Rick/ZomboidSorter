@@ -49,7 +49,7 @@ These two panel captures are from the locally installed v0.2.2 app. Their layout
 4. In **Mod Workspace**, move mods from **Available Mods** to **Active Order** and arrange them. Select a mod to read its **Description** or **Metadata**. Nothing is written to the game while you stage changes.
 5. Save the order as a **Mod Pack** if you want to reuse it. Open **Mod Packs…**, select a saved setup, and choose **Load & Apply**. Review the change summary and confirm before ZomboidSorter updates the game's active mod list. To apply your current staged order instead, use **Apply To Project Zomboid…** or **Apply & Launch…**.
 
-In the details pane, choose a Project Zomboid build to review its mod information, or select **Detect Build** to use the installed game build when it can be identified. An exact Build 42 version can select an appropriate versioned `mod.info` file. This helps display metadata and suggest an order; it does not prove that a mod's content works in that game build.
+Mod details use the current metadata target to display mod information and suggest an order. An exact Build 42 version can select an appropriate versioned `mod.info` file. This helps interpret metadata; it does not prove that a mod's content works in that game build.
 
 ## Know what each action changes
 

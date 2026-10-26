@@ -185,6 +185,12 @@ class WorkspaceLayoutMixin:
         inactive_options = QHBoxLayout()
         self.inactive_filter = QComboBox()
         self.inactive_filter.addItems(["All sources", "Workshop", "Local", "Warnings"])
+        self.inactive_filter.setAccessibleName(
+            "Filter Available Mods by source or warnings"
+        )
+        self.inactive_filter.setToolTip(
+            "Show all available mods, one source, or entries with warnings."
+        )
         self.inactive_filter.currentIndexChanged.connect(
             lambda _index: self._filter_available_mods(self.manage_search.text())
         )
@@ -192,6 +198,10 @@ class WorkspaceLayoutMixin:
         self.inactive_sort = QComboBox()
         self.inactive_sort.addItems(
             ["Name A–Z", "Name Z–A", "Mod ID A–Z", "Mod ID Z–A"]
+        )
+        self.inactive_sort.setAccessibleName("Sort Available Mods")
+        self.inactive_sort.setToolTip(
+            "Change the display order of Available Mods. Active Order is unchanged."
         )
         self.inactive_sort.currentIndexChanged.connect(
             lambda _index: self._refresh_management_lists()
@@ -238,9 +248,7 @@ class WorkspaceLayoutMixin:
         available_column.addWidget(self.available_list, 1)
         self.select_filtered_button = QPushButton("Select")
         self.select_filtered_button.setObjectName("subtleAction")
-        self.select_filtered_button.setAccessibleName(
-            "Select all shown Available Mods mods"
-        )
+        self.select_filtered_button.setAccessibleName("Select all shown Available Mods")
         self.select_filtered_button.setToolTip(
             "Select every mod currently shown in Available Mods. Use Add to stage them."
         )
@@ -306,6 +314,10 @@ class WorkspaceLayoutMixin:
         self.active_filter = QComboBox()
         self.active_filter.addItems(
             ["All active", "Workshop", "Local", "Missing / duplicate"]
+        )
+        self.active_filter.setAccessibleName("Filter Active Order by source or issue")
+        self.active_filter.setToolTip(
+            "Show all staged mods, one source, or Mod IDs missing or duplicated in the scan."
         )
         self.active_filter.currentIndexChanged.connect(
             lambda _index: self._filter_active_mods(self.active_search.text())
