@@ -20,7 +20,7 @@ from zomboid_mod_manager.configuration import (
     load_active_configuration,
     read_unchanged_active_configuration,
 )
-from zomboid_mod_manager.discovery.scanner import scan_mods
+from zomboid_mod_manager.discovery.scanner import merge_scan_results, scan_mods
 from zomboid_mod_manager.domain import ModEntry, ScanResult
 from zomboid_mod_manager.gameio.active_mods import (
     ActiveModConfigError,
@@ -469,24 +469,25 @@ class ProfileActionsMixin:
         answer = QMessageBox.question(
             self,
             "Load Collection Mod Pack",
-            f"Load '{profile.name}'? Its cached mod folders will be prepared in {snapshot.path.parent}. Previous app-owned copies are archived; your own mods are never replaced. Close Project Zomboid first. You will review the global-list changes before applying them.",
+            f"Load '{profile.name}'? Its exact cached copies will be prepared in {snapshot.path.parent}. When you launch from ZomboidSorter, those local copies take priority over Workshop copies with the same Mod ID. Other installed copies stay untouched. Close Project Zomboid first. You will review the global-list changes before applying them.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
-        roots, workshop = self._selected_roots()
+        roots, _workshop = self._selected_roots()
         old_mods = list(self._staged_mod_ids)
         old_workshop = self._profile_workshop_ids
         old_content = getattr(self, "_loaded_collection_content", ())
         old_scan = self._last_result
+        old_raw_scan = self._last_scan_result or old_scan
         dialog = CollectionLoadDialog(
             lambda cancelled, progress: load_collection(
                 CollectionStore(self._profile_store.root.parent / "collections"),
                 profile,
                 snapshot.path.parent,
                 roots,
-                workshop,
+                old_raw_scan,
                 cancelled=cancelled,
                 progress=progress,
             ),
@@ -510,7 +511,7 @@ class ProfileActionsMixin:
             require_confirmation=True, map_ids=profile.map_ids
         ):
             self.status.setText(
-                f"Loaded and applied '{profile.name}'. Disabled pack mods remain in Available Mods; other cached packs stay hidden."
+                f"Loaded and applied '{profile.name}'. Launch from ZomboidSorter to prioritize its exact copies over Workshop versions; other installed files stay untouched. Disabled pack mods remain in Available Mods."
             )
             return
         if self._active_config is not before_write:
@@ -524,9 +525,20 @@ class ProfileActionsMixin:
         def restore(_cancelled, progress):
             progress("Restoring previous collection folders…")
             prepared.rollback()
-            return scan_mods(
+            local_scan = scan_mods(
                 local_roots=list(dict.fromkeys([snapshot.path.parent, *roots])),
-                workshop_roots=workshop,
+            )
+            previous_profile = prepared.owner.loaded_profile()
+            state, _ = prepared.owner.read()
+            return merge_scan_results(
+                local_scan,
+                old_raw_scan,
+                preferred_mod_ids=(
+                    previous_profile.mod_ids if previous_profile else ()
+                ),
+                preferred_roots=tuple(
+                    snapshot.path.parent / record["name"] for record in state["folders"]
+                ),
             )
 
         recovery = CollectionLoadDialog(restore, self, recovery=True)
@@ -542,6 +554,7 @@ class ProfileActionsMixin:
             )
         else:
             self._last_result = old_scan
+            self._last_scan_result = old_raw_scan
             QMessageBox.warning(
                 self,
                 "Collection Recovery Needs Attention",

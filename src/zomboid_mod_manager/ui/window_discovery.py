@@ -25,6 +25,7 @@ from zomboid_mod_manager.discovery.game_build import (
     format_game_build_detection,
 )
 from zomboid_mod_manager.discovery.paths import detect_paths
+from zomboid_mod_manager.discovery.scanner import merge_scan_results
 from zomboid_mod_manager.domain import DetectedPaths, ScanResult
 from zomboid_mod_manager.profiles import ProfileError
 
@@ -490,17 +491,30 @@ class DiscoveryMixin:
     def _show_result(self, result: ScanResult) -> None:
         if self._shutdown_requested:
             return
+        raw_result = result
         if (
             self._active_config is not None
             and self._active_config.path.parent.name.lower() == "mods"
             and self._active_config.path.parent.parent.name.lower() == "zomboid"
         ):
             try:
-                loaded = CollectionDeployment(
-                    self._active_config.path.parent
-                ).loaded_profile()
+                deployment = CollectionDeployment(self._active_config.path.parent)
+                loaded = deployment.loaded_profile()
+                state, _ = deployment.read()
                 self._loaded_collection_content = (
                     loaded.collection_content if loaded else ()
+                )
+                self._loaded_collection_mod_ids = (
+                    loaded.mod_ids if loaded and loaded.collection_content else ()
+                )
+                result = merge_scan_results(
+                    result,
+                    result,
+                    preferred_mod_ids=self._loaded_collection_mod_ids,
+                    preferred_roots=tuple(
+                        deployment.local_root / record["name"]
+                        for record in state["folders"]
+                    ),
                 )
             except (OSError, ProfileError) as exc:
                 self.configuration_status.setText(
@@ -546,6 +560,7 @@ class DiscoveryMixin:
         )
         self._preview_generation += 1
         self._preview_cache.clear()
+        self._last_scan_result = raw_result
         self._last_result = result
         self._last_scan_key = self._active_scan_key
         self._last_scan_at = time.monotonic()

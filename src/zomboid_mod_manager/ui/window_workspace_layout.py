@@ -230,7 +230,7 @@ class WorkspaceLayoutMixin:
         available_actions.addWidget(self.select_filtered_button)
         self.launch_game_button = QPushButton("Launch Project Zomboid")
         self.launch_game_button.setToolTip(
-            "Apply staged global mod-list changes, then launch Project Zomboid through Steam."
+            "Apply staged global mod-list changes, then launch through Steam. A loaded collection uses a one-time folder order that puts its local copies ahead of Workshop copies."
         )
         self.launch_game_button.clicked.connect(self._launch_project_zomboid)
         self.launch_readiness = QLabel()

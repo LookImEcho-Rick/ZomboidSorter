@@ -629,6 +629,26 @@ class MainWindowTests(unittest.TestCase):
 
         self.assertEqual(warning.call_args.args[1], "Could Not Launch Project Zomboid")
 
+    def test_loaded_collection_launch_prioritizes_local_pack_copies(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        window, _config_path = self._make_launch_window(Path(temporary.name))
+        self._wait_for_background_workers(window)
+        window._loaded_collection_mod_ids = ("PackA",)
+        window._confirm_configuration_preflight = lambda _action: True
+
+        with patch(
+            "zomboid_mod_manager.ui.window_configuration.QDesktopServices.openUrl",
+            return_value=True,
+        ) as open_url:
+            window._launch_project_zomboid()
+
+        self.assertEqual(
+            bytes(open_url.call_args.args[0].toEncoded()).decode("ascii"),
+            "steam://run/108600//-modfolders%20mods,workshop,steam",
+        )
+        self.assertIn("local copies were prioritized", window.status.text())
+
     def test_workspace_uses_three_panels_and_list_selection_shows_details(self) -> None:
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)

@@ -52,7 +52,7 @@ class CollectionLoadDialog(QDialog):
             or (
                 "Restoring previous collection folders…"
                 if recovery
-                else "Preparing collection files for Project Zomboid…"
+                else "Checking the saved collection and preparing its local copies…"
             )
         )
         self.status.setWordWrap(True)

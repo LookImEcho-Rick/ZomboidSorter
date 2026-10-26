@@ -71,7 +71,6 @@ class LocalInstallTests(unittest.TestCase):
             ModProfile("Empty", ()),
             self.local,
             [self.local],
-            [],
         )
         self.assertTrue(all(p.is_dir() for p in paths))
         self.assertTrue(

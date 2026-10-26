@@ -111,11 +111,14 @@ class MainWindow(
         self._entries: dict[str, ModEntry] = {}
         self._library_selected_key: str | None = None
         self._last_result: ScanResult | None = None
+        self._last_scan_result: ScanResult | None = None
         self._recently_added_workshop_entry_keys: set[str] = set()
         self._recently_added_workshop_item_count = 0
         self._active_config: ActiveModSnapshot | None = None
         self._staged_mod_ids: list[str] = []
         self._profile_workshop_ids: tuple[str, ...] = ()
+        self._loaded_collection_content = ()
+        self._loaded_collection_mod_ids: tuple[str, ...] = ()
         self._profile_store = profile_store or ProfileStore()
         self._diagnostic_worker: DiagnosticWorker | None = None
         self._extra_diagnostics: dict[str, str] = {}

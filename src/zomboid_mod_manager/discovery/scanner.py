@@ -7,6 +7,7 @@ import re
 import stat
 from collections import defaultdict
 from collections.abc import Callable, Iterable
+from dataclasses import replace
 from pathlib import Path
 
 from zomboid_mod_manager.domain import (
@@ -523,6 +524,95 @@ def _scan_workshop_root(
     return items
 
 
+def _duplicate_mod_id_diagnostics(
+    entries: Iterable[ModEntry],
+    *,
+    cancelled: Callable[[], bool] | None = None,
+) -> list[Diagnostic]:
+    by_id: dict[str, list[ModEntry]] = defaultdict(list)
+    for entry in entries:
+        _check_cancelled(cancelled)
+        if entry.mod_id:
+            by_id[entry.mod_id].append(entry)
+
+    diagnostics = []
+    for mod_id, matches in sorted(by_id.items(), key=lambda item: item[0].casefold()):
+        _check_cancelled(cancelled)
+        if len({entry.key for entry in matches}) > 1:
+            locations = ", ".join(str(entry.entry_path) for entry in matches)
+            diagnostics.append(
+                Diagnostic(
+                    f"Mod ID '{mod_id}' appears in {len({entry.key for entry in matches})} installed entries; all copies are preserved. Locations: {locations}"
+                )
+            )
+    return diagnostics
+
+
+def merge_scan_results(
+    local_scan: ScanResult,
+    previous_scan: ScanResult | None,
+    *,
+    preferred_mod_ids: Iterable[str] = (),
+    preferred_roots: Iterable[Path] = (),
+) -> ScanResult:
+    """Refresh local entries while reusing a prior Workshop scan.
+
+    When an app-owned collection copy is preferred, other scanned entries with
+    the same Mod ID stay untouched on disk but are omitted from the active scan
+    view while that pack is loaded.
+    """
+    workshop_items = previous_scan.workshop_items if previous_scan else ()
+    preferred_ids = set(preferred_mod_ids)
+    root_keys = tuple(_path_key(Path(root)).rstrip(os.sep) for root in preferred_roots)
+
+    def is_preferred(entry: ModEntry) -> bool:
+        entry_key = _path_key(entry.entry_path)
+        return any(
+            entry_key == root_key or entry_key.startswith(root_key + os.sep)
+            for root_key in root_keys
+        )
+
+    original_entries = local_scan.local_entries + tuple(
+        entry for item in workshop_items for entry in item.entries
+    )
+    preferred_ids_found = {
+        mod_id
+        for mod_id in preferred_ids
+        if any(
+            entry.mod_id == mod_id and is_preferred(entry) for entry in original_entries
+        )
+    }
+
+    def keep_entry(entry: ModEntry) -> bool:
+        return entry.mod_id not in preferred_ids_found or is_preferred(entry)
+
+    local_entries = tuple(
+        entry for entry in local_scan.local_entries if keep_entry(entry)
+    )
+    workshop_items = tuple(
+        replace(
+            item, entries=tuple(entry for entry in item.entries if keep_entry(entry))
+        )
+        for item in workshop_items
+    )
+    entries = local_entries + tuple(
+        entry for item in workshop_items for entry in item.entries
+    )
+
+    duplicate_prefix = "Mod ID '"
+    diagnostics = list(
+        dict.fromkeys(
+            diagnostic
+            for source in (local_scan, previous_scan)
+            if source is not None
+            for diagnostic in source.diagnostics
+            if not diagnostic.message.startswith(duplicate_prefix)
+        )
+    )
+    diagnostics.extend(_duplicate_mod_id_diagnostics(entries))
+    return ScanResult(local_entries, workshop_items, tuple(diagnostics))
+
+
 def scan_mods(
     *,
     local_roots: Iterable[Path] = (),
@@ -579,21 +669,7 @@ def scan_mods(
     for item in workshop_items:
         _check_cancelled(cancelled)
         all_entries.extend(item.entries)
-    by_id: dict[str, list[ModEntry]] = defaultdict(list)
-    for entry in all_entries:
-        _check_cancelled(cancelled)
-        if entry.mod_id:
-            by_id[entry.mod_id].append(entry)
-    for mod_id, matches in sorted(by_id.items(), key=lambda item: item[0].casefold()):
-        _check_cancelled(cancelled)
-        distinct_entries = {entry.key for entry in matches}
-        if len(distinct_entries) > 1:
-            locations = ", ".join(str(entry.entry_path) for entry in matches)
-            diagnostics.append(
-                Diagnostic(
-                    f"Mod ID '{mod_id}' appears in {len(distinct_entries)} installed entries; all copies are preserved. Locations: {locations}"
-                )
-            )
+    diagnostics.extend(_duplicate_mod_id_diagnostics(all_entries, cancelled=cancelled))
 
     by_workshop_id: dict[str, list[WorkshopItem]] = defaultdict(list)
     for item in workshop_items:

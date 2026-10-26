@@ -486,7 +486,13 @@ class ActiveConfigurationMixin:
                 f"The global mod list could not be verified. Reload it before launching.\n\n{exc}",
             )
             return
-        if not QDesktopServices.openUrl(QUrl("steam://run/108600")):
+        collection_priority = bool(self._loaded_collection_mod_ids)
+        launch_url = (
+            QUrl("steam://run/108600//-modfolders%20mods,workshop,steam")
+            if collection_priority
+            else QUrl("steam://run/108600")
+        )
+        if not QDesktopServices.openUrl(launch_url):
             QMessageBox.warning(
                 self,
                 "Could Not Launch Project Zomboid",
@@ -494,5 +500,7 @@ class ActiveConfigurationMixin:
             )
         else:
             self.status.setText(
-                "Windows accepted the Steam launch link. Project Zomboid startup is not confirmed."
+                "Windows accepted the Steam launch link. The collection's local copies were prioritized for this launch. Project Zomboid startup is not confirmed."
+                if collection_priority
+                else "Windows accepted the Steam launch link. Project Zomboid startup is not confirmed."
             )

@@ -21,7 +21,7 @@ from .collection_store import (
     require_plain_path,
     tree_digest,
 )
-from .discovery.scanner import scan_mods
+from .discovery.scanner import merge_scan_results, scan_mods
 from .domain import ScanResult
 from .profiles import ModProfile, parse_profile, serialize_profile
 
@@ -102,7 +102,6 @@ class CollectionDeployment:
         self,
         store: CollectionStore,
         profile: ModProfile,
-        installed: ScanResult,
         *,
         cancelled=None,
         progress=None,
@@ -124,21 +123,6 @@ class CollectionDeployment:
                 )
             mod_sources[entry.mod_id] = digest
             sources[digest] = entry.entry_path
-        # PZ copy precedence is not assumed: permit existing user/Steam copies only
-        # when their entire mod entry matches the selected cached content exactly.
-        for entry in installed.entries:
-            if (
-                entry.entry_path.parent == self.local_root
-                and entry.entry_path.name in old_names
-            ):
-                continue
-            if entry.mod_id in mod_sources:
-                digest = tree_digest(entry.entry_path, cancelled=cancelled)
-                if digest != mod_sources[entry.mod_id]:
-                    raise CollectionStoreError(
-                        f"Installed Mod ID '{entry.mod_id}' differs from the cached pack version. No files were replaced. Resolve this copy conflict before loading."
-                    )
-                sources.pop(digest, None)
         transaction_root = self.root / "transactions" / uuid.uuid4().hex
         require_plain_path(transaction_root)
         prepared = transaction_root / "prepared"
@@ -275,7 +259,7 @@ def load_collection(
     profile,
     local_root,
     local_roots,
-    workshop_roots,
+    previous_scan: ScanResult | None = None,
     *,
     cancelled=None,
     progress=None,
@@ -283,23 +267,22 @@ def load_collection(
     check_cancelled(cancelled)
     deployment = CollectionDeployment(local_root)
     roots = list(dict.fromkeys([local_root, *local_roots]))
-    installed = scan_mods(
-        local_roots=roots,
-        workshop_roots=workshop_roots,
-        cancelled=cancelled,
-        progress=progress,
-    )
+    if progress:
+        progress("Verifying the saved collection content…")
     prepared = deployment.prepare(
-        store, profile, installed, cancelled=cancelled, progress=progress
+        store, profile, cancelled=cancelled, progress=progress
     )
     check_cancelled(cancelled)
     prepared.activate()
     try:
-        result = scan_mods(
+        local_scan = scan_mods(
             local_roots=roots,
-            workshop_roots=workshop_roots,
             cancelled=cancelled,
             progress=progress,
+        )
+        result = merge_scan_results(
+            local_scan,
+            previous_scan,
         )
         check_cancelled(cancelled)
     except Exception:

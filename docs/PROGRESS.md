@@ -1,5 +1,11 @@
 # Progress
 
+## Collection load priority and Workshop scan delay after v0.3.1 (2026-10-25)
+
+- The user reported that loading a saved collection scanned all Workshop item folders, then stopped on a differing installed copy of `tsarslib`. Pack loading now verifies and deploys the exact cached collection copies without hashing unrelated installed folders or rejecting differing user/Steam copies. Existing user and Workshop folders remain untouched.
+- Loading refreshes local mods only and carries forward the already completed Workshop scan. The loaded pack's deployed copies are preferred in the app's active list and conflict diagnostics. Launching Project Zomboid from ZomboidSorter passes a one-launch `-modfolders mods,workshop,steam` order so local collection copies are considered before Workshop copies; Steam launch settings are not persisted.
+- Focused validation passed: 19 collection-content tests, 9 local-install tests, and the corrected collection-launch UI regression. The UI suite's earlier run had 77 passing cases plus one assertion-only failure caused by decoded URL formatting; the corrected regression passes. Ruff, compileall, and `git diff --check` passed. No game launch, packaged build, or real gameplay was tested. The temporary launch argument's forwarding through Steam and duplicate Mod IDs between folders within the same `Zomboid/mods` directory remain unverified.
+
 ## Collection duplicate-ID recovery after v0.3.1 (2026-10-25)
 
 - The reported collection had 142 verified private Workshop downloads but no saved pack. Read-only inspection found valid metadata in the cached items and 167 unique Mod IDs; two different Workshop items both declared `ImprovisedSilencers`, which made the importer reject the entire collection. The download/cache work had completed, but profile saving was never reached.

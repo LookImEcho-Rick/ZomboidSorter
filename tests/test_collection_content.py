@@ -28,7 +28,7 @@ from zomboid_mod_manager.collection_store import (
     CollectionStoreError,
     tree_digest,
 )
-from zomboid_mod_manager.discovery.scanner import scan_mods
+from zomboid_mod_manager.discovery.scanner import merge_scan_results, scan_mods
 from zomboid_mod_manager.domain import DetectedPaths
 from zomboid_mod_manager.gameio.active_mods import read_active_mods
 from zomboid_mod_manager.profiles import (
@@ -90,14 +90,14 @@ class CollectionContentTests(unittest.TestCase):
     def test_cache_is_hidden_until_loaded_switching_and_rollback_preserve_objects(self):
         self.assertEqual(scan_mods(local_roots=[self.local]).entries, ())
         transaction, result = load_collection(
-            self.store, self.profile_a, self.local, [self.local], []
+            self.store, self.profile_a, self.local, [self.local]
         )
         self.assertEqual([e.mod_id for e in result.entries], ["PackA"])
         self.assertEqual(
             CollectionDeployment(self.local).loaded_profile(), self.profile_a
         )
         second, result = load_collection(
-            self.store, self.profile_b, self.local, [self.local], []
+            self.store, self.profile_b, self.local, [self.local], result
         )
         self.assertEqual([e.mod_id for e in result.entries], ["PackB"])
         self.assertTrue(any((second.root / "previous").iterdir()))
@@ -113,41 +113,69 @@ class CollectionContentTests(unittest.TestCase):
             "tampered"
         )
         with self.assertRaises(CollectionStoreError):
-            load_collection(self.store, self.profile_a, self.local, [self.local], [])
+            load_collection(self.store, self.profile_a, self.local, [self.local])
         self.assertEqual(list(self.local.iterdir()), [])
 
-    def test_installed_conflict_is_not_overwritten_and_exact_copy_is_reused(self):
+    def test_collection_copy_takes_priority_without_overwriting_user_copy(self):
         own = make_item(self.root / "user", "PackA", "user version") / "mods/PackA"
         own.rename(self.local / "UsersMod")
-        with self.assertRaises(CollectionStoreError):
-            load_collection(self.store, self.profile_a, self.local, [self.local], [])
+        installed = scan_mods(local_roots=[self.local])
+        transaction, result = load_collection(
+            self.store, self.profile_a, self.local, [self.local], installed
+        )
+        preferred = merge_scan_results(
+            result,
+            result,
+            preferred_mod_ids=self.profile_a.mod_ids,
+            preferred_roots=tuple(
+                self.local / record["name"] for record in transaction.new["folders"]
+            ),
+        )
         self.assertEqual(
             (self.local / "UsersMod/media/example.lua").read_text(), "user version"
         )
-        (self.local / "UsersMod/media/example.lua").write_text("one")
-        transaction, result = load_collection(
-            self.store, self.profile_a, self.local, [self.local], []
+        self.assertEqual([entry.mod_id for entry in preferred.entries], ["PackA"])
+        self.assertEqual(
+            preferred.local_entries[0].entry_path.relative_to(self.local).parts[0],
+            transaction.new["folders"][0]["name"],
         )
-        self.assertEqual(len(result.entries), 1)
-        self.assertEqual(transaction.new["folders"], [])
+        self.assertEqual(
+            (preferred.local_entries[0].entry_path / "media/example.lua").read_text(),
+            "one",
+        )
+
+    def test_load_reuses_prior_workshop_scan_instead_of_scanning_workshop_roots(self):
+        workshop = self.root / "workshop"
+        make_item(workshop / "123", "WorkshopOnly", "workshop")
+        previous = scan_mods(workshop_roots=[workshop])
+        with patch(
+            "zomboid_mod_manager.collection_deployment.scan_mods",
+            wraps=scan_mods,
+        ) as scan:
+            _, result = load_collection(
+                self.store, self.profile_a, self.local, [self.local], previous
+            )
+        self.assertEqual(scan.call_count, 1)
+        self.assertNotIn("workshop_roots", scan.call_args.kwargs)
+        self.assertEqual(
+            [entry.mod_id for entry in result.entries], ["PackA", "WorkshopOnly"]
+        )
 
     def test_modified_app_copy_is_preserved_and_blocks_switch(self):
         transaction, _ = load_collection(
-            self.store, self.profile_a, self.local, [self.local], []
+            self.store, self.profile_a, self.local, [self.local]
         )
         folder = self.local / transaction.new["folders"][0]["name"]
         (folder / "media/example.lua").write_text("user edit")
         with self.assertRaises(CollectionStoreError):
-            load_collection(self.store, self.profile_b, self.local, [self.local], [])
+            load_collection(self.store, self.profile_b, self.local, [self.local])
         self.assertEqual((folder / "media/example.lua").read_text(), "user edit")
 
     def test_activation_failure_restores_previous_folders_and_index(self):
-        load_collection(self.store, self.profile_a, self.local, [self.local], [])
+        load_collection(self.store, self.profile_a, self.local, [self.local])
         deployment = CollectionDeployment(self.local)
         original = deployment.index.read_bytes()
-        prepared = deployment.prepare(
-            self.store, self.profile_b, scan_mods(local_roots=[self.local])
-        )
+        prepared = deployment.prepare(self.store, self.profile_b)
         rename = os.rename
 
         def fail_new(source, target):
@@ -175,7 +203,6 @@ class CollectionContentTests(unittest.TestCase):
                 self.profile_a,
                 self.local,
                 [self.local],
-                [],
                 cancelled=lambda: True,
             )
         self.assertEqual(list(self.local.iterdir()), [])
@@ -434,6 +461,59 @@ class CollectionWorkspaceTests(unittest.TestCase):
                 self.assertEqual(
                     window.main_tabs.tabText(window.library_tab_index),
                     "Library && Diagnostics",
+                )
+            finally:
+                while any(w.isRunning() for w in window._background_workers()):
+                    QTest.qWait(10)
+                window.close()
+
+    def test_loaded_collection_copy_is_selected_in_workspace_and_preflight(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            local = root / "Zomboid/mods"
+            local.mkdir(parents=True)
+            config = local / "default.txt"
+            config.write_text("VERSION = 1,\nmods\n{\n}\nmaps\n{\n}\n")
+            store = CollectionStore(root / "app/collections")
+            reference = store.intern(
+                make_item(root / "download", "PackA", "collection"), "1"
+            )
+            user_entry = make_item(root / "user", "PackA", "user copy") / "mods/PackA"
+            user_entry.rename(local / "UsersMod")
+            profile = ModProfile("A", ("PackA",), ("1",), None, (reference,))
+            load_collection(store, profile, local, [local])
+
+            window = MainWindow(
+                DetectedPaths((), (), (), (), local),
+                active_config_path=config,
+                profile_store=ProfileStore(root / "app/profiles"),
+            )
+            try:
+                deadline = time.monotonic() + 5
+                while window._worker is not None and time.monotonic() < deadline:
+                    QTest.qWait(10)
+                self.assertIsNone(window._worker)
+                self.assertEqual(
+                    [entry.mod_id for entry in window._last_scan_result.entries],
+                    ["PackA", "PackA"],
+                )
+                self.assertEqual(
+                    [entry.mod_id for entry in window._last_result.entries], ["PackA"]
+                )
+                selected = window._last_result.entries[0]
+                self.assertEqual(
+                    (selected.entry_path / "media/example.lua").read_text(),
+                    "collection",
+                )
+                self.assertEqual(
+                    (local / "UsersMod/media/example.lua").read_text(), "user copy"
+                )
+                window._staged_mod_ids = ["PackA"]
+                self.assertFalse(
+                    any(
+                        "appears in 2 installed entries" in warning
+                        for warning in window._configuration_preflight_warnings()
+                    )
                 )
             finally:
                 while any(w.isRunning() for w in window._background_workers()):
