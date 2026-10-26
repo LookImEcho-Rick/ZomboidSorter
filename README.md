@@ -14,7 +14,7 @@ ZomboidSorter brings local and Steam Workshop mods into one workspace. Inspect w
 
 - **Find and understand your mods.** Search by name or ID, preview descriptions and metadata, and spot missing or duplicate Mod IDs.
 - **Build an order before changing the game.** Enable, disable, drag, and reorder mods in a staged list. Dependency suggestions show a proposed order you can review.
-- **Keep loadouts ready.** Save Mod Packs, preview their changes against the loaded global list, and browse public Workshop collections by search, popularity, rating, date, and build tag. Download a collection into the shared private cache without changing Steam subscriptions; load it when ready.
+- **Keep loadouts ready.** Save Mod Packs, preview their changes against the loaded global list, and browse public Workshop collections by search, popularity, rating, date, and build tag. Save a collection's mods together as one named Mod Pack without changing Steam subscriptions. If multiple Workshop items provide the same Mod ID, choose which item to keep before saving; load the pack when ready.
 - **Update the game list safely.** Check for missing or duplicate active Mod IDs and declared dependency issues before applying or launching, then update only the global `Zomboid/mods/default.txt` list through a confirmed action with backup and validation.
 - **Investigate issues.** Inspect declared dependencies, potential file overlaps, and selected console-log findings on demand.
 

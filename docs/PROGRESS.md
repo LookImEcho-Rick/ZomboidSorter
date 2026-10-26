@@ -1,5 +1,12 @@
 # Progress
 
+## Collection duplicate-ID recovery after v0.3.1 (2026-10-25)
+
+- The reported collection had 142 verified private Workshop downloads but no saved pack. Read-only inspection found valid metadata in the cached items and 167 unique Mod IDs; two different Workshop items both declared `ImprovisedSilencers`, which made the importer reject the entire collection. The download/cache work had completed, but profile saving was never reached.
+- Collection import now presents the conflicting Workshop items and requires an explicit choice. It saves the remaining items' Mod IDs and exact content references together under the collection's suggested name or the user's edited name. Excluding an item omits all of its bundled mods from that pack but retains its private cached files. If the user closes the choice dialog, the verified cache remains available and the UI can reopen resolution without hashing or downloading the whole collection again.
+- The importer reports which item it is verifying/caching, revalidates an existing content-addressed cache object, and scans metadata from that exact verified object instead of performing an additional full cache hash scan. Pack loading still re-hashes the cache before preparing any local mod files. No subscriptions, profiles, game configuration, or installed mods were modified during the inspection.
+- Validation: the full 222-test suite passed with one environment-only symlink skip; Ruff check/format, compileall, and `git diff --check` passed. Tests cover duplicate resolution, the chosen collection name, dialog choices, and collection status wording. No real Steam import was verified. The published stable v0.3.1 release does not contain this follow-up; this push is intended for the rolling channel only.
+
 ## v0.3.1 hosted release verification (2026-10-25)
 
 - Pushed release commit `d9dae23da08dd7b37a1000e930e0558f73f050d1` to `main`; annotated tag `v0.3.1` points to it. The [tagged Windows release workflow](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/40248932968) passed tests/lint, app and installer builds, upgrade from v0.3.0, standard/portable installer smoke, provenance attestation, and release publication.

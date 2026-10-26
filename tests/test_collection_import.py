@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
+from PySide6.QtWidgets import QApplication, QDialog, QDialogButtonBox, QMessageBox
 
 from zomboid_mod_manager.collection_store import CollectionStore
 from zomboid_mod_manager.discovery.scanner import scan_mods
@@ -23,7 +23,10 @@ from zomboid_mod_manager.profiles import (
 )
 from zomboid_mod_manager.steamcmd import SteamCmdDownloader
 from zomboid_mod_manager.ui.collection_browser_dialog import CollectionBrowserDialog
-from zomboid_mod_manager.ui.workshop_dialog import WorkshopCollectionDialog
+from zomboid_mod_manager.ui.workshop_dialog import (
+    DuplicateModIdResolutionDialog,
+    WorkshopCollectionDialog,
+)
 from zomboid_mod_manager.workshop import (
     WorkshopApiError,
     WorkshopCollectionResult,
@@ -306,6 +309,30 @@ class CollectionUiTests(unittest.TestCase):
                 dialog.items.item(0, 3).text(), "Saved · My Collection Name"
             )
             self.assertEqual(dialog.install_button.text(), "Update Saved Pack")
+            self.assertIn("not installed locally", dialog.status.text())
+            self.assertNotIn("missing or unavailable", dialog.status.text())
+
+    def test_duplicate_resolution_requires_a_choice_and_excludes_the_other_item(self):
+        collection = WorkshopCollectionResult(
+            "99",
+            (
+                WorkshopItemMetadata("111", "First", "", 108600, None),
+                WorkshopItemMetadata("222", "Second", "", 108600, None),
+            ),
+        )
+        dialog = DuplicateModIdResolutionDialog(
+            collection, {"SharedMod": ("111", "222")}
+        )
+        self.assertFalse(
+            dialog.buttons.button(QDialogButtonBox.StandardButton.Ok).isEnabled()
+        )
+        choice = dialog._choices["SharedMod"][1]
+        choice.setCurrentIndex(1)
+        self.assertTrue(
+            dialog.buttons.button(QDialogButtonBox.StandardButton.Ok).isEnabled()
+        )
+        self.assertEqual(dialog.excluded_workshop_ids(), {"222"})
+        dialog.deleteLater()
 
     def test_revisited_collection_marks_verified_unreferenced_downloads(self):
         with tempfile.TemporaryDirectory() as tmp:

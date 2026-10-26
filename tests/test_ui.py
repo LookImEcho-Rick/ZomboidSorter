@@ -2885,7 +2885,9 @@ class MainWindowTests(unittest.TestCase):
         )
         dialog._show_collection(collection)
         self.assertIn("1 Project Zomboid item;", dialog.status.text())
-        self.assertIn("2 missing or unavailable items;", dialog.status.text())
+        self.assertIn("1 item not installed locally;", dialog.status.text())
+        self.assertIn("1 Workshop item unavailable.", dialog.status.text())
+        self.assertNotIn("missing or unavailable", dialog.status.text())
         self.assertNotIn("1 Project Zomboid items", dialog.status.text())
 
         dialog.items.setCurrentCell(0, 0)

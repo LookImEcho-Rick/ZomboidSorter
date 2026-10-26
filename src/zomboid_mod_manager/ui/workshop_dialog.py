@@ -8,7 +8,10 @@ from pathlib import Path
 from PySide6.QtCore import QThread, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
+    QDialogButtonBox,
+    QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -20,7 +23,11 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from zomboid_mod_manager.collection_import import download_collection
+from zomboid_mod_manager.collection_import import (
+    CollectionModIdConflict,
+    download_collection,
+    profile_from_cached_collection,
+)
 from zomboid_mod_manager.collection_store import CollectionStore
 from zomboid_mod_manager.domain import ScanResult
 from zomboid_mod_manager.portable import app_data_directory
@@ -73,6 +80,7 @@ class CollectionDownloadWorker(QThread):
     def __init__(self, collection, name, store, downloader) -> None:
         super().__init__()
         self._args = collection, name, store, downloader
+        self.duplicate_error = None
 
     def run(self) -> None:
         try:
@@ -83,8 +91,123 @@ class CollectionDownloadWorker(QThread):
             )
             if not self.isInterruptionRequested():
                 self.result_ready.emit(result)
+        except CollectionModIdConflict as exc:
+            self.duplicate_error = exc
         except Exception as exc:  # noqa: BLE001 - Return download failures to the GUI.
             self.failed.emit(str(exc))
+
+
+class CollectionResolutionWorker(QThread):
+    result_ready = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, collection, name, conflict, excluded_workshop_ids) -> None:
+        super().__init__()
+        self._args = collection, name, conflict, excluded_workshop_ids
+        self.duplicate_error = None
+
+    def run(self) -> None:
+        collection, name, conflict, excluded_workshop_ids = self._args
+        try:
+            profile = profile_from_cached_collection(
+                collection,
+                name,
+                conflict.references,
+                conflict.scan_result,
+                excluded_workshop_ids=excluded_workshop_ids,
+            )
+            if not self.isInterruptionRequested():
+                self.result_ready.emit(profile)
+        except CollectionModIdConflict as exc:
+            self.duplicate_error = exc
+        except Exception as exc:  # noqa: BLE001 - Return resolution failures to the GUI.
+            self.failed.emit(str(exc))
+
+
+class DuplicateModIdResolutionDialog(QDialog):
+    """Let the user choose which conflicting Workshop item(s) enter the pack."""
+
+    def __init__(
+        self, collection, duplicate_sources, parent=None, *, pack_name=""
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Resolve Duplicate Mod IDs")
+        self.setMinimumWidth(560)
+        self._collection_ids = {item.workshop_id for item in collection.items}
+        metadata = {item.workshop_id: item for item in collection.items}
+        self._choices = {}
+
+        layout = QVBoxLayout(self)
+        message = QLabel(
+            "These Workshop items contain the same Mod ID. Project Zomboid can only use one copy. "
+            f"Choose which Workshop item to keep in '{pack_name}' for each conflict, or exclude "
+            "all listed items for that ID. Excluding an item also leaves out any other mods "
+            "bundled inside it. The downloaded files remain cached."
+        )
+        message.setWordWrap(True)
+        layout.addWidget(message)
+        form = QFormLayout()
+        for mod_id, workshop_ids in duplicate_sources.items():
+            choice = QComboBox()
+            choice.addItem("Choose an item…", "")
+            if len(workshop_ids) > 1:
+                for workshop_id in workshop_ids:
+                    item = metadata.get(workshop_id)
+                    title = item.title if item is not None else workshop_id
+                    choice.addItem(f"{title} ({workshop_id})", workshop_id)
+            choice.addItem("Exclude all listed items from this pack", None)
+            choice.currentIndexChanged.connect(self._update_accept_enabled)
+            form.addRow(f"{mod_id}:", choice)
+            self._choices[mod_id] = (tuple(workshop_ids), choice)
+        layout.addLayout(form)
+        self.problem = QLabel()
+        self.problem.setWordWrap(True)
+        layout.addWidget(self.problem)
+        self.buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+        layout.addWidget(self.buttons)
+        self._update_accept_enabled()
+
+    def _selection(self):
+        excluded = set()
+        selected = {}
+        for mod_id, (workshop_ids, choice) in self._choices.items():
+            workshop_id = choice.currentData()
+            if workshop_id == "":
+                return None, f"Choose how to resolve {mod_id}."
+            selected[mod_id] = workshop_id
+            if workshop_id is None:
+                excluded.update(workshop_ids)
+            else:
+                excluded.update(
+                    item_id for item_id in workshop_ids if item_id != workshop_id
+                )
+
+        for mod_id, workshop_id in selected.items():
+            if workshop_id is not None and workshop_id in excluded:
+                return (
+                    None,
+                    f"The item selected for {mod_id} is excluded by another conflict. Choose a consistent set of items.",
+                )
+        if excluded >= self._collection_ids:
+            return None, "At least one Workshop item must remain in the Mod Pack."
+        return excluded, ""
+
+    def _update_accept_enabled(self, *_args) -> None:
+        excluded, message = self._selection()
+        self.problem.setText(message)
+        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setEnabled(
+            excluded is not None
+        )
+
+    def excluded_workshop_ids(self) -> set[str]:
+        excluded, message = self._selection()
+        if excluded is None:
+            raise ValueError(message)
+        return excluded
 
 
 class WorkshopCollectionDialog(QDialog):
@@ -112,6 +235,7 @@ class WorkshopCollectionDialog(QDialog):
         self._collection = None
         self._plan = None
         self._saved_pack = None
+        self._collection_conflict = None
         self._store = collection_store or CollectionStore(
             app_data_directory() / "collections"
         )
@@ -176,6 +300,7 @@ class WorkshopCollectionDialog(QDialog):
         self.items.setColumnWidth(1, 115)
         self.items.setColumnWidth(2, 95)
         self.items.setColumnWidth(3, 150)
+        self.items.setColumnWidth(4, 190)
         self.items.currentCellChanged.connect(self._update_open_workshop_page_enabled)
         layout.addWidget(self.items, 1)
         item_actions = QHBoxLayout()
@@ -234,6 +359,7 @@ class WorkshopCollectionDialog(QDialog):
             self.status.setText("Enter a Steam collection URL or ID.")
             return
         self._collection = self._plan = self._downloaded_profile = None
+        self._collection_conflict = None
         self._saved_pack = None
         self.items.setRowCount(0)
         self.status.setText("Reading collection details from Steam…")
@@ -309,17 +435,22 @@ class WorkshopCollectionDialog(QDialog):
 
         self._update_open_workshop_page_enabled()
         self._update_create_enabled()
-        missing = len(self._plan.missing_ids)
+        not_installed_locally = len(collection.items) - len(self._plan.installed_ids)
         ambiguous = len(self._plan.ambiguous_mod_ids)
         self.status.setText(
             f"Collection {collection.collection_id}: "
             f"{counted(len(collection.items), 'Project Zomboid item')}; "
             f"{counted(len(self._plan.installed_ids), 'Workshop item')} installed locally; "
-            f"{counted(missing, 'missing or unavailable item')}; "
-            f"{counted(len(self._plan.mod_ids), 'unique Mod ID')} found in selected folders."
+            f"{counted(not_installed_locally, 'item not installed locally')}; "
+            f"{counted(len(self._plan.mod_ids), 'unique Mod ID')} found in local installs."
             + (
                 f" Excluded {counted(ambiguous, 'duplicate Mod ID')}."
                 if ambiguous
+                else ""
+            )
+            + (
+                f" {counted(len(collection.unavailable_ids), 'Workshop item')} unavailable."
+                if collection.unavailable_ids
                 else ""
             )
         )
@@ -355,6 +486,11 @@ class WorkshopCollectionDialog(QDialog):
             self.install_button.setText("Retry Save")
             self.install_button.setAccessibleName(
                 "Retry saving the collection Mod Pack"
+            )
+        elif self._collection_conflict is not None:
+            self.install_button.setText("Resolve Duplicate Mod IDs")
+            self.install_button.setAccessibleName(
+                "Resolve duplicate Mod IDs in the downloaded collection"
             )
         elif self._saved_pack is not None:
             self.install_button.setText("Update Saved Pack")
@@ -479,6 +615,9 @@ class WorkshopCollectionDialog(QDialog):
                 replace(self._downloaded_profile, name=self.profile_name.text().strip())
             )
             return
+        if self._collection_conflict is not None:
+            self._show_duplicate_resolution(self._collection_conflict)
+            return
         if self._collection.unavailable_ids:
             self.status.setText(
                 "This collection has unavailable items. A complete private pack cannot be created. Retry reading the collection, or explicitly save an installed-only list."
@@ -509,6 +648,7 @@ class WorkshopCollectionDialog(QDialog):
     def _download_ready(self, profile) -> None:
         if self._closing:
             return
+        self._collection_conflict = None
         self._downloaded_profile = profile
         self._save(profile)
 
@@ -561,12 +701,92 @@ class WorkshopCollectionDialog(QDialog):
 
     def _finished(self) -> None:
         worker, self._worker = self._worker, None
+        duplicate_error = getattr(worker, "duplicate_error", None)
         worker.deleteLater()
         self._installing = False
         if self._closing:
             self.done(self._pending_result)
         else:
             self._set_busy(False)
+            if duplicate_error is not None:
+                QTimer.singleShot(
+                    0,
+                    lambda error=duplicate_error: self._show_duplicate_resolution(
+                        error
+                    ),
+                )
+
+    def _show_duplicate_resolution(self, error: CollectionModIdConflict) -> None:
+        if self._closing or self._collection is None:
+            return
+        self._collection_conflict = error
+        self._update_create_enabled()
+        metadata = {item.workshop_id: item for item in self._collection.items}
+        conflict_ids = {
+            workshop_id
+            for workshop_ids in error.duplicate_sources.values()
+            for workshop_id in workshop_ids
+        }
+        for row in range(self.items.rowCount()):
+            workshop_cell = self.items.item(row, 1)
+            if workshop_cell is None:
+                continue
+            item = next(
+                (
+                    scanned
+                    for scanned in error.scan_result.workshop_items
+                    if scanned.workshop_id == workshop_cell.text()
+                ),
+                None,
+            )
+            if item is not None:
+                mod_ids = tuple(
+                    dict.fromkeys(
+                        entry.mod_id for entry in item.entries if entry.mod_id
+                    )
+                )
+                cell = self.items.item(row, 4)
+                if cell is not None:
+                    cell.setText(", ".join(mod_ids) if mod_ids else "No Mod IDs")
+                    cell.setToolTip(", ".join(mod_ids) if mod_ids else "No Mod IDs")
+            if workshop_cell.text() in conflict_ids:
+                status_cell = self.items.item(row, 3)
+                item_metadata = metadata.get(workshop_cell.text())
+                if status_cell is not None and item_metadata is not None:
+                    status_cell.setText("Downloaded · duplicate Mod ID")
+                    status_cell.setToolTip(
+                        "This Workshop item shares a Mod ID with another item in the collection."
+                    )
+
+        dialog = DuplicateModIdResolutionDialog(
+            self._collection,
+            error.duplicate_sources,
+            self,
+            pack_name=self.profile_name.text().strip(),
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            self.status.setText(
+                "No Mod Pack was saved. Verified downloads remain cached. Choose Resolve Duplicate Mod IDs when you are ready to continue."
+            )
+            return
+        self._collection_conflict = None
+        self._update_create_enabled()
+        self._start_resolution(error, dialog.excluded_workshop_ids())
+
+    def _start_resolution(self, error, excluded_workshop_ids) -> None:
+        self._installing = True
+        self.status.setText("Checking the selected items and preparing the Mod Pack…")
+        self._worker = CollectionResolutionWorker(
+            self._collection,
+            self.profile_name.text().strip(),
+            error,
+            excluded_workshop_ids,
+        )
+        self._worker.result_ready.connect(self._download_ready)
+        self._worker.failed.connect(self._show_failure)
+        self._worker.finished.connect(self._finished)
+        self._set_busy(True)
+        self._worker.start()
 
     def done(self, result) -> None:
         if (

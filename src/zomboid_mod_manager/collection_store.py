@@ -134,6 +134,11 @@ class CollectionStore:
         require_plain_path(self.root)
         self.content_root.mkdir(parents=True, exist_ok=True)
         if target.exists():
+            require_plain_path(target)
+            if not target.is_dir():
+                raise CollectionStoreError(
+                    "Shared cached content is not a directory; refusing to reuse it."
+                )
             if tree_digest(target, cancelled=cancelled) != expected:
                 raise CollectionStoreError(
                     "Shared cached content was modified; refusing to reuse it."

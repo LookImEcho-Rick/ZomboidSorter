@@ -18,7 +18,11 @@ from zomboid_mod_manager.collection_deployment import (
     CollectionDeployment,
     load_collection,
 )
-from zomboid_mod_manager.collection_import import download_collection
+from zomboid_mod_manager.collection_import import (
+    CollectionModIdConflict,
+    download_collection,
+    profile_from_cached_collection,
+)
 from zomboid_mod_manager.collection_store import (
     CollectionStore,
     CollectionStoreError,
@@ -213,6 +217,45 @@ class CollectionContentTests(unittest.TestCase):
         self.assertEqual(
             tuple(item.workshop_id for item in profile.collection_content),
             ("111", "222"),
+        )
+
+    def test_duplicate_mod_ids_can_be_resolved_by_excluding_a_workshop_item(self):
+        first = make_item(self.root / "duplicate-first", "SharedMod", "first")
+        second = make_item(self.root / "duplicate-second", "SharedMod", "second")
+        third = make_item(self.root / "unique", "UniqueMod", "unique")
+        items = (
+            WorkshopItemMetadata("111", "First copy", "", 108600, None),
+            WorkshopItemMetadata("222", "Second copy", "", 108600, None),
+            WorkshopItemMetadata("333", "Unique", "", 108600, None),
+        )
+
+        class BatchDownloader:
+            def download_many(self, requested, *, on_downloaded, **_kwargs):
+                sources = {"111": first, "222": second, "333": third}
+                for item in requested:
+                    on_downloaded(item, sources[item.workshop_id])
+
+        collection = WorkshopCollectionResult("99", items)
+        with self.assertRaises(CollectionModIdConflict) as raised:
+            download_collection(
+                collection, "Resolved Pack", self.store, BatchDownloader()
+            )
+        conflict = raised.exception
+        self.assertEqual(conflict.duplicate_sources, {"SharedMod": ("111", "222")})
+
+        profile = profile_from_cached_collection(
+            collection,
+            "Resolved Pack",
+            conflict.references,
+            conflict.scan_result,
+            excluded_workshop_ids={"222"},
+        )
+        self.assertEqual(profile.name, "Resolved Pack")
+        self.assertEqual(profile.mod_ids, ("SharedMod", "UniqueMod"))
+        self.assertEqual(profile.workshop_ids, ("111", "333"))
+        self.assertEqual(
+            tuple(item.workshop_id for item in profile.collection_content),
+            ("111", "333"),
         )
 
     def test_unavailable_items_do_not_start_download_or_save_partial_pack(self):
