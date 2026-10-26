@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFormLayout,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -76,6 +77,7 @@ class CollectionDownloadWorker(QThread):
     result_ready = Signal(object)
     failed = Signal(str)
     progress = Signal(str)
+    item_cached = Signal(object)
 
     def __init__(self, collection, name, store, downloader) -> None:
         super().__init__()
@@ -88,6 +90,7 @@ class CollectionDownloadWorker(QThread):
                 *self._args,
                 cancelled=self.isInterruptionRequested,
                 progress=self.progress.emit,
+                item_cached=self.item_cached.emit,
             )
             if not self.isInterruptionRequested():
                 self.result_ready.emit(result)
@@ -246,6 +249,10 @@ class WorkshopCollectionDialog(QDialog):
         self._save_profile = save_profile
         self._downloaded_profile = None
         self._installing = False
+        self._stopping = False
+        self._import_failed = False
+        self._reviewed_input = ""
+        self._cached_item_ids = set()
         self._closing = False
         self._pending_result = QDialog.DialogCode.Rejected
         self.downloads_checked = False
@@ -255,7 +262,8 @@ class WorkshopCollectionDialog(QDialog):
         heading.setObjectName("pageHeading")
         layout.addWidget(heading)
         note = QLabel(
-            "Downloads stay in a private shared collections folder without changing Steam subscriptions. Exact matching content is stored once. Load the saved pack to make its mods available to Zomboid and the workspace. Valve's signed SteamCMD downloader is prepared on first use."
+            "1. Review the items.  2. Download and save a reusable Mod Pack.  3. Open Mod Packs to load, review and apply it. "
+            "Downloads use Valve's signed SteamCMD helper with anonymous login. Steam subscriptions stay unchanged."
         )
         note.setWordWrap(True)
         layout.addWidget(note)
@@ -265,11 +273,17 @@ class WorkshopCollectionDialog(QDialog):
             "Paste a Steam collection URL or numeric ID"
         )
         self.collection_input.setAccessibleName("Steam collection URL or ID")
+        self.collection_input.textChanged.connect(self._collection_input_changed)
+        self.collection_input.returnPressed.connect(self._fetch)
         inputs.addWidget(self.collection_input, 1)
         self.fetch_button = QPushButton("Fetch Collection")
         self.fetch_button.clicked.connect(self._fetch)
         inputs.addWidget(self.fetch_button)
         layout.addLayout(inputs)
+        self.summary = QLabel()
+        self.summary.setWordWrap(True)
+        self.summary.hide()
+        layout.addWidget(self.summary)
         self.status = QLabel(
             "Review the collection before downloading. Importing does not load or apply the pack."
         )
@@ -288,24 +302,26 @@ class WorkshopCollectionDialog(QDialog):
                 "Workshop item",
                 "Workshop ID",
                 "Local install",
-                "Downloaded / saved pack",
-                "Contained Mod IDs",
+                "Private content",
+                "Mod IDs",
             ]
         )
         self.items.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.items.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.items.setAlternatingRowColors(True)
         self.items.horizontalHeader().setStretchLastSection(True)
-        self.items.setColumnWidth(0, 220)
-        self.items.setColumnWidth(1, 115)
+        self.items.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Stretch
+        )
+        self.items.setColumnWidth(1, 110)
         self.items.setColumnWidth(2, 95)
-        self.items.setColumnWidth(3, 150)
-        self.items.setColumnWidth(4, 190)
+        self.items.setColumnWidth(3, 135)
+        self.items.setColumnWidth(4, 160)
         self.items.currentCellChanged.connect(self._update_open_workshop_page_enabled)
         layout.addWidget(self.items, 1)
         item_actions = QHBoxLayout()
         item_actions.addStretch()
-        self.open_missing_workshop_button = QPushButton("Open Selected Missing Item")
+        self.open_missing_workshop_button = QPushButton("Open Selected Workshop Page")
         self.open_missing_workshop_button.setEnabled(False)
         self.open_missing_workshop_button.clicked.connect(
             self._open_selected_missing_workshop_item
@@ -329,7 +345,7 @@ class WorkshopCollectionDialog(QDialog):
         actions.addWidget(self.import_button)
         actions.addStretch()
         self.close_button = QPushButton("Close")
-        self.close_button.clicked.connect(self.reject)
+        self.close_button.clicked.connect(self._stop_or_close)
         actions.addWidget(self.close_button)
         self.install_button = QPushButton("Download && Import")
         self.install_button.setAccessibleName(
@@ -361,6 +377,9 @@ class WorkshopCollectionDialog(QDialog):
         self._collection = self._plan = self._downloaded_profile = None
         self._collection_conflict = None
         self._saved_pack = None
+        self._import_failed = False
+        self._cached_item_ids.clear()
+        self.summary.hide()
         self.items.setRowCount(0)
         self.status.setText("Reading collection details from Steam…")
         self._worker = CollectionWorker(value)
@@ -372,6 +391,7 @@ class WorkshopCollectionDialog(QDialog):
 
     def _show_collection(self, collection: WorkshopCollectionResult) -> None:
         self._collection = collection
+        self._reviewed_input = self.collection_input.text().strip()
         self._plan = resolve_collection_import(collection, self._scan_result)
         saved_pack = self._matching_saved_pack(collection)
         self._saved_pack = saved_pack
@@ -437,11 +457,11 @@ class WorkshopCollectionDialog(QDialog):
         self._update_create_enabled()
         not_installed_locally = len(collection.items) - len(self._plan.installed_ids)
         ambiguous = len(self._plan.ambiguous_mod_ids)
-        self.status.setText(
+        self.summary.setText(
             f"Collection {collection.collection_id}: "
             f"{counted(len(collection.items), 'Project Zomboid item')}; "
             f"{counted(len(self._plan.installed_ids), 'Workshop item')} installed locally; "
-            f"{counted(not_installed_locally, 'item not installed locally')}; "
+            f"{counted(not_installed_locally, 'item')} not installed locally; "
             f"{counted(len(self._plan.mod_ids), 'unique Mod ID')} found in local installs."
             + (
                 f" Excluded {counted(ambiguous, 'duplicate Mod ID')}."
@@ -455,19 +475,58 @@ class WorkshopCollectionDialog(QDialog):
             )
         )
         if saved_pack is not None:
-            self.status.setText(
-                self.status.text()
+            self.summary.setText(
+                self.summary.text()
                 + f" Downloaded content is already saved in Mod Pack '{saved_pack.name}'. Load it from Mod Packs to make these mods available."
             )
         elif downloaded_ids:
-            self.status.setText(
-                self.status.text()
+            self.summary.setText(
+                self.summary.text()
                 + f" {counted(len(downloaded_ids), 'Workshop item')} already downloaded privately; importing will reuse them."
+            )
+        self.summary.show()
+        if collection.unavailable_ids:
+            self.status.setText(
+                "Import is blocked by unavailable items. Select a missing item and open its Workshop page, "
+                "then Fetch Collection to check again. An installed-only list can be saved separately."
+            )
+        elif not collection.items:
+            self.status.setText(
+                "No Project Zomboid items to import. Check the collection link or choose another collection."
+            )
+        else:
+            self.status.setText(
+                "Ready to import. Each Workshop item may contain several Mod IDs; downloaded IDs are checked before saving. "
+                "Importing leaves your active global list unchanged."
+            )
+        if collection.foreign_app_ids:
+            self.summary.setText(
+                self.summary.text()
+                + f" {counted(len(collection.foreign_app_ids), 'item')} from another game will be left out."
             )
 
     def _show_failure(self, message) -> None:
-        if not self._closing:
-            self.status.setText(f"Collection import could not finish: {message}")
+        if not self._closing and not self._stopping:
+            self._import_failed = self._installing
+            recovery = (
+                " No pack was saved. Completed cache objects and SteamCMD working files are retained. "
+                "Check the item or network problem above, then Retry Import; receipt-current downloads are reused."
+                if self._installing
+                else " Check the URL or ID and that the collection is public, check your connection, then Fetch Collection again."
+            )
+            self.status.setText(
+                f"Collection import could not finish: {message}{recovery}"
+            )
+
+    def _collection_input_changed(self, *_args) -> None:
+        self._update_create_enabled()
+        if (
+            self._collection is not None
+            and self.collection_input.text().strip() != self._reviewed_input
+        ):
+            self.status.setText(
+                "The collection link changed. Fetch Collection to review it before importing."
+            )
 
     def _profile_name_changed(self, name: str) -> None:
         if self._saved_pack is not None and name != self._saved_pack.name:
@@ -479,9 +538,14 @@ class WorkshopCollectionDialog(QDialog):
             self._worker is None
             and self._plan is not None
             and bool(self.profile_name.text().strip())
+            and self.collection_input.text().strip() == self._reviewed_input
         )
         self.import_button.setEnabled(ready and bool(self._plan.workshop_ids))
-        self.install_button.setEnabled(ready and bool(self._collection.items))
+        self.install_button.setEnabled(
+            ready
+            and bool(self._collection.items)
+            and not self._collection.unavailable_ids
+        )
         if self._downloaded_profile is not None:
             self.install_button.setText("Retry Save")
             self.install_button.setAccessibleName(
@@ -496,6 +560,11 @@ class WorkshopCollectionDialog(QDialog):
             self.install_button.setText("Update Saved Pack")
             self.install_button.setAccessibleName(
                 f"Update saved collection Mod Pack {self._saved_pack.name}"
+            )
+        elif self._import_failed:
+            self.install_button.setText("Retry Import")
+            self.install_button.setAccessibleName(
+                "Retry collection import using completed downloads"
             )
         else:
             self.install_button.setText("Download && Import")
@@ -571,16 +640,11 @@ class WorkshopCollectionDialog(QDialog):
             return None
         title = self.items.item(row, 0)
         workshop_id = self.items.item(row, 1)
-        installed = self.items.item(row, 2)
-        saved_pack = self.items.item(row, 3)
         if (
             title is None
             or title.text() == "Other Steam app"
             or workshop_id is None
             or not workshop_id.text().isdecimal()
-            or installed is None
-            or installed.text() != "No"
-            or (saved_pack is not None and saved_pack.text() != "—")
         ):
             return None
         return workshop_id.text()
@@ -603,12 +667,50 @@ class WorkshopCollectionDialog(QDialog):
     def _set_busy(self, busy) -> None:
         for widget in (self.fetch_button, self.collection_input, self.profile_name):
             widget.setEnabled(not busy)
-        self.download_progress.setVisible(busy)
+        self.download_progress.setVisible(busy or bool(self._cached_item_ids))
+        if self._collection is not None and (self._installing or self._cached_item_ids):
+            self.download_progress.setRange(0, len(self._collection.items))
+            self.download_progress.setValue(len(self._cached_item_ids))
+            self.download_progress.setFormat(
+                "Verified for pack: %v / %m Workshop items"
+            )
+        elif busy:
+            self.download_progress.setRange(0, 0)
         self.close_button.setText("Stop Import" if self._installing else "Close")
+        self.close_button.setEnabled(not self._stopping)
         self._update_create_enabled()
+
+    def _stop_or_close(self) -> None:
+        if not self._installing or self._worker is None:
+            self.reject()
+            return
+        self._stopping = True
+        self._worker.requestInterruption()
+        self.close_button.setEnabled(False)
+        self.status.setText(
+            "Stopping import… Completed cache objects and SteamCMD working files will be kept for retry."
+        )
+
+    def _item_cached(self, item) -> None:
+        self._cached_item_ids.add(item.workshop_id)
+        self.download_progress.setValue(len(self._cached_item_ids))
+        mod_ids = (
+            ", ".join(
+                dict.fromkeys(entry.mod_id for entry in item.entries if entry.mod_id)
+            )
+            or "No readable Mod IDs"
+        )
+        for row in range(self.items.rowCount()):
+            if self.items.item(row, 1).text() == item.workshop_id:
+                for column, text in ((3, "Cached · checked"), (4, mod_ids)):
+                    self.items.item(row, column).setText(text)
+                    self.items.item(row, column).setToolTip(text)
+                break
 
     def _start_install(self) -> None:
         if self._worker is not None or self._collection is None:
+            return
+        if self.collection_input.text().strip() != self._reviewed_input:
             return
         if self._downloaded_profile is not None:
             self._save(
@@ -629,6 +731,8 @@ class WorkshopCollectionDialog(QDialog):
             self.status.setText(str(exc))
             return
         self._installing = True
+        self._import_failed = False
+        self._cached_item_ids.clear()
         self.status.setText(
             "Preparing private collection downloads. Steam subscriptions stay unchanged…"
         )
@@ -640,17 +744,22 @@ class WorkshopCollectionDialog(QDialog):
         )
         self._worker.result_ready.connect(self._download_ready)
         self._worker.failed.connect(self._show_failure)
-        self._worker.progress.connect(self.status.setText)
+        self._worker.progress.connect(self._show_progress)
+        self._worker.item_cached.connect(self._item_cached)
         self._worker.finished.connect(self._finished)
         self._set_busy(True)
         self._worker.start()
 
     def _download_ready(self, profile) -> None:
-        if self._closing:
+        if self._closing or self._stopping:
             return
         self._collection_conflict = None
         self._downloaded_profile = profile
         self._save(profile)
+
+    def _show_progress(self, message) -> None:
+        if not self._stopping and not self._closing:
+            self.status.setText(message)
 
     def _save(self, profile) -> None:
         try:
@@ -704,11 +813,18 @@ class WorkshopCollectionDialog(QDialog):
         duplicate_error = getattr(worker, "duplicate_error", None)
         worker.deleteLater()
         self._installing = False
+        stopped, self._stopping = self._stopping, False
         if self._closing:
             self.done(self._pending_result)
         else:
             self._set_busy(False)
-            if duplicate_error is not None:
+            if stopped:
+                self._import_failed = True
+                self.status.setText(
+                    "Import stopped. No pack was saved. Completed cache objects and SteamCMD working files were kept. Choose Retry Import to continue; receipt-current downloads are reused."
+                )
+                self._update_create_enabled()
+            elif duplicate_error is not None:
                 QTimer.singleShot(
                     0,
                     lambda error=duplicate_error: self._show_duplicate_resolution(
@@ -721,7 +837,8 @@ class WorkshopCollectionDialog(QDialog):
             return
         self._collection_conflict = error
         self._update_create_enabled()
-        metadata = {item.workshop_id: item for item in self._collection.items}
+        for item in error.scan_result.workshop_items:
+            self._item_cached(item)
         conflict_ids = {
             workshop_id
             for workshop_ids in error.duplicate_sources.values()
@@ -731,28 +848,9 @@ class WorkshopCollectionDialog(QDialog):
             workshop_cell = self.items.item(row, 1)
             if workshop_cell is None:
                 continue
-            item = next(
-                (
-                    scanned
-                    for scanned in error.scan_result.workshop_items
-                    if scanned.workshop_id == workshop_cell.text()
-                ),
-                None,
-            )
-            if item is not None:
-                mod_ids = tuple(
-                    dict.fromkeys(
-                        entry.mod_id for entry in item.entries if entry.mod_id
-                    )
-                )
-                cell = self.items.item(row, 4)
-                if cell is not None:
-                    cell.setText(", ".join(mod_ids) if mod_ids else "No Mod IDs")
-                    cell.setToolTip(", ".join(mod_ids) if mod_ids else "No Mod IDs")
             if workshop_cell.text() in conflict_ids:
                 status_cell = self.items.item(row, 3)
-                item_metadata = metadata.get(workshop_cell.text())
-                if status_cell is not None and item_metadata is not None:
+                if status_cell is not None:
                     status_cell.setText("Downloaded · duplicate Mod ID")
                     status_cell.setToolTip(
                         "This Workshop item shares a Mod ID with another item in the collection."
@@ -769,8 +867,6 @@ class WorkshopCollectionDialog(QDialog):
                 "No Mod Pack was saved. Verified downloads remain cached. Choose Resolve Duplicate Mod IDs when you are ready to continue."
             )
             return
-        self._collection_conflict = None
-        self._update_create_enabled()
         self._start_resolution(error, dialog.excluded_workshop_ids())
 
     def _start_resolution(self, error, excluded_workshop_ids) -> None:

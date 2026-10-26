@@ -78,6 +78,24 @@ def profile_from_cached_collection(
         (),
     )
     plan = resolve_collection_import(selected_collection, selected_scan)
+    scanned_by_id = {item.workshop_id: item for item in selected_scan.workshop_items}
+    unreadable = []
+    for metadata in selected_items:
+        item = scanned_by_id.get(metadata.workshop_id)
+        if (
+            item is None
+            or not item.entries
+            or any(not entry.mod_id for entry in item.entries)
+        ):
+            unreadable.append(f"{metadata.title} (Workshop ID {metadata.workshop_id})")
+    if unreadable:
+        preview = "; ".join(unreadable[:8])
+        remaining = f"; and {len(unreadable) - 8} more" if len(unreadable) > 8 else ""
+        raise CollectionStoreError(
+            f"No readable Mod IDs for: {preview}{remaining}. "
+            "Open these Workshop pages to check that they contain Project Zomboid mods with valid mod.info files. "
+            "Retry after the content is corrected. Cached files were preserved; no pack was saved."
+        )
     if plan.ambiguous_mod_ids:
         raise CollectionModIdConflict(
             _duplicate_sources(selected_scan, plan.ambiguous_mod_ids),
@@ -85,13 +103,6 @@ def profile_from_cached_collection(
             scan_result,
         )
     if plan.missing_ids or not plan.mod_ids:
-        raise CollectionStoreError(
-            "Some selected Workshop items have no readable Mod IDs. Cached files were preserved, but no complete pack was saved."
-        )
-    if any(
-        not item.entries or any(not entry.mod_id for entry in item.entries)
-        for item in selected_scan.workshop_items
-    ):
         raise CollectionStoreError(
             "Some selected Workshop items have no readable Mod IDs. Cached files were preserved, but no complete pack was saved."
         )
@@ -116,6 +127,7 @@ def download_collection(
     *,
     cancelled=None,
     progress=None,
+    item_cached=None,
 ) -> ModProfile:
     if collection.unavailable_ids or not collection.items:
         raise CollectionStoreError(
@@ -140,6 +152,8 @@ def download_collection(
         scanned_by_id[item.workshop_id] = scan_workshop_item(
             store.path(reference), item.workshop_id, cancelled=cancelled
         )
+        if item_cached:
+            item_cached(scanned_by_id[item.workshop_id])
         if progress:
             progress(
                 f"Cached {len(content_by_id)}/{total} items; matching content is shared across packs."
@@ -168,6 +182,7 @@ def download_collection(
         raise CollectionStoreError(
             "SteamCMD did not finish every collection item. Completed cached content was preserved; retry the import."
         )
+    check_cancelled(cancelled)
     references = tuple(content_by_id[item.workshop_id] for item in collection.items)
     if progress:
         progress("Checking downloaded Mod IDs and preparing the saved Mod Pack…")

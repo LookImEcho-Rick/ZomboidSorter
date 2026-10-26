@@ -1,5 +1,15 @@
 # Native Workshop collection import (2026-10-25)
 
+## Import recovery and load measurements (2026-10-25)
+
+Source tracing found that Stop Import closed the review, worker status replaced collection context, cached-item progress was not reflected in the table, and unreadable metadata failures omitted item identities. The existing callback/worker/dialog flow now supplies those states without another downloader, persistence layer, or activation path. Cached duplicate-resolution results and unsaved profiles remain reusable. Invalid fetches clear old review state; an edited link disables import until fetched again. Available Mods, Active Order, and explicit load/review/apply retain their responsibilities.
+
+Deployment previously hashed each entry, hashed it again before verified copying, recopied all owned folders even on a same-pack reload, and archived unchanged folders. It now passes the measured source digest to the existing copier, hashes a physical entry once per preparation, and retains ownership-recorded folders with unchanged digests. All prior deployed folders are fully verified immediately before activation, including retained ones; rollback leaves retained folders in place and restores replaced folders. A changed cache, modified local copy, link, unowned destination, or changed ownership snapshot still blocks unsafe activation.
+
+Repeatable fixture: `.venv/Scripts/python.exe tests/benchmark_collection_load.py`, Windows/Python 3.14, 30 Workshop items, 64 distinct 8-KiB media files per item (1,920 files, 15 MiB plus metadata), three rounds. Setup/cache interning and user prompts are excluded. Sequential comparison used the `6817a7f` deployment implementation followed by the modified implementation, sharing the same hashing/copy implementation, on disposable folders. Median first load: **6.871 → 6.069 s**; same-pack reload: **7.915 → 2.718 s**; switch from all 30 to 15 retained items: **4.419 → 1.687 s**. Disk cache, antivirus, item size, and storage affect these timings. This does not establish live-library or game loading performance. Full cache and owned-file integrity reads remain a deliberate cost.
+
+Native Windows Qt renders were inspected at 960×680 and 740×540, also with Qt scale factors 150% and 200%, for retry, unavailable/foreign, empty, long-name, and 2,000-item reviews. Shortened headers and flexible columns removed horizontal clipping at those sizes; full cell values remain in tooltips. The fixture [retry screenshot](../screenshots/collection-import-retry.png) records the changed layout. No Steam downloads, packaged workflow, or gameplay were exercised during this iteration.
+
 ## Current shared-cache design (supersedes the original subscription flow)
 
 The user explicitly requested anonymous downloads, one global shared collections folder, exact-content reuse, and visibility only after a pack is loaded. They approved SteamCMD and isolated testing. The native browser remains; the subscription adapter and its tests were replaced with private download/deployment coverage.

@@ -108,15 +108,24 @@ class CollectionDeployment:
     ):
         old, old_bytes = self.read()
         old_names = {x["name"] for x in old["folders"]}
-        cache_scan = store.scan(profile, cancelled=cancelled)
+        cache_scan = store.scan(profile, cancelled=cancelled, progress=progress)
         sources = {}
         mod_sources = {}
-        for entry in cache_scan.entries:
+        entry_digests = {}
+        for number, entry in enumerate(cache_scan.entries, 1):
+            if progress:
+                progress(
+                    f"Checking collection mod folder {number}/{len(cache_scan.entries)}: {entry.mod_id}"
+                )
             if not entry.mod_id:
                 raise CollectionStoreError(
                     "The collection contains unreadable mod metadata."
                 )
-            digest = tree_digest(entry.entry_path, cancelled=cancelled)
+            if entry.entry_path not in entry_digests:
+                entry_digests[entry.entry_path] = tree_digest(
+                    entry.entry_path, cancelled=cancelled
+                )
+            digest = entry_digests[entry.entry_path]
             if entry.mod_id in mod_sources and mod_sources[entry.mod_id] != digest:
                 raise CollectionStoreError(
                     f"Collection contains different copies of Mod ID '{entry.mod_id}'. Resolve the duplicate before loading."
@@ -138,14 +147,14 @@ class CollectionDeployment:
                 raise CollectionStoreError(
                     "An unowned folder occupies the collection destination. No user files were replaced."
                 )
-            copy_verified_tree(source, prepared / name, cancelled=cancelled)
-            records.append({"name": name, "sha256": digest})
-        for record in old["folders"]:
-            path = self.local_root / record["name"]
-            if tree_digest(path, cancelled=cancelled) != record["sha256"]:
-                raise CollectionStoreError(
-                    "An app-deployed mod was changed outside the app. Its files were preserved; resolve the change before switching packs."
+            # Reuse only exact folders listed in the prior ownership record. All
+            # prior folders, including these retained copies, are fully hashed
+            # at activation before any move. Cache objects are verified above.
+            if name not in old_names:
+                copy_verified_tree(
+                    source, prepared / name, cancelled=cancelled, expected_digest=digest
                 )
+            records.append({"name": name, "sha256": digest})
         new_state = {
             "schema": 1,
             "localRoot": str(self.local_root.absolute()),
@@ -172,8 +181,30 @@ class PreparedDeployment:
     new_bytes: bytes
     activated: bool = False
 
-    def activate(self) -> None:
+    @property
+    def retained_names(self) -> set[str]:
+        """Ownership-recorded folders shared by both deployments."""
+        return {record["name"] for record in self.old["folders"]} & {
+            record["name"] for record in self.new["folders"]
+        }
+
+    def activate(self, *, cancelled=None, progress=None) -> None:
         owner = self.owner
+        # Check immediately before commit: retained folders must still contain
+        # their exact bytes, even if changed after preparation finished.
+        for number, record in enumerate(self.old["folders"], 1):
+            if progress:
+                progress(
+                    f"Checking previously loaded mod folders: {number}/{len(self.old['folders'])}"
+                )
+            if (
+                tree_digest(owner.local_root / record["name"], cancelled=cancelled)
+                != record["sha256"]
+            ):
+                raise CollectionStoreError(
+                    "An app-deployed mod was changed outside the app. Its files were preserved; resolve the change before switching packs."
+                )
+        check_cancelled(cancelled)
         _, current = owner.read()
         if current != self.old_bytes:
             raise CollectionStoreError(
@@ -183,16 +214,21 @@ class PreparedDeployment:
         backup.mkdir()
         moved_old = []
         moved_new = []
+        retained = self.retained_names
         owner.local_root.mkdir(parents=True, exist_ok=True)
         try:
             for record in self.old["folders"]:
                 path = owner.local_root / record["name"]
                 require_plain_path(path)
+                if record["name"] in retained:
+                    continue
                 os.rename(path, backup / record["name"])
                 moved_old.append(record["name"])
             for record in self.new["folders"]:
                 target = owner.local_root / record["name"]
                 require_plain_path(target)
+                if record["name"] in retained:
+                    continue
                 if target.exists():
                     raise CollectionStoreError(
                         "A mod folder appeared during collection activation."
@@ -219,17 +255,22 @@ class PreparedDeployment:
             raise CollectionStoreError(
                 f"Collection state changed; recovery copies remain at {self.root}"
             )
+        retained = self.retained_names
         for record in self.new["folders"]:
             if tree_digest(owner.local_root / record["name"]) != record["sha256"]:
                 raise CollectionStoreError(
                     f"Deployed content changed; recovery copies remain at {self.root}"
                 )
         for record in self.new["folders"]:
+            if record["name"] in retained:
+                continue
             os.rename(
                 owner.local_root / record["name"],
                 self.root / "prepared" / record["name"],
             )
         for record in self.old["folders"]:
+            if record["name"] in retained:
+                continue
             target = owner.local_root / record["name"]
             if target.exists():
                 raise CollectionStoreError(
@@ -273,7 +314,7 @@ def load_collection(
         store, profile, cancelled=cancelled, progress=progress
     )
     check_cancelled(cancelled)
-    prepared.activate()
+    prepared.activate(cancelled=cancelled, progress=progress)
     try:
         local_scan = scan_mods(
             local_roots=roots,

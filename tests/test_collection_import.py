@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QDialogButtonBox, QMessageBox
 
@@ -309,7 +310,7 @@ class CollectionUiTests(unittest.TestCase):
                 dialog.items.item(0, 3).text(), "Saved · My Collection Name"
             )
             self.assertEqual(dialog.install_button.text(), "Update Saved Pack")
-            self.assertIn("not installed locally", dialog.status.text())
+            self.assertIn("not installed locally", dialog.summary.text())
             self.assertNotIn("missing or unavailable", dialog.status.text())
 
     def test_duplicate_resolution_requires_a_choice_and_excludes_the_other_item(self):
@@ -350,7 +351,7 @@ class CollectionUiTests(unittest.TestCase):
             dialog._downloader = SteamCmdDownloader(root)
             dialog._show_collection(dialog._collection)
             self.assertEqual(dialog.items.item(0, 3).text(), "Downloaded")
-            self.assertIn("already downloaded privately", dialog.status.text())
+            self.assertIn("already downloaded privately", dialog.summary.text())
 
     def test_failed_download_does_not_save_partial_pack(self):
         save = Mock()
@@ -364,6 +365,99 @@ class CollectionUiTests(unittest.TestCase):
         save.assert_not_called()
         self.assertIn("Download rejected", dialog.status.text())
         self.assertTrue(dialog.install_button.isEnabled())
+        self.assertEqual(dialog.install_button.text(), "Retry Import")
+        self.assertIn("receipt-current downloads are reused", dialog.status.text())
+
+    def test_stop_keeps_review_and_verified_progress_then_retry_saves(self):
+        save = Mock(return_value=True)
+        dialog, scan = self.dialog(save)
+        profile = ModProfile("Steam Collection 99", ("LegacyWorkshop",), ("111111111",))
+        summary = dialog.summary.text()
+
+        def downloading(*_args, cancelled, item_cached, progress):
+            item_cached(scan.workshop_items[0])
+            progress("Downloading remaining items…")
+            deadline = time.monotonic() + 3
+            while not cancelled() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            raise RuntimeError("Operation cancelled")
+
+        with patch(
+            "zomboid_mod_manager.ui.workshop_dialog.download_collection",
+            side_effect=downloading,
+        ):
+            dialog.show()
+            dialog._start_install()
+            deadline = time.monotonic() + 2
+            while not dialog._cached_item_ids and time.monotonic() < deadline:
+                QTest.qWait(10)
+            self.assertTrue(dialog._cached_item_ids)
+            self.assertEqual(dialog.summary.text(), summary)
+            self.assertEqual(dialog.download_progress.value(), 1)
+            self.assertEqual(dialog.items.item(0, 3).text(), "Cached · checked")
+            dialog.close_button.click()
+            dialog._download_ready(profile)  # A late result must never save after Stop.
+            self.wait(dialog)
+        save.assert_not_called()
+        self.assertTrue(dialog.isVisible())
+        self.assertFalse(dialog._closing)
+        self.assertIn("Import stopped", dialog.status.text())
+        self.assertEqual(dialog.install_button.text(), "Retry Import")
+        self.assertTrue(dialog.close_button.isEnabled())
+        with patch(
+            "zomboid_mod_manager.ui.workshop_dialog.download_collection",
+            return_value=profile,
+        ):
+            dialog.install_button.click()
+            self.wait(dialog)
+        save.assert_called_once_with(profile)
+
+    def test_changed_link_requires_fresh_review_before_either_import(self):
+        save = Mock()
+        dialog, _ = self.dialog(save)
+        dialog.collection_input.setText("12345")
+        self.assertFalse(dialog.install_button.isEnabled())
+        self.assertFalse(dialog.import_button.isEnabled())
+        self.assertIn("Fetch Collection", dialog.status.text())
+        with patch(
+            "zomboid_mod_manager.ui.workshop_dialog.download_collection"
+        ) as download:
+            dialog._start_install()
+        download.assert_not_called()
+        save.assert_not_called()
+
+    def test_unavailable_and_foreign_items_explain_block_and_exclusion(self):
+        dialog, _ = self.dialog()
+        dialog._show_collection(
+            WorkshopCollectionResult("99", dialog._collection.items, ("404",), ("555",))
+        )
+        self.assertFalse(dialog.install_button.isEnabled())
+        self.assertIn("Import is blocked", dialog.status.text())
+        self.assertIn(
+            "1 item from another game will be left out", dialog.summary.text()
+        )
+        dialog.items.setCurrentCell(1, 0)
+        self.assertTrue(dialog.open_missing_workshop_button.isEnabled())
+
+    def test_failed_fetch_clears_old_review_and_offers_recovery(self):
+        dialog, _ = self.dialog()
+        dialog.collection_input.setText("404")
+        with patch(
+            "zomboid_mod_manager.ui.workshop_dialog.fetch_collection",
+            side_effect=WorkshopApiError("Collection is not public"),
+        ):
+            dialog._fetch()
+            self.wait(dialog)
+        self.assertEqual(dialog.items.rowCount(), 0)
+        self.assertFalse(dialog.install_button.isEnabled())
+        self.assertIn("Collection is not public", dialog.status.text())
+        self.assertIn("Fetch Collection again", dialog.status.text())
+
+    def test_empty_collection_has_actionable_state(self):
+        dialog, _ = self.dialog()
+        dialog._show_collection(WorkshopCollectionResult("99", ()))
+        self.assertFalse(dialog.install_button.isEnabled())
+        self.assertIn("No Project Zomboid items", dialog.status.text())
 
     def test_save_failure_retries_without_downloading_again(self):
         save = Mock(side_effect=[False, True])
@@ -408,6 +502,25 @@ class CollectionUiTests(unittest.TestCase):
         ):
             dialog._create_profile()
         save.assert_not_called()
+
+    def test_enter_fetches_and_compact_review_keeps_controls_visible(self):
+        dialog, _ = self.dialog()
+        collection = dialog._collection
+        dialog.collection_input.setText("99")
+        dialog.resize(740, 540)
+        dialog.show()
+        with patch(
+            "zomboid_mod_manager.ui.workshop_dialog.fetch_collection",
+            return_value=collection,
+        ) as fetch:
+            dialog.collection_input.setFocus()
+            QTest.keyClick(dialog.collection_input, Qt.Key.Key_Return)
+            self.wait(dialog)
+        fetch.assert_called_once()
+        self.assertEqual(dialog.items.horizontalScrollBar().maximum(), 0)
+        self.assertTrue(dialog.rect().contains(dialog.install_button.geometry()))
+        self.assertTrue(dialog.rect().contains(dialog.close_button.geometry()))
+        dialog.close()
 
     def test_catalog_close_defers_without_blocking_ui(self):
         with patch.object(CollectionBrowserDialog, "_new_search"):

@@ -2904,11 +2904,11 @@ class MainWindowTests(unittest.TestCase):
             foreign_app_ids=("3333333333",),
         )
         dialog._show_collection(collection)
-        self.assertIn("1 Project Zomboid item;", dialog.status.text())
-        self.assertIn("1 item not installed locally;", dialog.status.text())
-        self.assertIn("1 Workshop item unavailable.", dialog.status.text())
-        self.assertNotIn("missing or unavailable", dialog.status.text())
-        self.assertNotIn("1 Project Zomboid items", dialog.status.text())
+        self.assertIn("1 Project Zomboid item;", dialog.summary.text())
+        self.assertIn("1 item not installed locally;", dialog.summary.text())
+        self.assertIn("1 Workshop item unavailable.", dialog.summary.text())
+        self.assertNotIn("missing or unavailable", dialog.summary.text())
+        self.assertNotIn("1 Project Zomboid items", dialog.summary.text())
 
         dialog.items.setCurrentCell(0, 0)
         self.assertTrue(dialog.open_missing_workshop_button.isEnabled())

@@ -166,11 +166,15 @@ class CollectionStore:
                 ) from None
         return reference
 
-    def scan(self, profile: ModProfile, *, cancelled=None) -> ScanResult:
+    def scan(self, profile: ModProfile, *, cancelled=None, progress=None) -> ScanResult:
         items = []
         diagnostics = []
-        for content in profile.collection_content:
+        for number, content in enumerate(profile.collection_content, 1):
             check_cancelled(cancelled)
+            if progress:
+                progress(
+                    f"Verifying saved Workshop item {number}/{len(profile.collection_content)} (ID {content.workshop_id})…"
+                )
             path = self.path(content)
             if tree_digest(path, cancelled=cancelled) != content.sha256:
                 raise CollectionStoreError(

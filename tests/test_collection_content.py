@@ -116,6 +116,140 @@ class CollectionContentTests(unittest.TestCase):
             load_collection(self.store, self.profile_a, self.local, [self.local])
         self.assertEqual(list(self.local.iterdir()), [])
 
+    def test_reload_verifies_both_copies_without_copying_or_moving_folders(self):
+        first, _ = load_collection(self.store, self.profile_a, self.local, [self.local])
+        folder = self.local / first.new["folders"][0]["name"]
+        with (
+            patch(
+                "zomboid_mod_manager.collection_deployment.copy_verified_tree"
+            ) as copy,
+            patch(
+                "zomboid_mod_manager.collection_deployment.os.rename", wraps=os.rename
+            ) as rename,
+        ):
+            second, _ = load_collection(
+                self.store, self.profile_a, self.local, [self.local]
+            )
+            second.rollback()
+        copy.assert_not_called()
+        rename.assert_not_called()
+        self.assertTrue(folder.is_dir())
+        self.assertEqual(
+            CollectionDeployment(self.local).loaded_profile(), self.profile_a
+        )
+        # Neither an edited deployed folder nor an edited cache may be reused.
+        (folder / "media/example.lua").write_text("edited")
+        with self.assertRaises(CollectionStoreError):
+            load_collection(self.store, self.profile_a, self.local, [self.local])
+        self.assertEqual((folder / "media/example.lua").read_text(), "edited")
+
+    def test_switch_retains_shared_folder_and_rollback_restores_prior_pack(self):
+        first, _ = load_collection(self.store, self.profile_a, self.local, [self.local])
+        retained = first.new["folders"][0]["name"]
+        combined = ModProfile(
+            "Combined", ("PackA", "PackB"), ("1", "2"), None, (self.a, self.b)
+        )
+        from zomboid_mod_manager.collection_store import copy_verified_tree
+
+        with patch(
+            "zomboid_mod_manager.collection_deployment.copy_verified_tree",
+            wraps=copy_verified_tree,
+        ) as copy:
+            second, result = load_collection(
+                self.store, combined, self.local, [self.local]
+            )
+        self.assertEqual(copy.call_count, 1)
+        self.assertEqual({e.mod_id for e in result.entries}, {"PackA", "PackB"})
+        self.assertEqual(second.retained_names, {retained})
+        self.assertFalse((second.root / "previous" / retained).exists())
+        second.rollback()
+        self.assertEqual(
+            [e.mod_id for e in scan_mods(local_roots=[self.local]).entries], ["PackA"]
+        )
+        self.assertEqual(
+            CollectionDeployment(self.local).loaded_profile(), self.profile_a
+        )
+
+    def test_reload_still_refuses_changed_cache_and_unowned_destination(self):
+        first, _ = load_collection(self.store, self.profile_a, self.local, [self.local])
+        deployed = self.local / first.new["folders"][0]["name"] / "media/example.lua"
+        (self.store.path(self.a) / "mods/PackA/media/example.lua").write_text(
+            "tampered cache"
+        )
+        with self.assertRaises(CollectionStoreError):
+            load_collection(self.store, self.profile_a, self.local, [self.local])
+        self.assertEqual(deployed.read_text(), "one")
+
+        unowned = self.local / (
+            "ZomboidSorter_" + tree_digest(self.store.path(self.b) / "mods/PackB")
+        )
+        unowned.mkdir()
+        (unowned / "user.txt").write_text("preserve me")
+        with self.assertRaisesRegex(CollectionStoreError, "unowned folder"):
+            load_collection(self.store, self.profile_b, self.local, [self.local])
+        self.assertEqual((unowned / "user.txt").read_text(), "preserve me")
+        self.assertEqual(deployed.read_text(), "one")
+
+    def test_retained_folder_is_rechecked_at_commit_and_cancellation_keeps_state(self):
+        first, _ = load_collection(self.store, self.profile_a, self.local, [self.local])
+        deployment = CollectionDeployment(self.local)
+        before = deployment.index.read_bytes()
+        prepared = deployment.prepare(self.store, self.profile_a)
+        with self.assertRaises(CollectionStoreError):
+            prepared.activate(cancelled=lambda: True)
+        self.assertEqual(deployment.index.read_bytes(), before)
+        changed = self.local / first.new["folders"][0]["name"] / "media/example.lua"
+        changed.write_text("changed after preparation")
+        with self.assertRaisesRegex(CollectionStoreError, "changed outside the app"):
+            prepared.activate()
+        self.assertEqual(changed.read_text(), "changed after preparation")
+        self.assertEqual(deployment.index.read_bytes(), before)
+        self.assertFalse(prepared.activated)
+
+    def test_cancel_after_reusing_folder_rolls_back_new_copies_and_ownership(self):
+        load_collection(self.store, self.profile_a, self.local, [self.local])
+        combined = ModProfile(
+            "Combined", ("PackA", "PackB"), ("1", "2"), None, (self.a, self.b)
+        )
+        before = CollectionDeployment(self.local).index.read_bytes()
+        with (
+            patch(
+                "zomboid_mod_manager.collection_deployment.scan_mods",
+                side_effect=RuntimeError("Cancelled during scan"),
+            ),
+            self.assertRaisesRegex(RuntimeError, "Cancelled during scan"),
+        ):
+            load_collection(self.store, combined, self.local, [self.local])
+        self.assertEqual(CollectionDeployment(self.local).index.read_bytes(), before)
+        self.assertEqual(
+            [e.mod_id for e in scan_mods(local_roots=[self.local]).entries], ["PackA"]
+        )
+
+    def test_unreadable_metadata_names_the_workshop_item_and_keeps_cache(self):
+        source = self.root / "not-a-mod"
+        source.mkdir()
+        (source / "readme.txt").write_text("No mod.info here")
+        downloader = Mock()
+        downloader.download.return_value = source
+        cached = []
+        with self.assertRaisesRegex(
+            CollectionStoreError, "Broken item \\(Workshop ID 123\\)"
+        ) as raised:
+            download_collection(
+                WorkshopCollectionResult(
+                    "99",
+                    (WorkshopItemMetadata("123", "Broken item", "", 108600, None),),
+                ),
+                "Broken",
+                self.store,
+                downloader,
+                item_cached=cached.append,
+            )
+        self.assertIn("mod.info", str(raised.exception))
+        self.assertEqual(len(cached), 1)
+        self.assertTrue(cached[0].path.is_dir())
+        self.assertEqual(list(self.local.iterdir()), [])
+
     def test_collection_copy_takes_priority_without_overwriting_user_copy(self):
         own = make_item(self.root / "user", "PackA", "user version") / "mods/PackA"
         own.rename(self.local / "UsersMod")
