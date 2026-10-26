@@ -17,6 +17,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 from zomboid_mod_manager.collection_deployment import (
     CollectionDeployment,
     load_collection,
+    unload_collection,
 )
 from zomboid_mod_manager.collection_import import (
     CollectionModIdConflict,
@@ -26,7 +27,9 @@ from zomboid_mod_manager.collection_import import (
 from zomboid_mod_manager.collection_store import (
     CollectionStore,
     CollectionStoreError,
+    copy_verified_tree,
     tree_digest,
+    tree_digest_with_subtrees,
 )
 from zomboid_mod_manager.discovery.scanner import merge_scan_results, scan_mods
 from zomboid_mod_manager.domain import DetectedPaths
@@ -76,6 +79,30 @@ class CollectionContentTests(unittest.TestCase):
         self.assertNotEqual(changed.sha256, self.a.sha256)
         self.assertEqual(len(list(self.store.content_root.iterdir())), 3)
 
+    def test_combined_tree_digest_matches_whole_item_and_entry_hashes(self):
+        item = self.store.path(self.a)
+        entry = item / "mods/PackA"
+        media = entry / "media"
+        item_digest, entry_digests = tree_digest_with_subtrees(item, [entry, media])
+        self.assertEqual(item_digest, self.a.sha256)
+        self.assertEqual(entry_digests[entry], tree_digest(entry))
+        self.assertEqual(entry_digests[media], tree_digest(media))
+
+    def test_verified_copy_reads_back_destination_without_rehashing_source(self):
+        source = self.store.path(self.a) / "mods/PackA"
+        destination = self.root / "copied/PackA"
+        original_digest = tree_digest
+        with patch(
+            "zomboid_mod_manager.collection_store.tree_digest",
+            wraps=original_digest,
+        ) as digest:
+            result = copy_verified_tree(
+                source, destination, expected_digest=original_digest(source)
+            )
+        self.assertEqual(result, original_digest(source))
+        self.assertEqual(digest.call_count, 1)
+        self.assertEqual(digest.call_args.args[0], destination)
+
     def test_profile_v4_round_trip_preserves_exact_references_and_old_profiles(self):
         encoded = serialize_profile(self.profile_a)
         self.assertEqual(json.loads(encoded)["schemaVersion"], 4)
@@ -107,6 +134,53 @@ class CollectionContentTests(unittest.TestCase):
         )
         self.assertEqual(tree_digest(self.store.path(self.a)), self.a.sha256)
         self.assertTrue(transaction.activated)
+
+    def test_unload_archives_edited_owned_copy_without_hashing_its_contents(self):
+        transaction, _ = load_collection(
+            self.store, self.profile_a, self.local, [self.local]
+        )
+        name = transaction.new["folders"][0]["name"]
+        owned_file = self.local / name / "media/example.lua"
+        owned_file.write_text("edited but must remain recoverable")
+        before_index = CollectionDeployment(self.local).index.read_bytes()
+
+        with patch(
+            "zomboid_mod_manager.collection_deployment.tree_digest",
+            side_effect=AssertionError("fast unload should not read file contents"),
+        ):
+            unloaded, result = unload_collection(self.local, [self.local])
+
+        archived = unloaded.root / "previous" / name / "media/example.lua"
+        self.assertEqual(archived.read_text(), "edited but must remain recoverable")
+        self.assertFalse((self.local / name).exists())
+        state, _ = CollectionDeployment(self.local).read()
+        self.assertEqual(state["folders"], [])
+        self.assertEqual(state["schema"], 2)
+        self.assertEqual(result.local_entries, ())
+        self.assertNotEqual(
+            CollectionDeployment(self.local).index.read_bytes(), before_index
+        )
+
+    def test_legacy_deployment_unload_falls_back_to_exact_content_hash(self):
+        load_collection(self.store, self.profile_a, self.local, [self.local])
+        deployment = CollectionDeployment(self.local)
+        legacy = json.loads(deployment.index.read_text())
+        legacy["schema"] = 1
+        legacy["folders"] = [
+            {"name": item["name"], "sha256": item["sha256"]}
+            for item in legacy["folders"]
+        ]
+        deployment.index.write_text(json.dumps(legacy))
+
+        with patch(
+            "zomboid_mod_manager.collection_deployment.tree_digest",
+            wraps=tree_digest,
+        ) as digest:
+            unload_collection(self.local, [self.local])
+
+        digest.assert_called_once_with(
+            self.local / legacy["folders"][0]["name"], cancelled=None
+        )
 
     def test_changed_cache_is_refused_without_modifying_local_files(self):
         (self.store.path(self.a) / "mods/PackA/media/example.lua").write_text(
@@ -647,6 +721,57 @@ class CollectionWorkspaceTests(unittest.TestCase):
                     any(
                         "appears in 2 installed entries" in warning
                         for warning in window._configuration_preflight_warnings()
+                    )
+                )
+            finally:
+                while any(w.isRunning() for w in window._background_workers()):
+                    QTest.qWait(10)
+                window.close()
+
+    def test_unload_keeps_global_list_and_staged_order_unchanged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            local = root / "Zomboid/mods"
+            local.mkdir(parents=True)
+            config = local / "default.txt"
+            config_bytes = (
+                b"VERSION = 1,\n\nmods\n{\n    mod = PackA,\n}\n\nmaps\n{\n}\n"
+            )
+            config.write_bytes(config_bytes)
+            store = CollectionStore(root / "app/collections")
+            reference = store.intern(
+                make_item(root / "download", "PackA", "collection"), "1"
+            )
+            profile = ModProfile("A", ("PackA",), ("1",), None, (reference,))
+            load_collection(store, profile, local, [local])
+
+            window = MainWindow(
+                DetectedPaths((), (), (), (), local),
+                active_config_path=config,
+                profile_store=ProfileStore(root / "app/profiles"),
+            )
+            try:
+                deadline = time.monotonic() + 5
+                while window._worker is not None and time.monotonic() < deadline:
+                    QTest.qWait(10)
+                self.assertIsNone(window._worker)
+                self.assertTrue(window.unload_pack_button.isEnabled())
+                staged_before = list(window._staged_mod_ids)
+                with patch(
+                    "zomboid_mod_manager.ui.window_profiles.QMessageBox.question",
+                    return_value=QMessageBox.StandardButton.Yes,
+                ):
+                    window._unload_collection_mod_pack()
+
+                self.assertEqual(config.read_bytes(), config_bytes)
+                self.assertEqual(window._staged_mod_ids, staged_before)
+                self.assertFalse(window._loaded_collection_content)
+                self.assertFalse(window.unload_pack_button.isEnabled())
+                self.assertTrue(
+                    list(
+                        (root / "Zomboid/.zomboidsorter-collections/transactions").glob(
+                            "*/previous/ZomboidSorter_*"
+                        )
                     )
                 )
             finally:

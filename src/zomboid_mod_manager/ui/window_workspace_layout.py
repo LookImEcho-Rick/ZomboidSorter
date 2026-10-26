@@ -102,6 +102,15 @@ class WorkspaceLayoutMixin:
         )
         self.load_pack_button.clicked.connect(self._open_mod_packs)
         profile_row.addWidget(self.load_pack_button)
+        self.unload_pack_button = QPushButton("Unload Pack")
+        self.unload_pack_button.setAccessibleName("Unload loaded Mod Pack files")
+        self.unload_pack_button.setToolTip(
+            "Archive the loaded pack's app-owned mod folders. The saved pack remains available, "
+            "and the global mod list and staged Active Order stay unchanged."
+        )
+        self.unload_pack_button.setEnabled(False)
+        self.unload_pack_button.clicked.connect(self._unload_collection_mod_pack)
+        profile_row.addWidget(self.unload_pack_button)
         layout.addLayout(profile_row)
         self.workspace_notice = QWidget()
         self.workspace_notice.setObjectName("workspaceNotice")

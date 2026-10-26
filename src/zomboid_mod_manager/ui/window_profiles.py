@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 
 from zomboid_mod_manager.collection_deployment import (
     load_collection,
+    unload_collection,
 )
 from zomboid_mod_manager.collection_store import CollectionStore
 from zomboid_mod_manager.configuration import (
@@ -560,3 +561,66 @@ class ProfileActionsMixin:
                 "Collection Recovery Needs Attention",
                 recovery.error + f"\nRecovery folders: {prepared.root}",
             )
+
+    def _unload_collection_mod_pack(self) -> None:
+        snapshot = self._active_config
+        if (
+            snapshot is None
+            or not self._active_config_matches_selected_path()
+            or not is_global_default_mod_list(snapshot.path)
+        ):
+            QMessageBox.warning(
+                self,
+                "Global Mod List Unavailable",
+                "Load the supported global Zomboid/mods/default.txt before unloading collection files.",
+            )
+            return
+        if self._worker is not None and self._worker.isRunning():
+            QMessageBox.information(
+                self,
+                "Scan in Progress",
+                "Wait for the current library scan to finish before unloading a collection pack.",
+            )
+            return
+        if not getattr(self, "_loaded_collection_content", ()):
+            return
+        answer = QMessageBox.question(
+            self,
+            "Unload Collection Pack Files",
+            "Move the loaded pack's app-owned mod folders out of Zomboid/mods and into the recovery archive? Their contents will be preserved, and the saved Mod Pack will remain available to reload. The global default.txt and staged Active Order will stay unchanged. Close Project Zomboid first.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        roots, _workshop = self._selected_roots()
+        old_raw_scan = self._last_scan_result or self._last_result
+        dialog = CollectionLoadDialog(
+            lambda cancelled, progress: unload_collection(
+                snapshot.path.parent,
+                roots,
+                old_raw_scan,
+                cancelled=cancelled,
+                progress=progress,
+            ),
+            self,
+            title="Unload Collection Pack",
+            initial="Checking folder ownership and archiving loaded pack files…",
+            stopping="Stopping the unload and restoring the loaded pack…",
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            if dialog.error:
+                QMessageBox.warning(
+                    self, "Could Not Unload Collection Pack", dialog.error
+                )
+            return
+
+        _prepared, result = dialog.result_data
+        self._show_result(result)
+        self.configuration_status.setText(
+            "Unloaded the collection pack files to the recovery archive. The global default.txt and staged Active Order were not changed."
+        )
+        self.status.setText(
+            "Collection pack files unloaded; their app-owned copies are in the recovery archive."
+        )

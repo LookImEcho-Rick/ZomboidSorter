@@ -10,22 +10,27 @@ import json
 import os
 import re
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Event
 
 from .collection_store import (
     CollectionStore,
     CollectionStoreError,
     check_cancelled,
     copy_verified_tree,
+    directory_identity,
     require_plain_path,
     tree_digest,
+    validate_plain_tree,
 )
 from .discovery.scanner import merge_scan_results, scan_mods
 from .domain import ScanResult
 from .profiles import ModProfile, parse_profile, serialize_profile
 
 _FOLDER = re.compile(r"ZomboidSorter_[0-9a-f]{64}$")
+_COPY_WORKERS = 4
 
 
 def _write(path: Path, data: bytes) -> None:
@@ -65,23 +70,41 @@ class CollectionDeployment:
             if len(raw) > 4 * 1024 * 1024:
                 raise ValueError("too large")
             value = json.loads(raw)
+            schema = value.get("schema")
             if (
-                value.get("schema") != 1
+                schema not in (1, 2)
                 or value.get("localRoot") != str(self.local_root.absolute())
                 or not isinstance(value.get("folders"), list)
             ):
                 raise ValueError("unexpected state")
             names = set()
             for item in value["folders"]:
+                expected_keys = (
+                    {"name", "sha256"}
+                    if schema == 1
+                    else {"name", "sha256", "device", "inode"}
+                )
                 if (
                     not isinstance(item, dict)
-                    or set(item) != {"name", "sha256"}
+                    or set(item) != expected_keys
                     or not isinstance(item["name"], str)
+                    or not isinstance(item["sha256"], str)
                     or not _FOLDER.fullmatch(item["name"])
                     or item["name"] != "ZomboidSorter_" + item["sha256"]
                     or item["name"] in names
                 ):
                     raise ValueError("unsafe folder")
+                if schema == 2:
+                    device, inode = item["device"], item["inode"]
+                    valid_id = lambda value: (
+                        value is None or (type(value) is int and value >= 0)
+                    )
+                    if (
+                        not valid_id(device)
+                        or not valid_id(inode)
+                        or (device is None) != (inode is None)
+                    ):
+                        raise ValueError("unsafe folder identity")
                 names.add(item["name"])
             parse_profile(json.dumps(value["profile"]).encode())
             return value, raw
@@ -100,18 +123,30 @@ class CollectionDeployment:
 
     def prepare(
         self,
-        store: CollectionStore,
+        store: CollectionStore | None,
         profile: ModProfile,
         *,
         cancelled=None,
         progress=None,
+        archive_only=False,
     ):
         old, old_bytes = self.read()
         old_names = {x["name"] for x in old["folders"]}
-        cache_scan = store.scan(profile, cancelled=cancelled, progress=progress)
+        if archive_only and profile.collection_content:
+            raise CollectionStoreError(
+                "Archive-only collection unload cannot prepare cached content."
+            )
+        if profile.collection_content:
+            if store is None:
+                raise CollectionStoreError("Collection content storage is unavailable.")
+            cache_scan, entry_digests = store.scan_with_entry_digests(
+                profile, cancelled=cancelled, progress=progress
+            )
+        else:
+            cache_scan = ScanResult((), (), ())
+            entry_digests = {}
         sources = {}
         mod_sources = {}
-        entry_digests = {}
         for number, entry in enumerate(cache_scan.entries, 1):
             if progress:
                 progress(
@@ -120,10 +155,6 @@ class CollectionDeployment:
             if not entry.mod_id:
                 raise CollectionStoreError(
                     "The collection contains unreadable mod metadata."
-                )
-            if entry.entry_path not in entry_digests:
-                entry_digests[entry.entry_path] = tree_digest(
-                    entry.entry_path, cancelled=cancelled
                 )
             digest = entry_digests[entry.entry_path]
             if entry.mod_id in mod_sources and mod_sources[entry.mod_id] != digest:
@@ -136,27 +167,70 @@ class CollectionDeployment:
         require_plain_path(transaction_root)
         prepared = transaction_root / "prepared"
         prepared.mkdir(parents=True)
-        records = []
-        for number, (digest, source) in enumerate(sources.items(), 1):
+        copy_jobs = []
+        for digest, source in sources.items():
             check_cancelled(cancelled)
-            if progress:
-                progress(f"Preparing collection mod folders: {number}/{len(sources)}")
             name = "ZomboidSorter_" + digest
             target = self.local_root / name
             if target.exists() and name not in old_names:
                 raise CollectionStoreError(
                     "An unowned folder occupies the collection destination. No user files were replaced."
                 )
-            # Reuse only exact folders listed in the prior ownership record. All
-            # prior folders, including these retained copies, are fully hashed
-            # at activation before any move. Cache objects are verified above.
+            # Reuse only exact folders listed in the prior ownership record.
             if name not in old_names:
-                copy_verified_tree(
-                    source, prepared / name, cancelled=cancelled, expected_digest=digest
-                )
-            records.append({"name": name, "sha256": digest})
+                copy_jobs.append((digest, source, prepared / name))
+
+        if copy_jobs:
+            stop_copies = Event()
+
+            def copy_cancelled() -> bool:
+                return stop_copies.is_set() or (cancelled is not None and cancelled())
+
+            with ThreadPoolExecutor(
+                max_workers=min(_COPY_WORKERS, len(copy_jobs)),
+                thread_name_prefix="collection-copy",
+            ) as executor:
+                futures = [
+                    executor.submit(
+                        copy_verified_tree,
+                        source,
+                        destination,
+                        cancelled=copy_cancelled,
+                        expected_digest=digest,
+                    )
+                    for digest, source, destination in copy_jobs
+                ]
+                for number, future in enumerate(as_completed(futures), 1):
+                    try:
+                        future.result()
+                    except Exception:
+                        stop_copies.set()
+                        for pending in futures:
+                            if pending is not future:
+                                pending.cancel()
+                        raise
+                    check_cancelled(cancelled)
+                    if progress:
+                        progress(
+                            f"Preparing collection mod folders: {number}/{len(copy_jobs)}"
+                        )
+
+        records = []
+        for digest, source in sources.items():
+            name = "ZomboidSorter_" + digest
+            target = self.local_root / name
+            identity_path = target if name in old_names else prepared / name
+            device, inode = directory_identity(identity_path)
+            records.append(
+                {
+                    "name": name,
+                    "sha256": digest,
+                    "device": device,
+                    "inode": inode,
+                }
+            )
         new_state = {
-            "schema": 1,
+            "schema": 2,
             "localRoot": str(self.local_root.absolute()),
             "folders": records,
             "profile": json.loads(serialize_profile(profile)),
@@ -167,7 +241,13 @@ class CollectionDeployment:
             json.dumps({"status": "prepared", "old": old, "new": new_state}).encode(),
         )
         return PreparedDeployment(
-            self, transaction_root, old, old_bytes, new_state, new_bytes
+            self,
+            transaction_root,
+            old,
+            old_bytes,
+            new_state,
+            new_bytes,
+            archive_only=archive_only,
         )
 
 
@@ -179,6 +259,7 @@ class PreparedDeployment:
     old_bytes: bytes | None
     new: dict
     new_bytes: bytes
+    archive_only: bool = False
     activated: bool = False
 
     @property
@@ -190,20 +271,55 @@ class PreparedDeployment:
 
     def activate(self, *, cancelled=None, progress=None) -> None:
         owner = self.owner
-        # Check immediately before commit: retained folders must still contain
-        # their exact bytes, even if changed after preparation finished.
+        new_by_name = {record["name"]: record for record in self.new["folders"]}
+        # Normal pack switches verify exact bytes. Explicit unload only archives
+        # old folders, so a metadata-only walk is sufficient when their recorded
+        # directory identity still matches; edited content remains recoverable.
         for number, record in enumerate(self.old["folders"], 1):
             if progress:
                 progress(
-                    f"Checking previously loaded mod folders: {number}/{len(self.old['folders'])}"
+                    f"Checking folders to archive: {number}/{len(self.old['folders'])}"
+                    if self.archive_only
+                    else f"Checking previously loaded mod folders: {number}/{len(self.old['folders'])}"
                 )
-            if (
-                tree_digest(owner.local_root / record["name"], cancelled=cancelled)
-                != record["sha256"]
-            ):
-                raise CollectionStoreError(
-                    "An app-deployed mod was changed outside the app. Its files were preserved; resolve the change before switching packs."
-                )
+            path = owner.local_root / record["name"]
+            if self.archive_only:
+                identity = validate_plain_tree(path, cancelled=cancelled)
+                recorded = (record.get("device"), record.get("inode"))
+                if all(value is not None for value in recorded):
+                    if identity != recorded:
+                        raise CollectionStoreError(
+                            "An app-owned mod folder was replaced outside the app. Its files were preserved; resolve the ownership change before unloading."
+                        )
+                elif tree_digest(path, cancelled=cancelled) != record["sha256"]:
+                    raise CollectionStoreError(
+                        "An app-deployed mod was changed outside the app. Its files were preserved; resolve the change before unloading."
+                    )
+            else:
+                if tree_digest(path, cancelled=cancelled) != record["sha256"]:
+                    raise CollectionStoreError(
+                        "An app-deployed mod was changed outside the app. Its files were preserved; resolve the change before switching packs."
+                    )
+                recorded = (record.get("device"), record.get("inode"))
+                if all(value is not None for value in recorded):
+                    current_identity = directory_identity(path)
+                    if current_identity != recorded:
+                        raise CollectionStoreError(
+                            "An app-owned mod folder was replaced while the pack was being prepared. Retry loading the pack."
+                        )
+                replacement = new_by_name.get(record["name"])
+                if replacement is not None:
+                    expected_identity = (
+                        replacement.get("device"),
+                        replacement.get("inode"),
+                    )
+                    if (
+                        all(value is not None for value in expected_identity)
+                        and directory_identity(path) != expected_identity
+                    ):
+                        raise CollectionStoreError(
+                            "An app-owned mod folder changed while the pack was being prepared. Retry loading the pack."
+                        )
         check_cancelled(cancelled)
         _, current = owner.read()
         if current != self.old_bytes:
@@ -222,6 +338,18 @@ class PreparedDeployment:
                 require_plain_path(path)
                 if record["name"] in retained:
                     continue
+                if self.archive_only:
+                    expected_identity = (
+                        record.get("device"),
+                        record.get("inode"),
+                    )
+                    if (
+                        all(value is not None for value in expected_identity)
+                        and directory_identity(path) != expected_identity
+                    ):
+                        raise CollectionStoreError(
+                            "An app-owned mod folder changed before it could be archived. No collection folders were removed."
+                        )
                 os.rename(path, backup / record["name"])
                 moved_old.append(record["name"])
             for record in self.new["folders"]:
@@ -279,7 +407,7 @@ class PreparedDeployment:
             os.rename(self.root / "previous" / record["name"], target)
         # Keep an explicit empty state on first-import rollback, never delete data.
         empty = {
-            "schema": 1,
+            "schema": 2,
             "localRoot": str(owner.local_root.absolute()),
             "folders": [],
             "profile": json.loads(
@@ -325,6 +453,44 @@ def load_collection(
             local_scan,
             previous_scan,
         )
+        check_cancelled(cancelled)
+    except Exception:
+        prepared.rollback()
+        raise
+    return prepared, result
+
+
+def unload_collection(
+    local_root,
+    local_roots,
+    previous_scan: ScanResult | None = None,
+    *,
+    cancelled=None,
+    progress=None,
+):
+    """Archive active app-owned collection copies without changing the game list."""
+    check_cancelled(cancelled)
+    deployment = CollectionDeployment(local_root)
+    empty_profile = ModProfile("No collection loaded", ())
+    roots = list(dict.fromkeys([local_root, *local_roots]))
+    if progress:
+        progress("Checking loaded collection ownership before archiving…")
+    prepared = deployment.prepare(
+        None,
+        empty_profile,
+        cancelled=cancelled,
+        progress=progress,
+        archive_only=True,
+    )
+    check_cancelled(cancelled)
+    prepared.activate(cancelled=cancelled, progress=progress)
+    try:
+        local_scan = scan_mods(
+            local_roots=roots,
+            cancelled=cancelled,
+            progress=progress,
+        )
+        result = merge_scan_results(local_scan, previous_scan)
         check_cancelled(cancelled)
     except Exception:
         prepared.rollback()

@@ -14,6 +14,11 @@ Application license: GPL-3.0-or-later (root LICENSE)
 - CPython and Inno Setup versions are recorded per build in the installed `licenses/BUILD_COMPONENTS.txt`.
 - Qt libraries are dynamically loaded from the install directory; compatible library replacement is not blocked.
 
+## Version 0.3.2 release preparation (2026-10-26)
+
+- This release adds bounded collection verification/copy work and an explicit archive-only unload action. It adds no runtime dependencies, Qt modules, bundled assets, or license-delivery changes. The reviewed bundle inventory, notices, source locations, and written source offer remain applicable.
+- The full local test suite passed (242 tests; one environment-only skip), and the versionless Windows installer compiled with the reviewed pinned components. Hosted stable/rolling packaging and installer/update checks are pending.
+
 ## Version 0.3.1 release review (2026-10-25)
 
 - This release batches isolated anonymous SteamCMD item downloads, reuses receipt-verified downloads from interrupted imports, preserves verified partial results in the shared cache, and makes collection-to-Mod-Pack status and saved naming clearer. No runtime dependencies, Qt modules, bundled assets, or license-delivery changes were made. The reviewed bundle inventory, notices, source locations, and written source offer above still apply.

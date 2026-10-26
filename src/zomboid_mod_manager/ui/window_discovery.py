@@ -520,6 +520,18 @@ class DiscoveryMixin:
                 self.configuration_status.setText(
                     f"Collection state needs attention: {exc}"
                 )
+        unload_button = getattr(self, "unload_pack_button", None)
+        if unload_button is not None:
+            config_path = self._active_config.path if self._active_config else None
+            global_target = bool(
+                config_path is not None
+                and config_path.name.lower() == "default.txt"
+                and config_path.parent.name.lower() == "mods"
+                and config_path.parent.parent.name.lower() == "zomboid"
+            )
+            unload_button.setEnabled(
+                global_target and bool(self._loaded_collection_content)
+            )
         if self._worker is not None and self._worker.isInterruptionRequested():
             self._scan_cancelled()
             return
