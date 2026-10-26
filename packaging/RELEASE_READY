@@ -17,7 +17,7 @@ Application license: GPL-3.0-or-later (root LICENSE)
 ## Version 0.3.1 release review (2026-10-25)
 
 - This release batches isolated anonymous SteamCMD item downloads, reuses receipt-verified downloads from interrupted imports, preserves verified partial results in the shared cache, and makes collection-to-Mod-Pack status and saved naming clearer. No runtime dependencies, Qt modules, bundled assets, or license-delivery changes were made. The reviewed bundle inventory, notices, source locations, and written source offer above still apply.
-- Hosted tagged and rolling workflows build the versionless Windows installer and verify release/update behavior from the pushed source.
+- The [tagged Windows workflow](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/40248932968) and [rolling Windows workflow](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/40248926718) passed from release commit `d9dae23da08dd7b37a1000e930e0558f73f050d1`, including tests/lint, installer build, install/update smoke, and provenance. The v0.3.1 stable 121,149,051-byte installer SHA-256 is `d19170b4b8101844088ed75962642df248148eaa9ec8534ddaa5150e2581e2cf`; the rolling 121,149,214-byte installer SHA-256 is `d762bd38ca2857b80a1c80305e79e87d3620f1b0a1d0bf5e56ed5e6b7ff14853`. Each checksum sidecar agrees with GitHub's asset digest; the rolling manifest identifies 0.3.1 and the release commit.
 
 ## Previously reviewed local installer (technical review, 2026-10-22)
 
