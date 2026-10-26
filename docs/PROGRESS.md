@@ -1,5 +1,18 @@
 # Progress
 
+## v0.3.4 release preparation (2026-10-26)
+
+- Polishes Mod Pack selection and load confirmations so users can start loading a collection pack directly, then review a plain-language summary before the global mod list is changed. Saved IDs and the ordered change details remain available on demand.
+- This UX update adds no runtime dependencies or bundled components.
+- Local validation passed all 252 tests with one environment-only skip, Ruff check/format, compileall, and `git diff --check`. The tagged Windows package and rolling updater checks remain pending.
+
+## Mod Pack loading and review UX (2026-10-26)
+
+- Removed the extra collection-load confirmation about cache folders and Workshop priority. **Load & Apply** now starts preparation directly; the separate staged-changes safeguard remains, and the final confirmation appears only when the game list is about to be written.
+- Reworked **Mod Packs** into a two-panel chooser with pack counts, a plain-language change summary, a clear **Load & Apply** action, and optional saved-ID details. The game-list confirmation now says which list will change, summarizes mod/map counts, explains the backup and save-file effects, and offers **Apply Changes** or **Cancel**; ordered ID changes remain expandable.
+- The Windows source UI was reviewed at 820×590 with four disposable pack fixtures, including a long name and 11 sample Mod IDs; the confirmation wording and buttons were also visually reviewed. No game configuration, installed mods, or saves were changed.
+- Collection behavior in a packaged app and in Project Zomboid remains unverified.
+
 ## v0.3.3 hosted release verification (2026-10-26)
 
 - Release commit `f22eed6768980dbdeb4fbb72de8bf0808218896b` is on `main`; annotated tag [`v0.3.3`](https://github.com/LookImEcho-Rick/ZomboidSorter/releases/tag/v0.3.3) points to it. The release adds the empty, overwriteable Default Mod Pack and app-owned pack-to-save grouping; it adds no runtime dependencies or bundled components.

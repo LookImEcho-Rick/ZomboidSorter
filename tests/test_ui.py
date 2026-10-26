@@ -36,7 +36,7 @@ from zomboid_mod_manager.diagnostics.file_overlaps import (
 from zomboid_mod_manager.discovery.scanner import ScanCancelled
 from zomboid_mod_manager.domain import DetectedPaths, Diagnostic, ScanResult
 from zomboid_mod_manager.gameio.active_mods import read_active_mods
-from zomboid_mod_manager.profiles import ModProfile, ProfileStore
+from zomboid_mod_manager.profiles import CollectionContent, ModProfile, ProfileStore
 from zomboid_mod_manager.save_packs import SaveAssignmentStore, save_key
 from zomboid_mod_manager.sorting.user_rules import (
     UserOrderRule,
@@ -519,19 +519,26 @@ class MainWindowTests(unittest.TestCase):
         window._staged_mod_ids.append("ExampleMod")
         window._update_apply_enabled()
         self.assertEqual(window.launch_game_button.text(), "Apply && Launch…")
+
+        def cancel_apply_confirmation(box):
+            self.assertEqual(box.windowTitle(), "Apply Changes and Launch")
+            self.assertIn("save a backup first", box.informativeText())
+            self.assertIn("your save files", box.informativeText().casefold())
+            next(
+                button for button in box.buttons() if button.text() == "Cancel"
+            ).click()
+
         with (
             patch.object(window, "_confirm_configuration_preflight", return_value=True),
             patch(
-                "zomboid_mod_manager.ui.window_configuration.QMessageBox.question",
-                return_value=QMessageBox.StandardButton.No,
-            ) as confirm,
+                "zomboid_mod_manager.ui.window_configuration.QMessageBox.exec",
+                new=cancel_apply_confirmation,
+            ),
             patch(
                 "zomboid_mod_manager.ui.window_configuration.QDesktopServices.openUrl"
             ) as open_url,
         ):
             window._launch_project_zomboid()
-        self.assertEqual(confirm.call_args.args[1], "Apply Mod List and Launch")
-        self.assertIn("will open through Steam", confirm.call_args.args[2])
         self.assertEqual(config_path.read_bytes(), original_config)
         open_url.assert_not_called()
 
@@ -580,11 +587,16 @@ class MainWindowTests(unittest.TestCase):
         window._staged_mod_ids.append("PendingMod")
         window._update_apply_enabled()
 
+        def accept_apply_confirmation(box):
+            next(
+                button for button in box.buttons() if button.text() == "Apply & Launch"
+            ).click()
+
         with (
             patch.object(window, "_confirm_configuration_preflight", return_value=True),
             patch(
-                "zomboid_mod_manager.ui.window_configuration.QMessageBox.question",
-                return_value=QMessageBox.StandardButton.Yes,
+                "zomboid_mod_manager.ui.window_configuration.QMessageBox.exec",
+                new=accept_apply_confirmation,
             ),
             patch(
                 "zomboid_mod_manager.configuration.write_active_mods",
@@ -909,6 +921,36 @@ class MainWindowTests(unittest.TestCase):
             self.assertFalse(dialog.load_apply_button.isEnabled())
             self.assertTrue(dialog.import_button.isEnabled())
             dialog.close()
+
+    def test_mod_pack_summary_describes_order_only_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            profile_store = ProfileStore(Path(temporary) / "profiles")
+            profile_store.save(ModProfile("Reordered Pack", ("Second", "First")))
+            dialog = ModPacksDialog(
+                profile_store,
+                current_mod_ids=("First", "Second"),
+                current_map_ids=(),
+            )
+            dialog.pack_list.setCurrentRow(0)
+
+            self.assertEqual(
+                dialog.change_summary.text(),
+                "Changes the order of 2 mods.\nYour current map list stays the same.",
+            )
+            dialog.close()
+
+            profile_store.save(ModProfile("Current Pack", ("First", "Second")))
+            current_dialog = ModPacksDialog(
+                profile_store,
+                current_mod_ids=("First", "Second"),
+                current_map_ids=(),
+            )
+            current_dialog.pack_list.setCurrentRow(0)
+
+            self.assertEqual(
+                current_dialog.backup_note.text(), "No game-list change is needed."
+            )
+            current_dialog.close()
 
     def test_small_window_keeps_paths_and_primary_actions_readable(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -1322,7 +1364,7 @@ class MainWindowTests(unittest.TestCase):
 
         def select_weekend_pack(dialog) -> int:
             names = [
-                dialog.pack_list.item(row).text()
+                dialog.pack_list.item(row).data(Qt.ItemDataRole.UserRole)
                 for row in range(dialog.pack_list.count())
             ]
             self.assertEqual(names, ["Other Pack", "Weekend Pack"])
@@ -1331,14 +1373,21 @@ class MainWindowTests(unittest.TestCase):
             item = next(
                 dialog.pack_list.item(row)
                 for row in range(dialog.pack_list.count())
-                if dialog.pack_list.item(row).text() == "Weekend Pack"
+                if dialog.pack_list.item(row).data(Qt.ItemDataRole.UserRole)
+                == "Weekend Pack"
             )
             dialog.pack_list.setCurrentItem(item)
             self.assertTrue(dialog.load_apply_button.isEnabled())
-            self.assertEqual(dialog.load_apply_button.text(), "Apply")
+            self.assertEqual(dialog.load_apply_button.text(), "Load & Apply")
+            self.assertIn("adds 2 mods", dialog.change_summary.text().casefold())
+            self.assertIn("removes 1 mod", dialog.change_summary.text().casefold())
+            self.assertFalse(dialog.pack_preview.isVisible())
+            dialog.details_toggle.click()
             self.assertIn("1. ModAlpha", dialog.pack_preview.toPlainText())
             self.assertIn("2. UninstalledMod", dialog.pack_preview.toPlainText())
-            self.assertIn("CHANGES TO GLOBAL LIST", dialog.pack_preview.toPlainText())
+            self.assertIn(
+                "DETAILED GAME-LIST CHANGES", dialog.pack_preview.toPlainText()
+            )
             self.assertIn("OldMod", dialog.pack_preview.toPlainText())
             self.assertIn("ModAlpha", dialog.pack_preview.toPlainText())
             dialog.load_apply_button.click()
@@ -1365,6 +1414,45 @@ class MainWindowTests(unittest.TestCase):
             "Loaded and applied Mod Pack 'Weekend Pack'", window.status.text()
         )
         self.assertFalse(window.apply_config_button.isEnabled())
+        window.close()
+
+    def test_collection_pack_starts_loading_without_extra_confirmation(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        window, _config_path = self._make_launch_window(Path(temporary.name))
+        self._wait_for_background_workers(window)
+        profile = ModProfile(
+            "Workshop Pack",
+            (),
+            ("12345",),
+            None,
+            (CollectionContent("12345", "a" * 64),),
+        )
+        dialog = Mock()
+        dialog.exec.return_value = QDialog.DialogCode.Accepted
+        dialog.result_data = (object(), ScanResult((), (), ()))
+
+        with (
+            patch(
+                "zomboid_mod_manager.ui.window_profiles.CollectionLoadDialog",
+                return_value=dialog,
+            ) as load_dialog,
+            patch.object(window, "_show_result"),
+            patch.object(window, "_apply_staged_configuration", return_value=True),
+            patch(
+                "zomboid_mod_manager.ui.window_profiles.QMessageBox.question"
+            ) as confirm,
+        ):
+            window._load_collection_mod_pack(profile)
+
+        load_dialog.assert_called_once()
+        self.assertEqual(
+            load_dialog.call_args.kwargs["initial"],
+            "Preparing 'Workshop Pack' for Project Zomboid…",
+        )
+        confirm.assert_not_called()
+        self.assertEqual(window._loaded_profile_name, "Workshop Pack")
+        self.assertIn("Launch Project Zomboid from ZomboidSorter", window.status.text())
         window.close()
 
     def test_mod_pack_keeps_previous_staging_when_replaced_or_cancelled(self) -> None:
@@ -2854,27 +2942,43 @@ class MainWindowTests(unittest.TestCase):
         window._staged_mod_ids.append("AddedMod")
         window._update_apply_enabled()
         self.assertTrue(window.apply_config_button.isEnabled())
+
+        def cancel_confirmation(box):
+            next(
+                button for button in box.buttons() if button.text() == "Cancel"
+            ).click()
+
         with (
             patch.object(window, "_confirm_configuration_preflight", return_value=True),
             patch(
-                "zomboid_mod_manager.ui.window_configuration.QMessageBox.question",
-                return_value=QMessageBox.StandardButton.No,
+                "zomboid_mod_manager.ui.window_configuration.QMessageBox.exec",
+                new=cancel_confirmation,
             ),
         ):
             window._apply_active_configuration()
         self.assertEqual(config_path.read_bytes(), original)
 
+        prompts = []
+
+        def accept_confirmation(box):
+            prompts.append(box)
+            next(
+                button for button in box.buttons() if button.text() == "Apply Changes"
+            ).click()
+
         with (
             patch.object(window, "_confirm_configuration_preflight", return_value=True),
             patch(
-                "zomboid_mod_manager.ui.window_configuration.QMessageBox.question",
-                return_value=QMessageBox.StandardButton.Yes,
-            ) as confirm,
+                "zomboid_mod_manager.ui.window_configuration.QMessageBox.exec",
+                new=accept_confirmation,
+            ),
         ):
             window._apply_active_configuration()
-        apply_prompt = confirm.call_args.args[2]
-        self.assertIn("Added: AddedMod", apply_prompt)
-        self.assertIn("Maps: unchanged (1)", apply_prompt)
+        self.assertEqual(prompts[0].text(), "Update Project Zomboid's active mod list?")
+        self.assertIn("Mods: 1 → 2", prompts[0].informativeText())
+        self.assertIn("Maps: unchanged", prompts[0].informativeText())
+        self.assertIn("Added: AddedMod", prompts[0].detailedText())
+        self.assertIn("Maps: unchanged (1)", prompts[0].detailedText())
         self.assertNotEqual(config_path.read_bytes(), original)
         self.assertEqual(
             tuple(window._active_config.config.mods), ("ExistingMod", "AddedMod")

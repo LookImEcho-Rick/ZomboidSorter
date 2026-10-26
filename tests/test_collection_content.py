@@ -638,9 +638,23 @@ class CollectionWorkspaceTests(unittest.TestCase):
                 while window._worker is not None and time.monotonic() < deadline:
                     QTest.qWait(10)
                 self.assertEqual(window.available_list.count(), 0)
-                with patch(
-                    "zomboid_mod_manager.ui.window_profiles.QMessageBox.question",
-                    return_value=QMessageBox.StandardButton.Yes,
+
+                def confirm_mod_list_change(box):
+                    next(
+                        button
+                        for button in box.buttons()
+                        if button.text() == "Apply Changes"
+                    ).click()
+
+                with (
+                    patch(
+                        "zomboid_mod_manager.ui.window_profiles.QMessageBox.question",
+                        return_value=QMessageBox.StandardButton.Yes,
+                    ),
+                    patch(
+                        "zomboid_mod_manager.ui.window_configuration.QMessageBox.exec",
+                        new=confirm_mod_list_change,
+                    ),
                 ):
                     window._apply_mod_pack(profile)
                 self.assertEqual(read_active_mods(config).config.mods, ("PackA",))

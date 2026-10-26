@@ -14,6 +14,12 @@ Application license: GPL-3.0-or-later (root LICENSE)
 - CPython and Inno Setup versions are recorded per build in the installed `licenses/BUILD_COMPONENTS.txt`.
 - Qt libraries are dynamically loaded from the install directory; compatible library replacement is not blocked.
 
+## Version 0.3.4 release review (2026-10-26)
+
+- This release improves Mod Pack selection, collection loading, and the final global-list confirmation. It adds no runtime dependencies, Qt modules, bundled assets, or license-delivery changes. The reviewed bundle inventory, notices, source locations, and written source offer remain applicable.
+- Local validation passed all 252 tests with one environment-only skip, Ruff check/format, compileall, and `git diff --check`.
+- Tagged Windows installer, v0.3.3 upgrade smoke, rolling updater verification, and provenance checks are pending hosted workflow results.
+
 ## Version 0.3.3 release review (2026-10-26)
 
 - This release adds an empty, overwriteable Default Mod Pack and app-owned save-to-pack groupings. The Default pack is not applied at startup; save folders and their `mods.txt` files remain unchanged.

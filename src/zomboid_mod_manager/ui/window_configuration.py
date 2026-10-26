@@ -5,9 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from pathlib import Path
 
-from PySide6.QtCore import (
-    QUrl,
-)
+from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import (
     QDesktopServices,
 )
@@ -317,24 +315,46 @@ class ActiveConfigurationMixin:
             )
             change_text = "\n".join(change_lines)
             title = (
-                "Apply Mod List and Launch"
+                "Apply Changes and Launch"
                 if launch_after_apply
-                else "Apply Global Mod List"
+                else "Confirm Mod List Change"
             )
-            confirmation = (
-                "Save the staged list to Project Zomboid's global default mod list? A timestamped backup will be created. "
-                "After the saved list is verified, Project Zomboid will open through Steam."
+            maps_change = (
+                map_ids is not None
+                and tuple(map_ids) != self._active_config.config.maps
+            )
+            list_scope = "mod and map lists" if maps_change else "active mod list"
+            outcome = (
+                "\n\nAfter applying, ZomboidSorter will ask Steam to launch Project Zomboid."
                 if launch_after_apply
-                else "Update the global Project Zomboid default mod list? A timestamped backup will be created."
+                else ""
             )
-            answer = QMessageBox.question(
-                self,
-                title,
-                f"{confirmation}\n\nChanges:\n{change_text}",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
+            confirmation = QMessageBox(self)
+            confirmation.setWindowTitle(title)
+            confirmation.setIcon(QMessageBox.Icon.Question)
+            confirmation.setTextFormat(Qt.TextFormat.PlainText)
+            confirmation.setText(f"Update Project Zomboid's {list_scope}?")
+            confirmation.setInformativeText(
+                "ZomboidSorter will save a backup first. Your save files and existing mods will stay untouched."
+                f"\n\nMods: {len(self._active_config.config.mods)} → {len(self._staged_mod_ids)}"
+                + (
+                    f"\nMaps: {len(self._active_config.config.maps)} → {len(map_ids)}"
+                    if maps_change
+                    else "\nMaps: unchanged"
+                )
+                + outcome
             )
-            if answer != QMessageBox.StandardButton.Yes:
+            confirmation.setDetailedText(change_text)
+            apply_button = confirmation.addButton(
+                "Apply & Launch" if launch_after_apply else "Apply Changes",
+                QMessageBox.ButtonRole.AcceptRole,
+            )
+            cancel_button = confirmation.addButton(
+                "Cancel", QMessageBox.ButtonRole.RejectRole
+            )
+            confirmation.setDefaultButton(cancel_button)
+            confirmation.exec()
+            if confirmation.clickedButton() != apply_button:
                 return False
         try:
             backup = apply_active_configuration(

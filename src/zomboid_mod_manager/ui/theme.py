@@ -16,12 +16,25 @@ QWidget#workspacePanel, QWidget#detailsPane {
 QWidget#workspaceNotice {
     background: #2b3026; border: 1px solid #8c9556; border-radius: 5px;
 }
+QFrame#packDetailsPanel {
+    background: #171f21; border: 1px solid #344641; border-radius: 7px;
+}
+QFrame#packStat {
+    background: #202b2c; border: 1px solid #3b4c46; border-radius: 5px;
+}
+QFrame#packChangeCard {
+    background: #202b27; border: 1px solid #526644; border-radius: 6px;
+}
 QLabel#appTitle { color: #f1ede0; font-size: 16pt; font-weight: 800; letter-spacing: 2px; }
 QLabel#pageHeading { color: #f1ede0; font-size: 17pt; font-weight: 700; }
+QLabel#packTitle { color: #f1ede0; font-size: 15pt; font-weight: 700; }
 QLabel#sectionKicker, QLabel#panelHeading {
     color: #d9e2d4; font-weight: 700; font-size: 10.5pt; padding: 2px 0;
 }
 QLabel#sectionKicker { color: #b8c66d; letter-spacing: 1px; }
+QLabel#packStatValue { color: #f1ede0; font-size: 15pt; font-weight: 700; }
+QLabel#packStatLabel { color: #a4b2ab; font-size: 8.5pt; font-weight: 700; }
+QLabel#packChangeSummary { color: #e9ece7; }
 QLabel#secondaryText { color: #a4b2ab; }
 QLabel#pathHealth {
     color: #84928a; font-size: 13pt; font-weight: 700;

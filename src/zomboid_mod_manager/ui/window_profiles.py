@@ -525,15 +525,6 @@ class ProfileActionsMixin:
             return
         if not self._confirm_staged_replacement("load this Mod Pack"):
             return
-        answer = QMessageBox.question(
-            self,
-            "Load Collection Mod Pack",
-            f"Load '{profile.name}'? Its exact cached copies will be prepared in {snapshot.path.parent}. When you launch from ZomboidSorter, those local copies take priority over Workshop copies with the same Mod ID. Other installed copies stay untouched. Close Project Zomboid first. You will review the global-list changes before applying them.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if answer != QMessageBox.StandardButton.Yes:
-            return
         roots, _workshop = self._selected_roots()
         old_mods = list(self._staged_mod_ids)
         old_workshop = self._profile_workshop_ids
@@ -551,6 +542,9 @@ class ProfileActionsMixin:
                 progress=progress,
             ),
             self,
+            title="Loading Mod Pack",
+            initial=f"Preparing '{profile.name}' for Project Zomboid…",
+            stopping="Stopping the load and restoring the previous pack…",
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             if dialog.error:
@@ -571,7 +565,7 @@ class ProfileActionsMixin:
         ):
             self._mark_pack_loaded(profile.name)
             self.status.setText(
-                f"Loaded and applied '{profile.name}'. Launch from ZomboidSorter to prioritize its exact copies over Workshop versions; other installed files stay untouched. Disabled pack mods remain in Available Mods."
+                f"Loaded and applied '{profile.name}'. Launch Project Zomboid from ZomboidSorter to use this pack's Workshop mods. Other installed mods stay untouched; disabled pack mods remain in Available Mods."
             )
             return
         if self._active_config is not before_write:
