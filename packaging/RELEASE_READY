@@ -18,7 +18,9 @@ Application license: GPL-3.0-or-later (root LICENSE)
 
 - This release improves Mod Pack selection, collection loading, and the final global-list confirmation. It adds no runtime dependencies, Qt modules, bundled assets, or license-delivery changes. The reviewed bundle inventory, notices, source locations, and written source offer remain applicable.
 - Local validation passed all 252 tests with one environment-only skip, Ruff check/format, compileall, and `git diff --check`.
-- Tagged Windows installer, v0.3.3 upgrade smoke, rolling updater verification, and provenance checks are pending hosted workflow results.
+- The [tagged Windows workflow](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/40296673800) passed tests/lint, installer build, v0.3.3 upgrade, standard/portable install smoke, provenance, and publication. The versionless installer is 121,627,382 bytes with SHA-256 `3706ca3647617c9bee99da9ad60398893e307cb72aa6183748688e1f56b4c11a`, matching its checksum sidecar.
+- The [rolling Windows workflow](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/40295985900) passed quality checks, packaged install/launch, checksum/provenance, and v0.3.3 update through verified relaunch. Its 121,623,820-byte installer has SHA-256 `7d080ea409ea7f25fb9de278c5246b20e0a96cf5dd44e6b62a366ecc1ff03f3a`; the manifest reports version 0.3.4 and the release commit, the hash matches the asset digest, and the `rolling` tag points to that commit.
+- Feature-specific collection behavior in the packaged app and live Project Zomboid behavior remain unverified.
 
 ## Version 0.3.3 release review (2026-10-26)
 

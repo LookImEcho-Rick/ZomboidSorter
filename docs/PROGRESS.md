@@ -1,17 +1,18 @@
 # Progress
 
-## v0.3.4 release preparation (2026-10-26)
+## v0.3.4 hosted release verification (2026-10-26)
 
-- Polishes Mod Pack selection and load confirmations so users can start loading a collection pack directly, then review a plain-language summary before the global mod list is changed. Saved IDs and the ordered change details remain available on demand.
-- This UX update adds no runtime dependencies or bundled components.
-- Local validation passed all 252 tests with one environment-only skip, Ruff check/format, compileall, and `git diff --check`. The tagged Windows package and rolling updater checks remain pending.
+- Release commit `0fee8243655fff3a5e60bf1213b203b81df954f2` is on `main`; annotated tag [`v0.3.4`](https://github.com/LookImEcho-Rick/ZomboidSorter/releases/tag/v0.3.4) points to it. This release improves Mod Pack selection, collection loading, and the final global-list confirmation without adding dependencies or bundled components.
+- Local validation passed all 252 tests with one environment-only skip, Ruff check/format, compileall, and `git diff --check`.
+- The [tagged Windows workflow](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/40296673800) passed tests/lint, installer build, upgrade from v0.3.3, standard/portable install smoke, provenance, and publication. Its versionless installer is 121,627,382 bytes with SHA-256 `3706ca3647617c9bee99da9ad60398893e307cb72aa6183748688e1f56b4c11a`; the published sidecar matches.
+- The [rolling Windows workflow](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/40295985900) passed quality checks, packaged install/launch smoke, checksum/provenance validation, and update from v0.3.3 through verified relaunch. Its installer is 121,623,820 bytes with SHA-256 `7d080ea409ea7f25fb9de278c5246b20e0a96cf5dd44e6b62a366ecc1ff03f3a`. The manifest reports version 0.3.4 and the release commit; its hash matches the asset digest, and the `rolling` tag points to that commit.
+- Feature-specific collection behavior in the packaged app and live Project Zomboid behavior remain unverified.
 
 ## Mod Pack loading and review UX (2026-10-26)
 
 - Removed the extra collection-load confirmation about cache folders and Workshop priority. **Load & Apply** now starts preparation directly; the separate staged-changes safeguard remains, and the final confirmation appears only when the game list is about to be written.
 - Reworked **Mod Packs** into a two-panel chooser with pack counts, a plain-language change summary, a clear **Load & Apply** action, and optional saved-ID details. The game-list confirmation now says which list will change, summarizes mod/map counts, explains the backup and save-file effects, and offers **Apply Changes** or **Cancel**; ordered ID changes remain expandable.
 - The Windows source UI was reviewed at 820×590 with four disposable pack fixtures, including a long name and 11 sample Mod IDs; the confirmation wording and buttons were also visually reviewed. No game configuration, installed mods, or saves were changed.
-- Collection behavior in a packaged app and in Project Zomboid remains unverified.
 
 ## v0.3.3 hosted release verification (2026-10-26)
 
