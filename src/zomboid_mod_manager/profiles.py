@@ -224,6 +224,19 @@ class ProfileStore:
             )
         )
 
+    def ensure_default_pack(self) -> bool:
+        """Create the one-time, empty Default pack for a fresh app data store."""
+        self.root.mkdir(parents=True, exist_ok=True)
+        marker = self.root / ".default-pack-seeded-v1"
+        if marker.exists():
+            return False
+        if self.list_names():
+            self._atomic_write(marker, b"seeded\n")
+            return False
+        self.save(ModProfile("Default", (), (), ()))
+        self._atomic_write(marker, b"seeded\n")
+        return True
+
     def load(self, name: str) -> ModProfile:
         path = self._path(name)
         try:

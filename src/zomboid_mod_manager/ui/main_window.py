@@ -120,6 +120,7 @@ class MainWindow(
         self._loaded_collection_content = ()
         self._loaded_collection_mod_ids: tuple[str, ...] = ()
         self._profile_store = profile_store or ProfileStore()
+        self._loaded_profile_name: str | None = None
         self._diagnostic_worker: DiagnosticWorker | None = None
         self._extra_diagnostics: dict[str, str] = {}
         self._issue_error_count = 0
@@ -140,3 +141,7 @@ class MainWindow(
         self._update_check_worker: UpdateCheckWorker | None = None
         self._update_download_worker: UpdateDownloadWorker | None = None
         self._build_application_ui(active_config_path, use_saved_paths)
+        try:
+            self._profile_store.ensure_default_pack()
+        except OSError as exc:
+            self.status.setText(f"Could not initialize the Default Mod Pack: {exc}")

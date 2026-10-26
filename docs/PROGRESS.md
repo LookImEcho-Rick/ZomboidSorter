@@ -1,5 +1,12 @@
 # Progress
 
+## Pack-specific save browser (2026-10-26)
+
+- Added a **Saves…** button for the Mod Pack explicitly loaded in the current app session. The dialog lists existing immediate `Saves/<mode>/<save>` folders and lets users group or remove them from that pack; each save can belong to only one pack. These links live in app-owned `save-assignments.json`, not in game files.
+- A fresh profile store gets a one-time **Default** Mod Pack with empty Mod ID, Workshop ID, and map lists. Startup only creates this pack; it does not load it or apply any mods. The existing **Save as Pack** flow can overwrite it with a backup after confirmation.
+- Save discovery is read-only. No save `mods.txt`, save data, server settings, subscriptions, or global mod list are changed by browsing/grouping saves. The default pack's empty state and overwrite flow, one-to-one assignment/move behavior, and unchanged save fixture are covered by regression tests.
+- Validation passed all 250 tests with one environment-only symlink skip, Ruff check/format, compilation, and `git diff --check`. The rendered source window and pack-saves dialog were reviewed at 980×680; the native computer-use session then reported it had been stopped by a physical Escape, so the Add Existing Save picker was not visually rechecked. This was fixture/source validation only; no live saves or packaged app were used.
+
 ## Faster collection loading research (2026-10-25)
 
 - The `Preparing collection mod folders: 48/166` label counts distinct folder digests, not bytes or time; folder sizes vary and the progress bar is indeterminate. A new local 30-item/1,920-file/15-MiB synthetic baseline on Python 3.14.7 and NTFS measured 8.172 seconds for first load, 3.487 seconds for reload, and 2.194 seconds for a half-overlap switch (three-run medians; setup excluded).

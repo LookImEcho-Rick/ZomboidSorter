@@ -6,7 +6,9 @@ Continuously improve ZomboidSorter as a dedicated, Windows-first Project Zomboid
 
 The product manages the user's **global** mod setup: discover local and Workshop content, distinguish Workshop item IDs from individual Mod IDs and installed directories, inspect Build 41/42 metadata, stage and explain order changes, diagnose issues, manage existing app-owned Mod Packs, inspect/import Workshop collections, and safely apply or restore the global list.
 
-Do not add per-save or server management, save editing, multiplayer synchronization, multi-game support, a virtual filesystem, mod-authoring tools, Workshop deletion, cloud accounts, or speculative plugin frameworks. Existing Mod Packs are reusable global loadouts, not save profiles. A feature must solve a demonstrated Project Zomboid player problem.
+The app also groups existing game-save folders under one Mod Pack at a time. This is app-owned organization metadata with a read-only save browser; it never applies a pack to a save or edits save contents/configuration.
+
+Do not add per-save mod-list/configuration management, server management, save editing, multiplayer synchronization, multi-game support, a virtual filesystem, mod-authoring tools, Workshop deletion, cloud accounts, or speculative plugin frameworks. Mod Packs remain reusable global loadouts; their save associations only organize existing save folders inside ZomboidSorter. A feature must solve a demonstrated Project Zomboid player problem.
 
 Collection imports use an isolated Valve-signed SteamCMD downloader with anonymous login; do not change Steam subscriptions. The user approved this dependency and isolated testing. Store exact content once in the shared collections cache and keep per-pack SHA-256 references. Only the loaded pack's copies may be prepared under the verified global Zomboid/mods directory; preserve ownership records, reject links and copy conflicts, archive replaced app-owned copies, and roll back cancelled applies. Never overwrite user/Steam-installed mod files or export account credentials.
 
@@ -20,7 +22,7 @@ Collection imports use an isolated Valve-signed SteamCMD downloader with anonymo
 ## Architecture and safety
 
 - Keep domain logic independent of widgets; isolate game I/O; keep discovery read-only; separate parsing from presentation; keep sorting deterministic; run slow work off the UI thread; and make persistence explicit.
-- The verified write target is `Zomboid/mods/default.txt`. Stage changes, preview them, confirm consequential writes, validate the exact target, reject unsafe links, detect concurrent edits, preserve backups, write atomically where supported, verify persisted contents, and retain rollback paths.
+- The only verified game-configuration write target is `Zomboid/mods/default.txt`. Stage changes, preview them, confirm consequential writes, validate the exact target, reject unsafe links, detect concurrent edits, preserve backups, write atomically where supported, verify persisted contents, and retain rollback paths. The save browser may enumerate immediate `Saves/<mode>/<save>` folders read-only; save-to-pack links belong only in app data.
 - Never modify saves, server settings, or user/Steam-installed mod contents. Collection activation may prepare and archive only explicitly recorded app-owned copies. Never delete user data or installed mods without explicit authorization.
 - Before any new configuration-writing behavior, verify the exact Build 42 target and format, use disposable fixtures, back up existing data, and validate the output.
 - Do not assume another game's metadata, dependency, conflict, or sorting semantics apply to Project Zomboid. Do not claim a fixture or mock establishes real gameplay compatibility.
@@ -60,4 +62,4 @@ Collection imports use an isolated Valve-signed SteamCMD downloader with anonymo
 
 - Keep `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`, `docs/PROGRESS.md`, and `docs/research/` accurate and concise. Record what changed, why, relevant research, validation, limitations, and the next useful priority. Avoid competing trackers.
 - Keep this file updated only when durable project guidance changes.
-- Current project request authorizes sequential development iterations without asking after each milestone. Approval is still required for destructive changes, major dependencies with meaningful compatibility/licensing risk, stack replacement, excluded features, stable publication, and other actions explicitly listed above.
+- Current project request authorizes sequential development iterations without asking after each milestone. The app-owned save grouping/browser is approved, while per-save configuration writes remain excluded. Approval is still required for destructive changes, major dependencies with meaningful compatibility/licensing risk, stack replacement, other excluded features, stable publication, and other actions explicitly listed above.

@@ -37,6 +37,7 @@ from zomboid_mod_manager.discovery.scanner import ScanCancelled
 from zomboid_mod_manager.domain import DetectedPaths, Diagnostic, ScanResult
 from zomboid_mod_manager.gameio.active_mods import read_active_mods
 from zomboid_mod_manager.profiles import ModProfile, ProfileStore
+from zomboid_mod_manager.save_packs import SaveAssignmentStore, save_key
 from zomboid_mod_manager.sorting.user_rules import (
     UserOrderRule,
     parse_user_order_rules,
@@ -45,6 +46,7 @@ from zomboid_mod_manager.ui.file_overlap_dialog import FileOverlapDialog
 from zomboid_mod_manager.ui.global_backup_dialog import GlobalBackupDialog
 from zomboid_mod_manager.ui.main_window import MainWindow
 from zomboid_mod_manager.ui.mod_packs_dialog import ModPacksDialog
+from zomboid_mod_manager.ui.save_packs_dialog import SavePacksDialog
 from zomboid_mod_manager.ui.support_report_dialog import SupportReportDialog
 from zomboid_mod_manager.ui.window_lifecycle import fit_window_geometry
 from zomboid_mod_manager.ui.window_widgets import ISSUE_ROLE, PreviewLabel
@@ -1178,6 +1180,11 @@ class MainWindowTests(unittest.TestCase):
 
         self.assertTrue(window.workspace_page.isAncestorOf(window.load_pack_button))
         self.assertTrue(window.workspace_page.isAncestorOf(window.save_profile_button))
+        self.assertTrue(
+            window.workspace_page.isAncestorOf(window.view_pack_saves_button)
+        )
+        self.assertIn("Default", profile_store.list_names())
+        self.assertEqual(profile_store.load("Default").mod_ids, ())
         saved_order = tuple(window._staged_mod_ids)
         with patch(
             "zomboid_mod_manager.ui.window_profiles.QInputDialog.getText",
@@ -1190,7 +1197,102 @@ class MainWindowTests(unittest.TestCase):
         self.assertIn("Saved Mod Pack 'Weekend Pack'", window.status.text())
         self.assertEqual(config_path.read_bytes(), original_config)
         self.assertEqual(config_path.read_bytes(), original_config)
+
+        with (
+            patch(
+                "zomboid_mod_manager.ui.window_profiles.QInputDialog.getText",
+                return_value=("Default", True),
+            ),
+            patch(
+                "zomboid_mod_manager.ui.window_profiles.QMessageBox.question",
+                return_value=QMessageBox.StandardButton.Yes,
+            ),
+        ):
+            window.save_profile_button.click()
+        self.assertEqual(profile_store.load("Default").mod_ids, saved_order)
+        self.assertTrue(list(profile_store.backup_root.glob("Default.json.*")))
+        self.assertEqual(config_path.read_bytes(), original_config)
         window.close()
+
+    def test_pack_saves_dialog_only_changes_app_owned_groupings(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        profiles = ProfileStore(root / "profiles")
+        profiles.save(ModProfile("Weekend Pack", ("Base",)))
+        save_dir = root / "Zomboid" / "Saves" / "Sandbox" / "Rosewood"
+        save_dir.mkdir(parents=True)
+        mods_file = save_dir / "mods.txt"
+        mods_file.write_text("game save data stays unchanged\n", encoding="utf-8")
+        key = save_key("Sandbox", "Rosewood")
+        assignments = SaveAssignmentStore(profiles.root.parent)
+        assignments.assign(key, "Weekend Pack")
+
+        dialog = SavePacksDialog(profiles, "Weekend Pack", save_dir.parents[1])
+        self.addCleanup(dialog.close)
+        self.assertEqual(dialog.saves_list.count(), 1)
+        self.assertEqual(dialog.saves_list.item(0).text(), "Rosewood · Sandbox")
+
+        dialog._remove_selected()
+        self.assertIsNone(assignments.assigned_pack(key))
+        self.assertTrue(save_dir.is_dir())
+        self.assertEqual(
+            mods_file.read_text(encoding="utf-8"),
+            "game save data stays unchanged\n",
+        )
+
+        class SelectedSave:
+            def __init__(self) -> None:
+                self.selected_key = key
+
+            def exec(self) -> int:
+                return QDialog.DialogCode.Accepted
+
+        with patch(
+            "zomboid_mod_manager.ui.save_packs_dialog.SavePickerDialog",
+            return_value=SelectedSave(),
+        ):
+            dialog._add_save()
+
+        self.assertEqual(assignments.assigned_pack(key), "Weekend Pack")
+        self.assertEqual(
+            mods_file.read_text(encoding="utf-8"),
+            "game save data stays unchanged\n",
+        )
+
+    def test_saves_button_is_enabled_for_the_currently_loaded_pack(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        config_path = root / "Zomboid" / "mods" / "default.txt"
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text(
+            "VERSION = 1,\n\nmods\n{\n    mod = Base,\n}\n\nmaps\n{\n}\n",
+            encoding="utf-8",
+        )
+        profile_store = ProfileStore(root / "profiles")
+        pack_name = f"Current Pack {root.name}"
+        profile = ModProfile(pack_name, ("Base",))
+        profile_store.save(profile)
+        detected = DetectedPaths(
+            (), (), (), (FIXTURES / "workshop",), FIXTURES / "local_mods"
+        )
+        window = MainWindow(
+            detected,
+            active_config_path=config_path,
+            profile_store=profile_store,
+        )
+
+        def close_when_workers_finish() -> None:
+            self._wait_for_background_workers(window)
+            window.close()
+
+        self.addCleanup(close_when_workers_finish)
+
+        self.assertFalse(window.view_pack_saves_button.isEnabled())
+        window._apply_mod_pack(profile)
+        self.assertTrue(window.view_pack_saves_button.isEnabled())
+        self.assertEqual(window._loaded_profile_name, pack_name)
 
     def test_mod_pack_manager_selection_applies_pack_to_global_config(self) -> None:
         temporary = tempfile.TemporaryDirectory()

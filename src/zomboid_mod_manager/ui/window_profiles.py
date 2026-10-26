@@ -31,16 +31,70 @@ from zomboid_mod_manager.profiles import (
     ModProfile,
     ProfileError,
 )
+from zomboid_mod_manager.save_packs import default_saves_root
 from zomboid_mod_manager.steamcmd import SteamCmdDownloader
 from zomboid_mod_manager.ui.change_preview import format_ordered_list_change
 from zomboid_mod_manager.ui.collection_browser_dialog import CollectionBrowserDialog
 from zomboid_mod_manager.ui.collection_load_dialog import CollectionLoadDialog
 from zomboid_mod_manager.ui.mod_packs_dialog import ModPacksDialog
+from zomboid_mod_manager.ui.save_packs_dialog import SavePacksDialog
 from zomboid_mod_manager.ui.text import counted
 from zomboid_mod_manager.ui.workshop_dialog import WorkshopCollectionDialog
 
 
 class ProfileActionsMixin:
+    def _mark_pack_loaded(self, name: str) -> None:
+        self._loaded_profile_name = name
+        self._update_pack_saves_button()
+
+    def _clear_loaded_pack(self) -> None:
+        self._loaded_profile_name = None
+        self._update_pack_saves_button()
+
+    def _update_pack_saves_button(self) -> None:
+        button = getattr(self, "view_pack_saves_button", None)
+        if button is None:
+            return
+        name = getattr(self, "_loaded_profile_name", None)
+        button.setEnabled(bool(name))
+        button.setToolTip(
+            f"View and organize existing saves for '{name}'."
+            if name
+            else "Load a Mod Pack to view its grouped saves."
+        )
+
+    def _verify_loaded_pack_after_configuration(self, snapshot) -> None:
+        name = self._loaded_profile_name
+        if not name:
+            return
+        try:
+            profile = self._profile_store.load(name)
+        except OSError, ProfileError:
+            self._clear_loaded_pack()
+            return
+        if profile.mod_ids != snapshot.config.mods or (
+            profile.map_ids is not None and profile.map_ids != snapshot.config.maps
+        ):
+            self._clear_loaded_pack()
+
+    def _open_pack_saves(self) -> None:
+        name = self._loaded_profile_name
+        if not name:
+            return
+        try:
+            self._profile_store.load(name)
+        except (OSError, ProfileError) as exc:
+            QMessageBox.warning(self, "Could Not Open Pack Saves", str(exc))
+            self._clear_loaded_pack()
+            return
+        saves_root = default_saves_root()
+        if self._active_config is not None and is_global_default_mod_list(
+            self._active_config.path
+        ):
+            saves_root = self._active_config.path.parent.parent / "Saves"
+        dialog = SavePacksDialog(self._profile_store, name, saves_root, self)
+        dialog.exec()
+
     def _save_profile(self) -> None:
         name, accepted = QInputDialog.getText(self, "Save Mod Pack", "Mod Pack name:")
         if not accepted:
@@ -189,6 +243,7 @@ class ProfileActionsMixin:
         self._update_apply_enabled()
         self._update_diagnostics()
         if tuple(profile.mod_ids) == latest.config.mods and not maps_changed:
+            self._mark_pack_loaded(profile.name)
             self.configuration_status.setText(
                 f"Mod Pack '{profile.name}' is already active; no file change was needed."
             )
@@ -198,6 +253,7 @@ class ProfileActionsMixin:
         if self._apply_staged_configuration(
             require_confirmation=False, map_ids=profile.map_ids
         ):
+            self._mark_pack_loaded(profile.name)
             self._profile_workshop_ids = profile.workshop_ids
             self._refresh_management_lists()
             self._update_diagnostics()
@@ -249,6 +305,7 @@ class ProfileActionsMixin:
             self._active_config = None
             self._staged_mod_ids = []
             self._profile_workshop_ids = ()
+            self._clear_loaded_pack()
             self.configuration_status.setText(f"Could not load this mod list: {exc}")
         else:
             self._active_config = snapshot
@@ -259,6 +316,7 @@ class ProfileActionsMixin:
                 "from the global default list. "
                 "Map order is preserved. Changes are staged until Apply."
             )
+            self._verify_loaded_pack_after_configuration(snapshot)
         self._refresh_management_lists()
         self._update_apply_enabled()
 
@@ -511,6 +569,7 @@ class ProfileActionsMixin:
         if self._apply_staged_configuration(
             require_confirmation=True, map_ids=profile.map_ids
         ):
+            self._mark_pack_loaded(profile.name)
             self.status.setText(
                 f"Loaded and applied '{profile.name}'. Launch from ZomboidSorter to prioritize its exact copies over Workshop versions; other installed files stay untouched. Disabled pack mods remain in Available Mods."
             )

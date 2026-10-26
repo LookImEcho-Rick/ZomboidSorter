@@ -25,6 +25,7 @@ from zomboid_mod_manager.profiles import (
     ProfileStore,
     parse_profile,
 )
+from zomboid_mod_manager.save_packs import SaveAssignmentStore, SavePackError
 from zomboid_mod_manager.ui.change_preview import format_ordered_list_change
 from zomboid_mod_manager.ui.text import counted
 from zomboid_mod_manager.ui.theme import apply_theme
@@ -248,6 +249,14 @@ class ModPacksDialog(QDialog):
         except (OSError, ProfileError) as exc:
             QMessageBox.warning(self, "Could not delete Mod Pack", str(exc))
             return
+        try:
+            SaveAssignmentStore(self._profile_store.root.parent).unassign_pack(name)
+        except SavePackError as exc:
+            QMessageBox.warning(
+                self,
+                "Pack Deleted; Save Groupings Need Attention",
+                f"The Mod Pack was deleted, but its save groupings could not be cleared: {exc}",
+            )
         self.status.setText(f"Deleted '{name}'. It can be restored from the archive.")
         self._refresh_packs()
 

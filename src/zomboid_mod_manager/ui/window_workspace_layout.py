@@ -102,6 +102,16 @@ class WorkspaceLayoutMixin:
         )
         self.load_pack_button.clicked.connect(self._open_mod_packs)
         profile_row.addWidget(self.load_pack_button)
+        self.view_pack_saves_button = QPushButton("Saves…")
+        self.view_pack_saves_button.setAccessibleName(
+            "View saves grouped with the loaded Mod Pack"
+        )
+        self.view_pack_saves_button.setToolTip(
+            "View and organize existing saves for the currently loaded Mod Pack."
+        )
+        self.view_pack_saves_button.setEnabled(False)
+        self.view_pack_saves_button.clicked.connect(self._open_pack_saves)
+        profile_row.addWidget(self.view_pack_saves_button)
         self.unload_pack_button = QPushButton("Unload Pack")
         self.unload_pack_button.setAccessibleName("Unload loaded Mod Pack files")
         self.unload_pack_button.setToolTip(
