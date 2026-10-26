@@ -14,10 +14,11 @@ Application license: GPL-3.0-or-later (root LICENSE)
 - CPython and Inno Setup versions are recorded per build in the installed `licenses/BUILD_COMPONENTS.txt`.
 - Qt libraries are dynamically loaded from the install directory; compatible library replacement is not blocked.
 
-## Version 0.3.2 release preparation (2026-10-26)
+## Version 0.3.2 release review (2026-10-26)
 
 - This release adds bounded collection verification/copy work and an explicit archive-only unload action. It adds no runtime dependencies, Qt modules, bundled assets, or license-delivery changes. The reviewed bundle inventory, notices, source locations, and written source offer remain applicable.
-- The full local test suite passed (242 tests; one environment-only skip), and the versionless Windows installer compiled with the reviewed pinned components. Hosted stable/rolling packaging and installer/update checks are pending.
+- The full local suite passed (242 tests; one environment-only skip), and the versionless installer compiled with the reviewed pinned components. The [tagged Windows workflow](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/40279864747) passed tests/lint, v0.3.1 upgrade, standard/portable install smoke, provenance, and publication. The stable installer is 121,591,861 bytes with SHA-256 `a834abb2e2561ca87a6f31fd09573d22b9049e88af85dde1410d8da0e2423ace`.
+- The [rolling Windows workflow](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/40279864819) passed quality checks, install/launch smoke, provenance, and the previous stable app's in-app update smoke. The rolling installer is 121,591,669 bytes with SHA-256 `8f44f7e267d152fe4ced6192423fe6e26c93918d527783483046f7b8f5b09a9e`; its manifest identifies version 0.3.2 and release commit `a74c660822114cd8695a467a2b820ab9eca3e0b9`. Both checksum sidecars agree with GitHub asset digests, and the `rolling` tag points to that commit.
 
 ## Version 0.3.1 release review (2026-10-25)
 

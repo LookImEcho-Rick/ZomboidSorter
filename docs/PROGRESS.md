@@ -15,11 +15,12 @@
 - A focused sample confirmed four-worker copy+verification at 13.0 s versus 31.9 s sequential for 10,000 files / 425 MB. Eight workers were only 1.8 s faster than four on the full pre-hash-parallel run, so the final cap remains four. Cache-only verification of all 141 items measured 69.8 s sequential and 36.5 s with four workers.
 - Validation: the full suite passed **242 tests with one environment-only skip**, including combined-digest, destination-only verification, legacy-index fallback, fast archive, and UI unload regressions. Ruff check/format, compileall, `pip check`, and `git diff --check` passed. The local Windows bundle and versionless installer compiled. No new dependencies were added. Packaged collection use and real-game checks remain unverified; the optimized first load still takes about 3 minutes on this workload.
 
-## Version 0.3.2 release preparation (2026-10-26)
+## v0.3.2 hosted release verification (2026-10-26)
 
 - The 0.3.2 release includes the measured collection load/unload improvements and an explicit **Unload Pack** action. It adds no runtime dependencies, Qt modules, bundled assets, or license-delivery changes; the reviewed Windows bundle inventory and source offer still apply.
-- Local validation passed all 242 tests with one environment-only skip, Ruff check/format, compilation, and dependency checks. The versionless Windows installer compiled successfully with the existing pinned environment.
-- Tagged release and rolling-update workflows will validate hosted packaging, installer smoke, upgrade/update behavior, checksums, and provenance. Packaged collection operations and real Project Zomboid behavior remain unverified.
+- Release commit `a74c660822114cd8695a467a2b820ab9eca3e0b9` is on `main`; annotated tag `v0.3.2` points to it. The [tagged Windows workflow](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/40279864747) passed tests/lint, installer build, upgrade from v0.3.1, standard/portable install smoke, provenance attestation, and release publication. The stable versionless installer is 121,591,861 bytes with SHA-256 `a834abb2e2561ca87a6f31fd09573d22b9049e88af85dde1410d8da0e2423ace`; its sidecar matches GitHub's asset digest.
+- The [rolling Windows workflow](https://github.com/LookImEcho-Rick/ZomboidSorter/actions/runs/40279864819) passed quality checks, packaged install/launch smoke, checksum and provenance checks, and the prior stable app's in-app update through verified relaunch. The rolling versionless installer is 121,591,669 bytes with SHA-256 `8f44f7e267d152fe4ced6192423fe6e26c93918d527783483046f7b8f5b09a9e`. Its manifest identifies version 0.3.2 and release commit `a74c660822114cd8695a467a2b820ab9eca3e0b9`; the sidecar agrees with the manifest and GitHub asset digest, and the `rolling` tag points to the same commit.
+- Local validation passed all 242 tests with one environment-only skip, Ruff check/format, compilation, and dependency checks. Packaged collection operations and real Project Zomboid behavior remain unverified.
 
 ## Collection import clarity and faster pack loading (2026-10-25)
 
